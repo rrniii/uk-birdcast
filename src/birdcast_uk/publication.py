@@ -78,12 +78,57 @@ def sync_command(plan_path: Path, *, bucket: str, endpoint_url: str, profile: st
 
 
 def write_sync_commands(plan_path: Path, output: Path, *, bucket: str, endpoint_url: str, profile: str | None = None) -> None:
-    commands = sync_command(plan_path, bucket=bucket, endpoint_url=endpoint_url, profile=profile)
+    payload = json.loads(plan_path.read_text(encoding="utf-8"))
+    source_dir = Path(str(payload["source_dir"]))
+    object_prefix = str(payload["object_prefix"]).strip("/")
+    aws_base = ["aws"]
+    if profile:
+        aws_base.extend(["--profile", profile])
+    if endpoint_url:
+        aws_base.extend(["--endpoint-url", endpoint_url])
+
+    def sync(source: Path, target: str, *extra: str) -> list[str]:
+        return [
+            *aws_base,
+            "s3",
+            "sync",
+            str(source),
+            f"s3://{bucket}/{target}",
+            "--acl",
+            "public-read",
+            "--only-show-errors",
+            *extra,
+        ]
+
     output.parent.mkdir(parents=True, exist_ok=True)
     lines = ["#!/bin/sh", "set -eu"]
-    for command in commands:
-        lines.append(" ".join(_shell_quote(part) for part in command))
+    archive_dir = source_dir / "archive"
+    latest_dir = source_dir / "latest"
+    lines.append(
+        f'if [ -d {_shell_quote(str(archive_dir))} ]; then '
+        + " ".join(_shell_quote(part) for part in sync(archive_dir, f"{object_prefix}/archive"))
+        + "; fi"
+    )
+    lines.append(
+        " ".join(
+            _shell_quote(part)
+            for part in sync(
+                source_dir,
+                object_prefix,
+                "--exclude",
+                "archive/*",
+                "--exclude",
+                "latest/*",
+            )
+        )
+    )
+    lines.append(
+        f'if [ -d {_shell_quote(str(latest_dir))} ]; then '
+        + " ".join(_shell_quote(part) for part in sync(latest_dir, f"{object_prefix}/latest"))
+        + "; fi"
+    )
     output.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    output.chmod(0o750)
 
 
 def _sha256(path: Path) -> str:

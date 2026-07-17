@@ -1,0 +1,20 @@
+[Unit]
+Description=Archive a UK BirdCast ECMWF Open Data forecast cycle
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=birdcast
+Group=birdcast
+EnvironmentFile=/etc/birdcast-uk/birdcast-uk.env
+Environment=EARTHKIT_DATA_CACHE_POLICY=user
+Environment=EARTHKIT_DATA_USER_CACHE_DIRECTORY=/opt/birdcast-uk/data/earthkit-cache
+WorkingDirectory=/opt/birdcast-uk/repo
+ExecStart=/opt/birdcast-uk/venv/bin/birdcast-uk ecmwf archive-cycle --output-root ${BIRDCAST_UK_ECMWF_CYCLE_DIR}
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/birdcast-uk

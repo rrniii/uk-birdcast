@@ -1,6 +1,6 @@
 [Unit]
 Description=Build UK BirdCast Object Store publication plan
-After=birdcast-uk-static-site-refresh.service
+After=birdcast-uk-static-site-refresh.service birdcast-uk-forecast-build.service
 
 [Service]
 Type=oneshot

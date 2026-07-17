@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 OBJECT_PREFIX = "birdcast-uk"
-PROCESSING_VERSION = "birdcast-uk-observed-0.2.0"
+PROCESSING_VERSION = "birdcast-uk-observed-0.3.0"
+FORECAST_SCHEMA_VERSION = "birdcast-uk-forecast-1.0"
+FORECAST_MODEL_ID = "pgssm-baseline-0.1"
 
 DEFAULT_PUBLIC_BASE_URL = "https://ncas-radar-o.s3-ext.jc.rl.ac.uk/uk-wsr-visualizer-public"
 DEFAULT_INTERNAL_ENDPOINT = "http://ncas-radar-o.s3.jc.rl.ac.uk"
@@ -16,6 +18,8 @@ BIORAD_VPTS_PREFIX = "ukmo-nimrod/vpts/current_ci_le4"
 BIORAD_MANIFEST_PREFIX = f"{OBJECT_PREFIX}/biorad/manifests"
 OBSERVED_PREFIX = f"{OBJECT_PREFIX}/archive/observed"
 ERA5_PREFIX = f"{OBJECT_PREFIX}/era5"
+ECMWF_PREFIX = f"{OBJECT_PREFIX}/ecmwf"
+FORECAST_PREFIX = f"{OBJECT_PREFIX}/forecast"
 UKMO_PVOL_CATALOG_URL = f"{DEFAULT_PUBLIC_BASE_URL}/ukmo-nimrod/catalog/pvol/catalog.json"
 UKMO_VPTS_CATALOG_URL = (
     f"{DEFAULT_PUBLIC_BASE_URL}/ukmo-nimrod/catalog/vpts/current_ci_le4/catalog.json"
@@ -40,6 +44,23 @@ UK_ERA5_AREA = {
     "south": 49.0,
     "east": 3.0,
 }
+
+# Canonical analysis grid. Bounds are an EPSG:3035 rectangle around the UK
+# radar network with roughly 300 km of transport context on every side.
+FORECAST_GRID_CRS = "EPSG:3035"
+FORECAST_GRID_RESOLUTION_M = 10_000
+FORECAST_GRID_BOUNDS_M = (2_550_000, 2_500_000, 4_300_000, 4_800_000)
+FORECAST_ALTITUDE_MIN_M = 200
+FORECAST_ALTITUDE_MAX_M = 4_000
+FORECAST_ENSEMBLE_SIZE = 50
+FORECAST_HORIZON_HOURS = 96
+FORECAST_STEP_HOURS = 6
+FORECAST_FRESH_RADAR_HOURS = 6
+FORECAST_STALE_RADAR_HOURS = 24
+
+ECMWF_OPEN_DATA_SURFACE_PARAMETERS = ("10u", "10v", "2t", "2d", "msl", "tcc", "tp")
+ECMWF_OPEN_DATA_PRESSURE_PARAMETERS = ("u", "v", "t", "r", "w")
+ECMWF_OPEN_DATA_PRESSURE_LEVELS = (1000, 925, 850, 700)
 
 ERA5_SINGLE_LEVEL_VARIABLES = (
     "2m_temperature",

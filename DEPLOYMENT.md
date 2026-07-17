@@ -69,6 +69,8 @@ sudo systemctl enable --now \
   birdcast-uk-observed-build.timer \
   birdcast-uk-era5-build-day.timer \
   birdcast-uk-feature-join.timer \
+  birdcast-uk-ecmwf-archive.timer \
+  birdcast-uk-forecast-build.timer \
   birdcast-uk-static-site-refresh.timer \
   birdcast-uk-object-store-plan.timer \
   birdcast-uk-object-store-sync.timer
@@ -77,6 +79,10 @@ sudo systemctl enable --now \
 The VPTS reader uses only the public catalogue and exact object URLs. It never
 modifies the production VPTS prefix. The publication timers write only beneath
 the `birdcast-uk/` prefix.
+
+ECMWF cycles are archived under `/opt/birdcast-uk/data/ecmwf/cycles`; only
+derived forecast products are copied into the public artifact tree. Forecast
+manifests are written last so readers never observe a partially published run.
 
 ```bash
 sudo -u birdcast /bin/sh /opt/birdcast-uk/data/object-store/sync.sh

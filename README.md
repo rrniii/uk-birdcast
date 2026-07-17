@@ -1,9 +1,9 @@
 # UK BirdCast
 
-UK BirdCast builds observed bird-migration products from the production UK
-BioRad VPTS dataset and joins them to an independent ERA5 feature flow. It is a
-standalone consumer of immutable objects; it does not run or modify the
-underlying UK radar processing pipeline.
+UK BirdCast builds observed and forecast bird-migration products from the
+production UK BioRad VPTS dataset, an independent ERA5 flow, and archived ECMWF
+Open Data forecast cycles. It is a standalone consumer of immutable objects; it
+does not run or modify the underlying UK radar processing pipeline.
 
 ## Data flow
 
@@ -15,6 +15,9 @@ underlying UK radar processing pipeline.
    time-integrate MTR across sunset-to-sunrise nights.
 6. Publish nightly, hourly, map, health, and provenance artifacts.
 7. Join hourly observations to the standalone Earthkit/ERA5 feature files.
+8. Archive ECMWF Open Data forecast cycles through Earthkit.
+9. Assimilate fresh radar densities into a process-guided ensemble state and
+   publish a national 10 km reanalysis plus 96-hour forecast.
 
 The source archive is:
 
@@ -66,6 +69,16 @@ birdcast-uk features join-era5 \
   --observed-hourly data/static-artifacts/latest/latest_observed_hourly.json \
   --era5-dir data/static-artifacts/era5/features \
   --output data/static-artifacts/latest/latest_model_features.json
+
+birdcast-uk ecmwf archive-cycle --output-root data/ecmwf/cycles
+
+birdcast-uk forecast build \
+  --observed-hourly data/static-artifacts/latest/latest_observed_hourly.json \
+  --radars data/radars.json \
+  --output-root data/static-artifacts
 ```
+
+The gridded model, stale-data behaviour, training split, output schema, and BTO
+validation boundary are specified in `docs/IMPLEMENTATION.md`.
 
 Deployment files for the JASMIN Cloud host are under `deploy/`.

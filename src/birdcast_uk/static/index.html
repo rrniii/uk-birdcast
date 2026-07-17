@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>UK BirdCast Research Preview</title>
+    <title>UK BirdCast</title>
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
@@ -14,17 +14,34 @@
       </div>
       <div id="statusBadge" class="badge">Loading</div>
     </header>
+    <div id="staleBanner" class="stale-banner" hidden></div>
+    <nav class="view-tabs" aria-label="Map view">
+      <button class="tab active" data-view="reanalysis">Reanalysis</button>
+      <button class="tab" data-view="forecast">96-hour forecast</button>
+    </nav>
     <main>
-      <section class="map-panel">
-        <canvas id="mapCanvas" width="900" height="620" aria-label="UK migration map"></canvas>
+      <section class="map-workspace">
+        <div class="map-toolbar">
+          <div>
+            <strong id="validTime">Loading</strong>
+            <span id="leadTime"></span>
+          </div>
+          <label class="toggle"><input id="uncertaintyToggle" type="checkbox"> Uncertainty</label>
+        </div>
+        <canvas id="mapCanvas" width="1000" height="760" aria-label="UK bird density map"></canvas>
+        <div class="timeline">
+          <button id="playButton" class="icon-button" title="Play forecast" aria-label="Play forecast">▶</button>
+          <input id="timeSlider" type="range" min="0" max="0" value="0" aria-label="Forecast time">
+        </div>
+        <div class="legend"><span>Low</span><i></i><span>High density</span></div>
       </section>
       <aside>
         <section>
-          <h2>Latest Status</h2>
+          <h2>Run status</h2>
           <dl id="statusList"></dl>
         </section>
         <section>
-          <h2>Radar Sites</h2>
+          <h2>Radar network</h2>
           <div id="radarList" class="radar-list"></div>
         </section>
         <section>
@@ -34,7 +51,7 @@
       </aside>
     </main>
     <footer>
-      ERA5 is used for historical weather context. BTO products validate ecological plausibility; they are not direct radar ground truth.
+      ECMWF weather data: CC BY 4.0. BTO products are used for aggregate ecological validation, not radar calibration.
     </footer>
     <script src="app.js"></script>
   </body>

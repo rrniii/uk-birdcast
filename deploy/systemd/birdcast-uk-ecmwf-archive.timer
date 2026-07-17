@@ -1,0 +1,9 @@
+[Unit]
+Description=Archive ECMWF Open Data cycles four times daily
+
+[Timer]
+OnCalendar=*-*-* 02,08,14,20:15:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

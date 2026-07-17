@@ -7,11 +7,12 @@ import json
 import os
 from pathlib import Path
 
-from .bto import write_request_template, write_validation_status
+from .bto import validate_aggregates, write_request_template, write_validation_status
 from .config import (
     DEFAULT_BUCKET,
     DEFAULT_INTERNAL_ENDPOINT,
     DEFAULT_PUBLIC_BASE_URL,
+    FORECAST_ENSEMBLE_SIZE,
     OBJECT_PREFIX,
     UKMO_PVOL_CATALOG_URL,
     UKMO_VPTS_CATALOG_URL,
@@ -20,6 +21,8 @@ from .config import (
     VPTS_MAX_INCREMENT_DAYS,
 )
 from .era5 import build_day, download_request, extract_site_features, extract_zip_archive, write_request
+from .ecmwf import archive_cycle
+from .forecast import build_forecast
 from .joined import join_observed_to_era5
 from .observed import build_observed_products
 from .publication import build_publication_plan, write_sync_commands
@@ -98,6 +101,29 @@ def cmd_era5_build_day(args: argparse.Namespace) -> int:
     return 0 if result["ok"] else 1
 
 
+def cmd_ecmwf_archive(args: argparse.Namespace) -> int:
+    result = archive_cycle(
+        Path(args.output_root),
+        cycle=args.cycle,
+        overwrite=args.overwrite,
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0 if result["status"] == "complete" else 1
+
+
+def cmd_forecast_build(args: argparse.Namespace) -> int:
+    result = build_forecast(
+        observed_hourly=Path(args.observed_hourly),
+        radars_path=Path(args.radars),
+        output_root=Path(args.output_root),
+        ecmwf_manifest=Path(args.ecmwf_manifest) if args.ecmwf_manifest else None,
+        analysis_time=args.analysis_time,
+        members=args.members,
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
 def cmd_radars_from_pvol(args: argparse.Namespace) -> int:
     radars = radars_from_pvol_catalog(args.input)
     payload = write_radars(Path(args.output), radars, source=args.input)
@@ -170,6 +196,12 @@ def cmd_bto_template(args: argparse.Namespace) -> int:
 
 def cmd_bto_status(args: argparse.Namespace) -> int:
     payload = write_validation_status(Path(args.output), data_available=args.data_available, status=args.status)
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_bto_validate(args: argparse.Namespace) -> int:
+    payload = validate_aggregates(Path(args.bto_csv), Path(args.radar_csv), Path(args.output))
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
 
@@ -253,6 +285,25 @@ def build_parser() -> argparse.ArgumentParser:
     era5_build_day.add_argument("--overwrite", action="store_true")
     era5_build_day.set_defaults(func=cmd_era5_build_day)
 
+    ecmwf_parser = subparsers.add_parser("ecmwf")
+    ecmwf_sub = ecmwf_parser.add_subparsers(required=True)
+    ecmwf_archive = ecmwf_sub.add_parser("archive-cycle")
+    ecmwf_archive.add_argument("--output-root", required=True)
+    ecmwf_archive.add_argument("--cycle")
+    ecmwf_archive.add_argument("--overwrite", action="store_true")
+    ecmwf_archive.set_defaults(func=cmd_ecmwf_archive)
+
+    forecast_parser = subparsers.add_parser("forecast")
+    forecast_sub = forecast_parser.add_subparsers(required=True)
+    forecast_build = forecast_sub.add_parser("build")
+    forecast_build.add_argument("--observed-hourly", required=True)
+    forecast_build.add_argument("--radars", required=True)
+    forecast_build.add_argument("--output-root", required=True)
+    forecast_build.add_argument("--ecmwf-manifest")
+    forecast_build.add_argument("--analysis-time")
+    forecast_build.add_argument("--members", type=int, default=FORECAST_ENSEMBLE_SIZE)
+    forecast_build.set_defaults(func=cmd_forecast_build)
+
     vpts_parser = subparsers.add_parser("vpts")
     vpts_sub = vpts_parser.add_subparsers(required=True)
     vpts_inventory = vpts_sub.add_parser("inventory")
@@ -312,6 +363,11 @@ def build_parser() -> argparse.ArgumentParser:
     bto_status.add_argument("--status", default="request_pending")
     bto_status.add_argument("--data-available", action="store_true")
     bto_status.set_defaults(func=cmd_bto_status)
+    bto_validate = bto_sub.add_parser("validate")
+    bto_validate.add_argument("--bto-csv", required=True)
+    bto_validate.add_argument("--radar-csv", required=True)
+    bto_validate.add_argument("--output", required=True)
+    bto_validate.set_defaults(func=cmd_bto_validate)
 
     publish_parser = subparsers.add_parser("publish")
     publish_sub = publish_parser.add_subparsers(required=True)

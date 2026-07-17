@@ -1,0 +1,17 @@
+[Unit]
+Description=Build the UK BirdCast 96-hour ensemble forecast
+After=birdcast-uk-ecmwf-archive.service birdcast-uk-observed-build.service
+
+[Service]
+Type=oneshot
+User=birdcast
+Group=birdcast
+EnvironmentFile=/etc/birdcast-uk/birdcast-uk.env
+WorkingDirectory=/opt/birdcast-uk/repo
+ExecStart=/bin/sh -c 'manifest="$(find "$BIRDCAST_UK_ECMWF_CYCLE_DIR" -mindepth 2 -maxdepth 2 -name manifest.json -print 2>/dev/null | sort | tail -1)"; if [ -n "$manifest" ]; then exec /opt/birdcast-uk/venv/bin/birdcast-uk forecast build --observed-hourly "$BIRDCAST_UK_OBSERVED_HOURLY" --radars "$BIRDCAST_UK_RADARS_FILE" --output-root "$BIRDCAST_UK_ARTIFACT_ROOT" --ecmwf-manifest "$manifest"; else exec /opt/birdcast-uk/venv/bin/birdcast-uk forecast build --observed-hourly "$BIRDCAST_UK_OBSERVED_HOURLY" --radars "$BIRDCAST_UK_RADARS_FILE" --output-root "$BIRDCAST_UK_ARTIFACT_ROOT"; fi'
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/birdcast-uk

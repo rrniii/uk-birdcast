@@ -51,6 +51,7 @@ def write_placeholder_json(path: Path, payload: dict[str, Any]) -> None:
                 and nested_properties.get("data_available") is True
             )
             or bool(existing.get("features"))
+            or bool(existing.get("valid_times_utc"))
             or existing.get("latest_vpts_date")
             or existing.get("latest_observed_date")
         ):
@@ -127,6 +128,17 @@ def build_static_artifacts(
             "latest_era5_date": None,
             "processing_version": PROCESSING_VERSION,
             "status": "not_started",
+        },
+    )
+    write_placeholder_json(
+        latest_dir / "forecast.json",
+        {
+            "schema_version": "birdcast-uk-forecast-1.0",
+            "data_available": False,
+            "generated_at_utc": generated_at,
+            "mode": "unavailable",
+            "valid_times_utc": [],
+            "assets": {"frames": []},
         },
     )
     write_json(
