@@ -3,7 +3,7 @@ Description=Sync UK BirdCast static artifacts to Object Store hourly
 
 [Timer]
 OnBootSec=15min
-OnUnitActiveSec=1h
+OnUnitActiveSec=15min
 Persistent=true
 
 [Install]

@@ -81,8 +81,10 @@ modifies the production VPTS prefix. The publication timers write only beneath
 the `birdcast-uk/` prefix.
 
 ECMWF cycles are archived under `/opt/birdcast-uk/data/ecmwf/cycles`; only
-derived forecast products are copied into the public artifact tree. Forecast
-manifests are written last so readers never observe a partially published run.
+derived forecast products are copied into the public artifact tree. The
+successful archive service also syncs raw selected-variable GRIB cycles to
+`birdcast-uk/ecmwf/cycles/` in Object Store. Forecast manifests are written
+last so readers never observe a partially published run.
 
 ```bash
 sudo -u birdcast /bin/sh /opt/birdcast-uk/data/object-store/sync.sh

@@ -3,7 +3,7 @@ Description=Plan UK BirdCast Object Store publication hourly
 
 [Timer]
 OnBootSec=10min
-OnUnitActiveSec=1h
+OnUnitActiveSec=15min
 Persistent=true
 
 [Install]

@@ -12,6 +12,7 @@ Environment=EARTHKIT_DATA_CACHE_POLICY=user
 Environment=EARTHKIT_DATA_USER_CACHE_DIRECTORY=/opt/birdcast-uk/data/earthkit-cache
 WorkingDirectory=/opt/birdcast-uk/repo
 ExecStart=/opt/birdcast-uk/venv/bin/birdcast-uk ecmwf archive-cycle --output-root ${BIRDCAST_UK_ECMWF_CYCLE_DIR}
+ExecStartPost=/bin/sh -c '/usr/bin/aws --profile "$BIRDCAST_UK_AWS_PROFILE" --endpoint-url "$BIRDCAST_UK_OBJECT_STORE_ENDPOINT" s3 sync "$BIRDCAST_UK_ECMWF_CYCLE_DIR" "s3://$BIRDCAST_UK_OBJECT_STORE_BUCKET/$BIRDCAST_UK_OBJECT_PREFIX/ecmwf/cycles" --acl public-read --only-show-errors'
 
 NoNewPrivileges=true
 PrivateTmp=true

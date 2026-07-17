@@ -31,6 +31,8 @@ Historical training and reanalysis use the standalone ERA5 flow. Runtime forcing
 uses ECMWF Open Data through Earthkit. Every retrieved 00/06/12/18 cycle is
 archived before inference because the upstream open archive is rolling. The raw
 GRIB, request, checksum, licence, cycle time, and status are retained together.
+Successful cycle directories are then copied to the standalone
+`birdcast-uk/ecmwf/cycles/` Object Store prefix.
 
 ## Training and evaluation
 
