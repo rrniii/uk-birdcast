@@ -43,8 +43,14 @@ def write_placeholder_json(path: Path, payload: dict[str, Any]) -> None:
             existing = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             existing = {}
+        nested_properties = existing.get("properties", {})
         if isinstance(existing, dict) and (
             existing.get("data_available") is True
+            or (
+                isinstance(nested_properties, dict)
+                and nested_properties.get("data_available") is True
+            )
+            or bool(existing.get("features"))
             or existing.get("latest_vpts_date")
             or existing.get("latest_observed_date")
         ):
