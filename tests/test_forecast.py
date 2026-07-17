@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -8,6 +9,7 @@ np = pytest.importorskip("numpy")
 pytest.importorskip("pyproj")
 
 from birdcast_uk.ecmwf import normalise_cycle, open_data_requests
+from birdcast_uk.forecast import _prefix_asset
 from birdcast_uk.grid import canonical_grid
 from birdcast_uk.state_space import (
     RadarObservation,
@@ -73,3 +75,14 @@ def test_ecmwf_cycle_request_covers_96_hours() -> None:
     assert requests[1]["levtype"] == "pl"
     assert requests[1]["levelist"] == [1000, 925, 850, 700]
     assert cycle == datetime(2026, 7, 18, tzinfo=timezone.utc)
+
+
+def test_latest_manifest_prefixes_frame_assets() -> None:
+    prefix = Path("archive/forecast/20260718T0000Z")
+
+    assert _prefix_asset(prefix, "forecast.zarr") == (
+        "archive/forecast/20260718T0000Z/forecast.zarr"
+    )
+    assert _prefix_asset(prefix, ["frames/a.json"]) == [
+        "archive/forecast/20260718T0000Z/frames/a.json"
+    ]

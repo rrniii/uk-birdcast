@@ -158,6 +158,7 @@ def build_forecast(
             },
         }
         write_json(staging / "manifest.json", run_manifest)
+        staging.chmod(0o755)
         if archive_dir.exists():
             shutil.rmtree(archive_dir)
         archive_dir.parent.mkdir(parents=True, exist_ok=True)
