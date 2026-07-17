@@ -31,6 +31,7 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
     ) as handle:
         handle.write(content)
         temporary_path = Path(handle.name)
+    temporary_path.chmod(0o644)
     os.replace(temporary_path, path)
 
 
@@ -156,4 +157,50 @@ def build_static_artifacts(
         "output_dir": str(output_dir),
         "data_base_url": data_base_url,
         "radar_count": len(radars),
+    }
+
+
+def install_static_site(
+    artifact_root: Path,
+    site_root: Path,
+    *,
+    data_base_url: str = "/birdcast-uk/data",
+    object_prefix: str = OBJECT_PREFIX,
+) -> dict[str, object]:
+    """Install the web shell with a same-origin data endpoint."""
+
+    web_root = artifact_root / "web"
+    required_files = ("index.html", "app.js", "styles.css")
+    missing = [name for name in required_files if not (web_root / name).is_file()]
+    if missing:
+        raise FileNotFoundError(f"Static web artifacts are missing: {', '.join(missing)}")
+
+    site_root.mkdir(parents=True, exist_ok=True)
+    for child in site_root.iterdir():
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+    for name in required_files:
+        destination = site_root / name
+        shutil.copyfile(web_root / name, destination)
+        destination.chmod(0o644)
+
+    generated_at = utc_now()
+    write_json(
+        site_root / "config.json",
+        {
+            "data_base_url": data_base_url.rstrip("/"),
+            "generated_at_utc": generated_at,
+            "object_prefix": object_prefix,
+        },
+    )
+    site_root.chmod(0o755)
+
+    return {
+        "ok": True,
+        "generated_at_utc": generated_at,
+        "site_root": str(site_root),
+        "data_base_url": data_base_url.rstrip("/"),
     }

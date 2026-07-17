@@ -10,7 +10,7 @@ Group=birdcast
 EnvironmentFile=/etc/birdcast-uk/birdcast-uk.env
 WorkingDirectory=/opt/birdcast-uk/repo
 ExecStart=/opt/birdcast-uk/venv/bin/birdcast-uk static build --output-dir ${BIRDCAST_UK_ARTIFACT_ROOT} --public-base-url ${BIRDCAST_UK_PUBLIC_BASE_URL} --object-prefix ${BIRDCAST_UK_OBJECT_PREFIX}
-ExecStart=/bin/sh -c 'rm -rf "$BIRDCAST_UK_SITE_ROOT" && mkdir -p "$BIRDCAST_UK_SITE_ROOT" && cp -R "$BIRDCAST_UK_ARTIFACT_ROOT/web/." "$BIRDCAST_UK_SITE_ROOT/"'
+ExecStart=/opt/birdcast-uk/venv/bin/birdcast-uk static install-site --artifact-root ${BIRDCAST_UK_ARTIFACT_ROOT} --site-root ${BIRDCAST_UK_SITE_ROOT} --data-base-url /birdcast-uk/data --object-prefix ${BIRDCAST_UK_OBJECT_PREFIX}
 
 NoNewPrivileges=true
 PrivateTmp=true

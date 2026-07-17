@@ -24,7 +24,7 @@ from .joined import join_observed_to_era5
 from .observed import build_observed_products
 from .publication import build_publication_plan, write_sync_commands
 from .radars import radars_from_pvol_catalog, write_radars
-from .static_artifacts import build_static_artifacts
+from .static_artifacts import build_static_artifacts, install_static_site
 from .vpts import build_catalog_inventory, validate_manifest
 
 
@@ -35,6 +35,17 @@ def cmd_static_build(args: argparse.Namespace) -> int:
         public_base_url=args.public_base_url,
         object_prefix=args.object_prefix,
         radars_path=Path(radars) if radars else None,
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_static_install(args: argparse.Namespace) -> int:
+    result = install_static_site(
+        Path(args.artifact_root),
+        Path(args.site_root),
+        data_base_url=args.data_base_url,
+        object_prefix=args.object_prefix,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
@@ -193,6 +204,12 @@ def build_parser() -> argparse.ArgumentParser:
     static_build.add_argument("--object-prefix", default=OBJECT_PREFIX)
     static_build.add_argument("--radars")
     static_build.set_defaults(func=cmd_static_build)
+    static_install = static_sub.add_parser("install-site")
+    static_install.add_argument("--artifact-root", required=True)
+    static_install.add_argument("--site-root", required=True)
+    static_install.add_argument("--data-base-url", default="/birdcast-uk/data")
+    static_install.add_argument("--object-prefix", default=OBJECT_PREFIX)
+    static_install.set_defaults(func=cmd_static_install)
 
     radars_parser = subparsers.add_parser("radars")
     radars_sub = radars_parser.add_subparsers(required=True)
