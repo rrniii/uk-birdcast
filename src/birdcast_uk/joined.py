@@ -81,6 +81,7 @@ def join_observed_to_era5(
     ok = bool(matched_rows)
     result = {
         "ok": ok,
+        "data_available": ok,
         "generated_at_utc": utc_now(),
         "processing_version": PROCESSING_VERSION,
         "observed_source": str(observed_hourly),
@@ -96,6 +97,13 @@ def join_observed_to_era5(
         "rows": matched_rows,
     }
     write_json(output, result)
+    if ok:
+        _update_latest_status(
+            output.parent / "status.json",
+            latest_era5_time=str(result["last_time_utc"]),
+            row_count=len(matched_rows),
+            radar_count=radar_count,
+        )
     return {
         key: value
         for key, value in result.items()
@@ -125,3 +133,24 @@ def _read_payload(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"JSON artifact must be an object: {path}")
     return payload
+
+
+def _update_latest_status(
+    path: Path,
+    *,
+    latest_era5_time: str,
+    row_count: int,
+    radar_count: int,
+) -> None:
+    if not path.exists():
+        return
+    payload = _read_payload(path)
+    payload["generated_at_utc"] = utc_now()
+    payload["latest_era5_date"] = latest_era5_time[:10].replace("-", "")
+    payload["latest_model_feature_time_utc"] = latest_era5_time
+    payload["model_feature_summary"] = {
+        "status": "ok",
+        "row_count": row_count,
+        "radar_count": radar_count,
+    }
+    write_json(path, payload)

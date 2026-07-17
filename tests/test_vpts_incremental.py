@@ -236,6 +236,11 @@ def test_hourly_observed_join_to_two_era5_datasets(tmp_path: Path) -> None:
     )
     era5_dir = tmp_path / "era5"
     era5_dir.mkdir()
+    status_path = tmp_path / "status.json"
+    status_path.write_text(
+        json.dumps({"data_available": True, "latest_vpts_date": "20260708"}),
+        encoding="utf-8",
+    )
     (era5_dir / "era5_site_features_20260709.json").write_text(
         json.dumps(
             {
@@ -270,6 +275,9 @@ def test_hourly_observed_join_to_two_era5_datasets(tmp_path: Path) -> None:
     assert payload["rows"][0]["t2m"] == 280.0
     assert payload["rows"][0]["u_pressure_level_850.0"] == 5.0
     assert payload["rows"][0]["observed_mean_mtr_birds_km_h"] == 123.0
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    assert status["latest_era5_date"] == "20260709"
+    assert status["model_feature_summary"]["row_count"] == 1
 
 
 def _catalog(tmp_path: Path, *, generated_at: str) -> Path:
