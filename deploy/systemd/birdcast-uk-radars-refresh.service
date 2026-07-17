@@ -1,0 +1,18 @@
+[Unit]
+Description=Refresh UK BirdCast radar metadata from public PVOL catalog
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=birdcast
+Group=birdcast
+EnvironmentFile=/etc/birdcast-uk/birdcast-uk.env
+WorkingDirectory=/opt/birdcast-uk/repo
+ExecStart=/opt/birdcast-uk/venv/bin/birdcast-uk radars from-pvol-catalog --input ${BIRDCAST_UK_PVOL_CATALOG_URL} --output ${BIRDCAST_UK_RADARS_FILE}
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/birdcast-uk

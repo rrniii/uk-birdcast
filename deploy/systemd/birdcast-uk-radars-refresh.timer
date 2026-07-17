@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh UK BirdCast radar metadata daily
+
+[Timer]
+OnBootSec=3min
+OnCalendar=*-*-* 03:05:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

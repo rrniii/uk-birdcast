@@ -1,0 +1,18 @@
+[Unit]
+Description=Sync UK BirdCast static artifacts to JASMIN Object Store
+After=birdcast-uk-object-store-plan.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=birdcast
+Group=birdcast
+EnvironmentFile=/etc/birdcast-uk/birdcast-uk.env
+WorkingDirectory=/opt/birdcast-uk/repo
+ExecStart=/bin/sh ${BIRDCAST_UK_OBJECT_STORE_SYNC_SCRIPT}
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/birdcast-uk

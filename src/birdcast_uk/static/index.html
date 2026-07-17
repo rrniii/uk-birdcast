@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>UK BirdCast Research Preview</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header>
+      <div>
+        <p class="eyebrow">Research preview</p>
+        <h1>UK BirdCast</h1>
+      </div>
+      <div id="statusBadge" class="badge">Loading</div>
+    </header>
+    <main>
+      <section class="map-panel">
+        <canvas id="mapCanvas" width="900" height="620" aria-label="UK migration map"></canvas>
+      </section>
+      <aside>
+        <section>
+          <h2>Latest Status</h2>
+          <dl id="statusList"></dl>
+        </section>
+        <section>
+          <h2>Radar Sites</h2>
+          <div id="radarList" class="radar-list"></div>
+        </section>
+        <section>
+          <h2>Validation</h2>
+          <p id="validationText">Loading validation status.</p>
+        </section>
+      </aside>
+    </main>
+    <footer>
+      ERA5 is used for historical weather context. BTO products validate ecological plausibility; they are not direct radar ground truth.
+    </footer>
+    <script src="app.js"></script>
+  </body>
+</html>

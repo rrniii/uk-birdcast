@@ -1,0 +1,10 @@
+[Unit]
+Description=Build UK BirdCast VPTS Object Store inventory hourly
+
+[Timer]
+OnBootSec=4min
+OnUnitActiveSec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,18 @@
+[Unit]
+Description=Build UK BirdCast Object Store publication plan
+After=birdcast-uk-static-site-refresh.service
+
+[Service]
+Type=oneshot
+User=birdcast
+Group=birdcast
+EnvironmentFile=/etc/birdcast-uk/birdcast-uk.env
+WorkingDirectory=/opt/birdcast-uk/repo
+ExecStart=/opt/birdcast-uk/venv/bin/birdcast-uk publish plan --source-dir ${BIRDCAST_UK_ARTIFACT_ROOT} --output ${BIRDCAST_UK_OBJECT_STORE_PLAN} --object-prefix ${BIRDCAST_UK_OBJECT_PREFIX}
+ExecStart=/opt/birdcast-uk/venv/bin/birdcast-uk publish sync-script --plan ${BIRDCAST_UK_OBJECT_STORE_PLAN} --output ${BIRDCAST_UK_OBJECT_STORE_SYNC_SCRIPT} --bucket ${BIRDCAST_UK_OBJECT_STORE_BUCKET} --endpoint-url ${BIRDCAST_UK_OBJECT_STORE_ENDPOINT} --profile ${BIRDCAST_UK_AWS_PROFILE}
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/birdcast-uk

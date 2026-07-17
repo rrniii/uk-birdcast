@@ -1,0 +1,10 @@
+[Unit]
+Description=Build UK BirdCast ERA5 request artifact daily
+
+[Timer]
+OnBootSec=15min
+OnCalendar=*-*-* 05:20:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

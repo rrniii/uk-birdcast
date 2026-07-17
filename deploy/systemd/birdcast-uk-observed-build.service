@@ -1,0 +1,17 @@
+[Unit]
+Description=Build UK BirdCast observed migration products from VPTS inventory
+After=birdcast-uk-vpts-inventory.service birdcast-uk-radars-refresh.service
+
+[Service]
+Type=oneshot
+User=birdcast
+Group=birdcast
+EnvironmentFile=/etc/birdcast-uk/birdcast-uk.env
+WorkingDirectory=/opt/birdcast-uk/repo
+ExecStart=/opt/birdcast-uk/venv/bin/birdcast-uk observed build --input ${BIRDCAST_UK_VPTS_INVENTORY} --input-kind inventory --output-dir ${BIRDCAST_UK_ARTIFACT_ROOT} --radars ${BIRDCAST_UK_RADARS_FILE} --cursor ${BIRDCAST_UK_VPTS_CURSOR}
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/birdcast-uk

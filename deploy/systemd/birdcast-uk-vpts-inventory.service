@@ -1,0 +1,18 @@
+[Unit]
+Description=Build bounded UK BirdCast VPTS catalogue inventory
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=birdcast
+Group=birdcast
+EnvironmentFile=/etc/birdcast-uk/birdcast-uk.env
+WorkingDirectory=/opt/birdcast-uk/repo
+ExecStart=/opt/birdcast-uk/venv/bin/birdcast-uk vpts inventory --output ${BIRDCAST_UK_VPTS_INVENTORY} --cursor ${BIRDCAST_UK_VPTS_CURSOR} --catalog-url ${BIRDCAST_UK_VPTS_CATALOG_URL} --bucket ${BIRDCAST_UK_OBJECT_STORE_BUCKET} --public-base-url ${BIRDCAST_UK_PUBLIC_BASE_URL}
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/birdcast-uk

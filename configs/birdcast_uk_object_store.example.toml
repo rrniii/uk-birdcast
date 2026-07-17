@@ -1,0 +1,18 @@
+[object_store]
+tenancy = "ncas-radar"
+public_bucket = "uk-wsr-visualizer-public"
+staging_bucket = "uk-wsr-visualizer-public"
+object_prefix = "birdcast-uk"
+external_endpoint = "https://ncas-radar-o.s3-ext.jc.rl.ac.uk"
+internal_endpoint = "http://ncas-radar-o.s3.jc.rl.ac.uk"
+public_base_url = "https://ncas-radar-o.s3-ext.jc.rl.ac.uk/uk-wsr-visualizer-public"
+aws_profile = "ncas-radar-o"
+region_name = "us-east-1"
+
+[birdcast_uk]
+cloud_root = "/opt/birdcast-uk"
+project_root = "/gws/ssde/j25a/ncas_radar/vol2/avocet/birdcast-uk"
+site_root = "/opt/birdcast-uk/site"
+artifact_root = "/opt/birdcast-uk/data/static-artifacts"
+publication_plan = "/opt/birdcast-uk/data/object-store/plan.json"
+sync_script = "/opt/birdcast-uk/data/object-store/sync.sh"

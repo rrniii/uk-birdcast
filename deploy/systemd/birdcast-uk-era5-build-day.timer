@@ -1,0 +1,10 @@
+[Unit]
+Description=Build UK BirdCast ERA5 daily feature shell
+
+[Timer]
+OnBootSec=8min
+OnCalendar=*-*-* 05:40:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

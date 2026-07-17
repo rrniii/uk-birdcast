@@ -1,0 +1,18 @@
+[Unit]
+Description=Build UK BirdCast ERA5 request smoke artifacts
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=birdcast
+Group=birdcast
+EnvironmentFile=/etc/birdcast-uk/birdcast-uk.env
+WorkingDirectory=/opt/birdcast-uk/repo
+ExecStart=/bin/sh -c 'mkdir -p /opt/birdcast-uk/data/era5/raw && /opt/birdcast-uk/venv/bin/birdcast-uk era5 request --day "$(date -u +%%Y-%%m-%%d)" --kind pressure-levels --output-file /opt/birdcast-uk/data/era5/raw/era5_pressure_levels_$(date -u +%%Y%%m%%d)_uk.nc --request-json /opt/birdcast-uk/data/era5/latest-pressure-levels-request.json'
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/birdcast-uk

@@ -1,0 +1,14 @@
+.DS_Store
+.pytest_cache/
+.venv/
+__pycache__/
+*.egg-info/
+*.py[cod]
+build/
+dist/
+
+# Credentials and runtime state are installed directly on the host.
+.cdsapirc
+.env
+data/
+site/

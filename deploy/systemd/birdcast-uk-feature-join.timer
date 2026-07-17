@@ -1,0 +1,10 @@
+[Unit]
+Description=Join UK BirdCast observed and ERA5 features hourly
+
+[Timer]
+OnBootSec=9min
+OnUnitActiveSec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
