@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 from .config import PROCESSING_VERSION
@@ -106,6 +107,9 @@ def _hour_key(value: object) -> str | None:
     if value in (None, ""):
         return None
     text = str(value).replace("Z", "+00:00")
+    # Earthkit/xarray serializes nanosecond timestamps. Python 3.10 accepts at
+    # most microseconds in datetime.fromisoformat().
+    text = re.sub(r"(\.[0-9]{6})[0-9]+", r"\1", text)
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError:
