@@ -54,6 +54,7 @@ def write_placeholder_json(path: Path, payload: dict[str, Any]) -> None:
             or bool(existing.get("valid_times_utc"))
             or existing.get("latest_vpts_date")
             or existing.get("latest_observed_date")
+            or existing.get("latest_date")
         ):
             return
     write_json(path, payload)
@@ -139,6 +140,18 @@ def build_static_artifacts(
             "mode": "unavailable",
             "valid_times_utc": [],
             "assets": {"frames": []},
+        },
+    )
+    write_placeholder_json(
+        latest_dir / "historical.json",
+        {
+            "schema_version": "birdcast-uk-historical-1.0",
+            "data_available": False,
+            "generated_at_utc": generated_at,
+            "first_date": None,
+            "latest_date": None,
+            "years": [],
+            "assets": {"daily_by_year": {}, "plots": []},
         },
     )
     write_json(

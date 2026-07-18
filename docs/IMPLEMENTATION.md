@@ -1,60 +1,65 @@
-# UK BirdCast implementation contract
+# UK BirdCast historical implementation contract
 
 ## Operational product
 
-- National 10 km grid in EPSG:3035 with approximately 300 km of transport context.
-- Vertically integrated biological-target density from 200 to 4000 m.
-- Six-hour issue cycle with an hourly internal state and public lead times from 0 to 96 hours.
-- Separate LP and SP source provenance; pulse products are never added as populations.
-- Fifty-member ensemble with p10, p50, and p90 density, migration vectors, flight-height diagnostics, contamination probability, observation influence, and a quality flag.
-- Versioned Zarr, Cloud Optimized GeoTIFF, lightweight web frames, and an atomic latest manifest.
+- Historical radar reanalysis only; no public forecast.
+- VPTS vertical integrated density from 200 to 4000 m.
+- LP and SP retained as separate products, with LP selected by default.
+- Daily radar-site maps for 2013 onward.
+- Annual nocturnal passage, solar-period activity, phenology, and archive
+  coverage plots.
+- Natural Earth 1:10m country geometry rendered on a device-pixel-aware canvas.
+- Versioned Object Store assets and an atomic `latest/historical.json` manifest.
 
-## State-space model
+VID is a bird-passage index in birds km-2. It is not an absolute bird count or
+population estimate.
 
-The first operational model is a process-guided ensemble baseline. Its transition is a
-semi-Lagrangian continuity step followed by an explicit seasonal/nocturnal
-source-sink term. Radar density is assimilated with a localized ensemble Kalman
-update. This is the benchmark and fallback for the optional ConvGRU residual in
-`convgru.py`; an untrained neural residual is never used operationally.
+## Compute and storage boundary
 
-Operational modes are contractual:
+The 149 GB VPTS object archive remains in the `ncas-radar-o` Object Store. Full
+archive analysis belongs on JASMIN batch compute or the radar GWS, not on the
+cloud web host. A successful batch run produces the compact aggregate contract:
 
-| Radar age | Mode | Behaviour |
-|---|---|---|
-| up to 6 h | `assimilated` | Localized radar update, then forecast |
-| 6-24 h | `propagated` | Previous/climatological state with inflated spread |
-| over 24 h | `weather_only` | Seasonal baseline and weather, wider uncertainty |
+```text
+analysis_summary.json
+daily_totals.csv
+network_annual_seasonal_totals.csv
+phenology.csv
+coverage.csv
+```
 
-## Weather flows
+The JASMIN Cloud host consumes that package, creates browser-ready artifacts,
+and publishes them under `birdcast-uk/historical/`. Year partitioning limits a
+normal browser request to one year of radar-day data.
 
-Historical training and reanalysis use the standalone ERA5 flow. Runtime forcing
-uses ECMWF Open Data through Earthkit. Every retrieved 00/06/12/18 cycle is
-archived before inference because the upstream open archive is rolling. The raw
-GRIB, request, checksum, licence, cycle time, and status are retained together.
-Successful cycle directories are then copied to the standalone
-`birdcast-uk/ecmwf/cycles/` Object Store prefix.
+## Historical weather flow
 
-## Training and evaluation
+ERA5 remains a standalone BirdCast flow using Earthkit. Radar summaries are
+joined to ERA5 by radar and time for retrospective wind, temperature, cloud,
+boundary-layer, and precipitation analyses. ERA5 source files, requests,
+checksums, and derived feature tables remain under `birdcast-uk/era5/`.
 
-- Training: 2013-2022.
-- Validation: 2023.
-- Locked temporal test: 2024-2025.
-- Spatial test: leave-one-radar-out.
-- Scores: CRPS, interval coverage, MAE, event precision/recall, peak-timing error,
-  transport/direction error, and reliability by lead time and season.
-- The production model may be refit on all accepted years only after locked-test
-  results and model metadata have been frozen.
+ECMWF Open Data cycle retrieval and forecast generation are disabled. Their code
+and archived test cycles remain for provenance but are outside the operational
+product.
+
+## Plot rules
+
+- LP and SP plots are separate; no combined LP+SP population interpretation.
+- Partial 2026 is excluded from trend plots.
+- Network plots use the aggregate archive tables and report effort/coverage.
+- Phenology plots report median passage dates rather than implying abundance.
+- Every plot labels VID as a passage index.
 
 ## BTO validation
 
 BirdTrack complete-list reporting frequency and effort-normalised regional
 summaries test phenology, event timing, and broad spatial plausibility. Licensed
 raw records remain private. Only aggregate validation scores are published.
-BTO data are not used to calibrate radar density as an absolute population count.
+BTO data are not used to calibrate VID as an absolute population count.
 
 The request is made through `https://www.bto.org/data/request`. Ask for weekly
 10 km or agreed regional summaries with complete-list denominators, effort,
-species groups, dates, and licence/version metadata. BTO describes reporting
-rate as the percentage of complete lists containing a species. After private
-aggregation, run `birdcast-uk bto validate`; the public result contains only
-correlation, event overlap, peak-timing error, coverage, and total effort.
+species groups, dates, and licence/version metadata. After private aggregation,
+run `birdcast-uk bto validate`; the public result contains only correlation,
+event overlap, peak-timing error, coverage, and total effort.

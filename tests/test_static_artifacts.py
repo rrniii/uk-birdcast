@@ -40,6 +40,16 @@ def test_placeholder_does_not_replace_data_bearing_geojson(tmp_path: Path) -> No
     assert json.loads(output.read_text(encoding="utf-8")) == observed
 
 
+def test_placeholder_does_not_replace_historical_manifest(tmp_path: Path) -> None:
+    output = tmp_path / "historical.json"
+    historical = {"data_available": True, "latest_date": "2026-07-03"}
+    write_json(output, historical)
+
+    write_placeholder_json(output, {"data_available": False, "latest_date": None})
+
+    assert json.loads(output.read_text(encoding="utf-8")) == historical
+
+
 def test_install_static_site_uses_same_origin_data_url(tmp_path: Path) -> None:
     artifact_root = tmp_path / "artifacts"
     site_root = tmp_path / "site"

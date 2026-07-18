@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>UK BirdCast</title>
+    <title>UK BirdCast historical reanalysis</title>
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
@@ -12,46 +12,93 @@
         <p class="eyebrow">Research preview</p>
         <h1>UK BirdCast</h1>
       </div>
-      <div id="statusBadge" class="badge">Loading</div>
+      <div id="statusBadge" class="badge">Loading archive</div>
     </header>
-    <div id="staleBanner" class="stale-banner" hidden></div>
-    <nav class="view-tabs" aria-label="Map view">
-      <button class="tab active" data-view="reanalysis">Reanalysis</button>
-      <button class="tab" data-view="forecast">96-hour forecast</button>
-    </nav>
+
     <main>
-      <section class="map-workspace">
-        <div class="map-toolbar">
-          <div>
-            <strong id="validTime">Loading</strong>
-            <span id="leadTime"></span>
+      <section class="explorer" aria-labelledby="mapTitle">
+        <div class="control-bar">
+          <label>
+            <span>Date</span>
+            <input id="dateInput" type="date">
+          </label>
+          <fieldset>
+            <legend>Radar pulse</legend>
+            <div class="segmented" id="pulseControl">
+              <button type="button" class="active" data-value="lp">LP</button>
+              <button type="button" data-value="sp">SP</button>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Solar period</legend>
+            <div class="segmented" id="periodControl">
+              <button type="button" class="active" data-value="night">Night</button>
+              <button type="button" data-value="civil_twilight">Twilight</button>
+              <button type="button" data-value="day">Day</button>
+            </div>
+          </fieldset>
+          <label>
+            <span>Map variable</span>
+            <select id="metricSelect">
+              <option value="vid">VID passage</option>
+              <option value="height_m">Flight height</option>
+              <option value="speed_ms">Ground speed</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="map-layout">
+          <div class="map-panel">
+            <div class="map-heading">
+              <div>
+                <h2 id="mapTitle">Daily radar reanalysis</h2>
+                <p id="mapSubtitle">Loading historical observations</p>
+              </div>
+              <p class="map-resolution">1:10m coastline</p>
+            </div>
+            <canvas id="mapCanvas" aria-label="High-resolution map of UK radar bird passage"></canvas>
+            <div class="legend">
+              <span>Low</span><i></i><span>High</span>
+              <strong id="legendUnit">VID passage index</strong>
+            </div>
           </div>
-          <label class="toggle"><input id="uncertaintyToggle" type="checkbox"> Uncertainty</label>
+
+          <aside>
+            <section class="summary-panel">
+              <p class="section-label">Selected day</p>
+              <strong id="networkValue">--</strong>
+              <span id="networkUnit">Mean VID across reporting radars</span>
+            </section>
+            <section>
+              <h2>Archive status</h2>
+              <dl id="statusList"></dl>
+            </section>
+            <section>
+              <h2>Reporting radars</h2>
+              <div id="radarList" class="radar-list"></div>
+            </section>
+            <section>
+              <h2>Interpretation</h2>
+              <p id="interpretationText">VID is a passage index, not an absolute bird count or population estimate.</p>
+            </section>
+          </aside>
         </div>
-        <canvas id="mapCanvas" width="1000" height="760" aria-label="UK bird density map"></canvas>
-        <div class="timeline">
-          <button id="playButton" class="icon-button" title="Play forecast" aria-label="Play forecast">▶</button>
-          <input id="timeSlider" type="range" min="0" max="0" value="0" aria-label="Forecast time">
-        </div>
-        <div class="legend"><span>Low</span><i></i><span>High density</span></div>
       </section>
-      <aside>
-        <section>
-          <h2>Run status</h2>
-          <dl id="statusList"></dl>
-        </section>
-        <section>
-          <h2>Radar network</h2>
-          <div id="radarList" class="radar-list"></div>
-        </section>
-        <section>
-          <h2>Validation</h2>
-          <p id="validationText">Loading validation status.</p>
-        </section>
-      </aside>
+
+      <section class="plots" aria-labelledby="plotsTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Archive-scale summaries</p>
+            <h2 id="plotsTitle">Bird passage plots</h2>
+          </div>
+          <p>LP and SP are not combined. These first-release plots use LP only and exclude partial 2026 from trends.</p>
+        </div>
+        <div id="plotGrid" class="plot-grid"></div>
+      </section>
     </main>
+
     <footer>
-      ECMWF weather data: CC BY 4.0. BTO products are used for aggregate ecological validation, not radar calibration.
+      Radar source: UK weather-radar bioRad VPTS current_ci_le4. Map boundary: Natural Earth 1:10m public-domain data. BTO products will provide independent aggregate ecological validation.
     </footer>
     <script src="app.js"></script>
   </body>
