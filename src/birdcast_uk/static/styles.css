@@ -9,6 +9,7 @@
 body { margin: 0; }
 button, input, select { font: inherit; }
 button { color: inherit; }
+[hidden] { display: none !important; }
 
 header {
   display: flex;
