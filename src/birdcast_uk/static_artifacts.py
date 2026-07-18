@@ -154,6 +154,17 @@ def build_static_artifacts(
             "assets": {"daily_by_year": {}, "plots": []},
         },
     )
+    write_placeholder_json(
+        latest_dir / "gam-era5.json",
+        {
+            "schema_version": "birdcast-uk-gam-era5-1.0",
+            "data_available": False,
+            "generated_at_utc": generated_at,
+            "model_family": None,
+            "assets": {"lp": {}, "sp": {}},
+            "interpretation": "Historical modelled reanalysis is not available yet.",
+        },
+    )
     write_json(
         latest_dir / "validation_status.json",
         {

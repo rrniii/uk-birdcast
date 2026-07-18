@@ -20,7 +20,8 @@ as an independent historical weather flow for attribution and model analysis.
 5. Publish immutable historical assets before atomically updating
    `birdcast-uk/latest/historical.json`.
 6. Join historical radar summaries to the standalone Earthkit/ERA5 flow.
-7. Compare aggregate phenology and event timing with licensed BTO products.
+7. Fit an all-hour, pulse-separated ERA5 GAMM and an identical-predictor XGBoost benchmark on JASMIN batch compute.
+8. Select one model family using held-out-radar performance, publish hourly native-ERA5 UK flow frames, and compare aggregate activity with licensed BTO products.
 
 The first published snapshot contains 116,721 VPTS files, 23.8 million vertical
 profiles, and 344,946 radar-day summaries spanning 2013-2026.
@@ -36,6 +37,21 @@ VID = sum(dens * dh)                  birds km-2 per profile
 The primary altitude interval is 200-4000 m. The web map and plots use VID as a
 passage index. It is not an absolute count of individuals or a population
 estimate. LP is the default product; LP and SP are never added together.
+
+## Modelled flow reanalysis
+
+The Modelled Flow tab is historical only. It uses the latest complete 365-day
+overlap between VPTS and ERA5, at hourly UTC cadence. The training contract
+contains no timestamp, hour-of-day, season, daylight, twilight, sunrise or
+sunset predictor. It fits separate LP/SP models for MTR, VID and bird ground
+velocity components. A GAMM (`mgcv::bam`) is the primary interpretable model;
+XGBoost uses the same ERA5 and spatial inputs as a benchmark. XGBoost is
+published only when it improves every held-out-radar MTR/VID comparison by at
+least 10%, improves top-decile event detection, and does not worsen vectors.
+
+The JASMIN entrypoint is `deploy/slurm/birdcast-uk-reanalysis.sbatch`. Its
+national ERA5 grid input must carry a support score for every cell; unsupported
+extrapolation is faded in the web map rather than hidden or presented equally.
 
 ## Development
 

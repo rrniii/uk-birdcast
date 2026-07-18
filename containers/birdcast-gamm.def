@@ -1,0 +1,11 @@
+Bootstrap: docker
+From: rocker/r-ver:4.4.2
+
+%post
+    apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libcurl4-openssl-dev libssl-dev libxml2-dev python3 python3-pip && rm -rf /var/lib/apt/lists/*
+    R -q -e 'install.packages(c("mgcv", "jsonlite"), repos="https://cloud.r-project.org")'
+    pip3 install --no-cache-dir pandas xgboost
+
+%labels
+    org.opencontainers.image.title UK BirdCast GAMM batch runtime
+    org.opencontainers.image.description mgcv GAMM and XGBoost benchmark runtime for JASMIN

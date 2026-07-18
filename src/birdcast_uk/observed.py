@@ -498,12 +498,19 @@ def _night_metrics(
 
 
 def _hourly_rows(profiles: list[dict[str, Any]]) -> list[dict[str, object]]:
-    grouped: dict[tuple[str, datetime], list[dict[str, Any]]] = defaultdict(list)
+    """Aggregate VPTS profiles by radar, pulse mode, and UTC hour.
+
+    LP and SP have different sampling characteristics.  Keeping them separate
+    here is essential: downstream reanalysis models must never be trained on
+    a silently blended pulse product.
+    """
+
+    grouped: dict[tuple[str, str, datetime], list[dict[str, Any]]] = defaultdict(list)
     for profile in profiles:
         timestamp = profile["timestamp"].replace(minute=0, second=0, microsecond=0)
-        grouped[(str(profile["radar"]), timestamp)].append(profile)
+        grouped[(str(profile["radar"]), str(profile.get("pulse") or "unknown"), timestamp)].append(profile)
     rows = []
-    for (radar, hour), values in sorted(grouped.items()):
+    for (radar, pulse, hour), values in sorted(grouped.items()):
         valid_mtr = [
             float(value["mtr_birds_km_h"])
             for value in values
@@ -533,6 +540,7 @@ def _hourly_rows(profiles: list[dict[str, Any]]) -> list[dict[str, object]]:
         rows.append(
             {
                 "radar": radar,
+                "pulse": pulse,
                 "time_utc": _format_datetime(hour),
                 "profile_count": len(values),
                 "usable_mtr_profile_count": len(valid_mtr),
@@ -548,7 +556,7 @@ def _hourly_rows(profiles: list[dict[str, Any]]) -> list[dict[str, object]]:
                     sum(bool(value.get("night_date")) for value in values) / len(values),
                     6,
                 ),
-                "pulse_products": sorted({str(value["pulse"]) for value in values}),
+                "pulse_products": [pulse],
             }
         )
     return rows

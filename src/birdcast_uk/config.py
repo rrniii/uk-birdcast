@@ -18,6 +18,7 @@ BIORAD_VPTS_PREFIX = "ukmo-nimrod/vpts/current_ci_le4"
 BIORAD_MANIFEST_PREFIX = f"{OBJECT_PREFIX}/biorad/manifests"
 OBSERVED_PREFIX = f"{OBJECT_PREFIX}/archive/observed"
 ERA5_PREFIX = f"{OBJECT_PREFIX}/era5"
+REANALYSIS_PREFIX = f"{OBJECT_PREFIX}/reanalysis/gam-era5"
 ECMWF_PREFIX = f"{OBJECT_PREFIX}/ecmwf"
 FORECAST_PREFIX = f"{OBJECT_PREFIX}/forecast"
 UKMO_PVOL_CATALOG_URL = f"{DEFAULT_PUBLIC_BASE_URL}/ukmo-nimrod/catalog/pvol/catalog.json"
@@ -75,6 +76,7 @@ ERA5_SINGLE_LEVEL_VARIABLES = (
     "high_cloud_cover",
     "boundary_layer_height",
     "total_column_water_vapour",
+    "total_precipitation",
 )
 
 ERA5_PRESSURE_LEVEL_VARIABLES = (

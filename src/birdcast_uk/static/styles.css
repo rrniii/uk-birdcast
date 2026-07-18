@@ -44,6 +44,24 @@ h2 { margin-bottom: 10px; font-size: 16px; }
 main { min-height: calc(100vh - 126px); }
 .explorer { background: #f7f9f7; }
 
+.view-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 28px;
+  background: #fff;
+  border-bottom: 1px solid #d2dad4;
+}
+.view-tabs button {
+  min-height: 43px;
+  padding: 0 15px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: #66736b;
+  cursor: pointer;
+}
+.view-tabs button.active { border-bottom-color: #1d6b58; color: #19241f; font-weight: 700; }
+
 .control-bar {
   display: flex;
   align-items: end;
@@ -96,6 +114,13 @@ input[type="date"], select {
 }
 .segmented button:last-child { border-right: 0; }
 .segmented button.active { background: #1d6b58; color: #fff; }
+.hour-control { display: flex; align-items: center; gap: 8px; min-height: 34px; }
+.hour-control input { width: 130px; accent-color: #1d6b58; }
+.hour-control output { min-width: 38px; color: #33453c; font-size: 12px; font-variant-numeric: tabular-nums; }
+.icon-button { width: 34px; min-width: 34px; height: 34px; border: 1px solid #c5cec8; border-radius: 5px; background: #fff; cursor: pointer; }
+.icon-button.active { background: #1d6b58; border-color: #1d6b58; color: #fff; }
+.check-control { display: flex !important; grid-auto-flow: column; align-items: center; gap: 6px !important; min-height: 34px; color: #4d5d54; font-size: 12px; }
+.check-control input { width: 16px; height: 16px; accent-color: #1d6b58; }
 
 .map-layout {
   display: grid;
@@ -242,6 +267,7 @@ footer {
 
 @media (max-width: 900px) {
   header { padding: 14px 16px 10px; }
+  .view-tabs { padding: 0 16px; }
   h1 { font-size: 27px; }
   .control-bar { gap: 12px; padding: 10px 16px; }
   .map-layout { grid-template-columns: 1fr; }

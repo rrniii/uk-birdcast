@@ -17,11 +17,20 @@
 
     <main>
       <section class="explorer" aria-labelledby="mapTitle">
+        <nav class="view-tabs" aria-label="BirdCast view">
+          <button type="button" class="active" data-view="observed">Radar observations</button>
+          <button type="button" data-view="modelled">Modelled flow</button>
+        </nav>
         <div class="control-bar">
           <label>
             <span>Date</span>
             <input id="dateInput" type="date">
           </label>
+          <label class="model-control" hidden>
+            <span>UTC hour</span>
+            <div class="hour-control"><input id="hourInput" type="range" min="0" max="23" value="0"><output id="hourValue">00:00</output></div>
+          </label>
+          <button id="playButton" class="icon-button model-control" type="button" title="Play hourly animation" hidden aria-label="Play hourly animation">▶</button>
           <fieldset>
             <legend>Radar pulse</legend>
             <div class="segmented" id="pulseControl">
@@ -29,7 +38,7 @@
               <button type="button" data-value="sp">SP</button>
             </div>
           </fieldset>
-          <fieldset>
+          <fieldset class="observed-control">
             <legend>Solar period</legend>
             <div class="segmented" id="periodControl">
               <button type="button" class="active" data-value="night">Night</button>
@@ -37,7 +46,7 @@
               <button type="button" data-value="day">Day</button>
             </div>
           </fieldset>
-          <label>
+          <label class="observed-control">
             <span>Map variable</span>
             <select id="metricSelect">
               <option value="vid">VID passage</option>
@@ -45,6 +54,15 @@
               <option value="speed_ms">Ground speed</option>
             </select>
           </label>
+          <fieldset class="model-control" hidden>
+            <legend>Map variable</legend>
+            <div class="segmented" id="modelMetricControl">
+              <button type="button" class="active" data-value="mtr_birds_km_h">MTR</button>
+              <button type="button" data-value="vid_birds_per_km2">VID</button>
+            </div>
+          </fieldset>
+          <label class="check-control model-control" hidden><input id="arrowsToggle" type="checkbox" checked><span>Bird vectors</span></label>
+          <label class="check-control model-control" hidden><input id="uncertaintyToggle" type="checkbox"><span>Uncertainty</span></label>
         </div>
 
         <div class="map-layout">
@@ -74,7 +92,7 @@
               <dl id="statusList"></dl>
             </section>
             <section>
-              <h2>Reporting radars</h2>
+              <h2 id="radarHeading">Reporting radars</h2>
               <div id="radarList" class="radar-list"></div>
             </section>
             <section>
@@ -85,7 +103,7 @@
         </div>
       </section>
 
-      <section class="plots" aria-labelledby="plotsTitle">
+      <section id="plotsSection" class="plots" aria-labelledby="plotsTitle">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Archive-scale summaries</p>

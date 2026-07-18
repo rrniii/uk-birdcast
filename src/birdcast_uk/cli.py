@@ -28,6 +28,7 @@ from .joined import join_observed_to_era5
 from .observed import build_observed_products
 from .publication import build_publication_plan, write_sync_commands
 from .radars import radars_from_pvol_catalog, write_radars
+from .reanalysis import build_prediction_frames, compare_models, prepare_training_table, publish_reanalysis, write_model_spec
 from .static_artifacts import build_static_artifacts, install_static_site
 from .vpts import build_catalog_inventory, validate_manifest
 
@@ -218,6 +219,53 @@ def cmd_bto_validate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_reanalysis_prepare(args: argparse.Namespace) -> int:
+    result = prepare_training_table(
+        joined_features=Path(args.joined_features),
+        output=Path(args.output),
+        window_days=args.window_days,
+        min_profiles_per_hour=args.min_profiles_per_hour,
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_reanalysis_spec(args: argparse.Namespace) -> int:
+    result = write_model_spec(Path(args.output), table=Path(args.table), model_family=args.model_family)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_reanalysis_compare(args: argparse.Namespace) -> int:
+    result = compare_models(
+        gamm_metrics=Path(args.gamm_metrics),
+        xgboost_metrics=Path(args.xgboost_metrics),
+        output=Path(args.output),
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_reanalysis_publish(args: argparse.Namespace) -> int:
+    result = publish_reanalysis(
+        predictions=Path(args.predictions),
+        comparison=Path(args.comparison),
+        output_root=Path(args.output_root),
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_reanalysis_frames(args: argparse.Namespace) -> int:
+    result = build_prediction_frames(
+        predictions_csv=Path(args.predictions_csv),
+        output=Path(args.output),
+        model_family=args.model_family,
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
 def cmd_publish_plan(args: argparse.Namespace) -> int:
     result = build_publication_plan(Path(args.source_dir), Path(args.output), object_prefix=args.object_prefix)
     print(json.dumps({"wrote": args.output, "object_count": result["object_count"]}, indent=2, sort_keys=True))
@@ -373,6 +421,35 @@ def build_parser() -> argparse.ArgumentParser:
     features_join.add_argument("--era5-dir", required=True)
     features_join.add_argument("--output", required=True)
     features_join.set_defaults(func=cmd_join_era5)
+
+    reanalysis_parser = subparsers.add_parser("reanalysis")
+    reanalysis_sub = reanalysis_parser.add_subparsers(required=True)
+    reanalysis_prepare = reanalysis_sub.add_parser("prepare")
+    reanalysis_prepare.add_argument("--joined-features", required=True)
+    reanalysis_prepare.add_argument("--output", required=True)
+    reanalysis_prepare.add_argument("--window-days", type=int, default=365)
+    reanalysis_prepare.add_argument("--min-profiles-per-hour", type=int, default=3)
+    reanalysis_prepare.set_defaults(func=cmd_reanalysis_prepare)
+    reanalysis_spec = reanalysis_sub.add_parser("spec")
+    reanalysis_spec.add_argument("--table", required=True)
+    reanalysis_spec.add_argument("--model-family", choices=["gamm", "xgboost"], required=True)
+    reanalysis_spec.add_argument("--output", required=True)
+    reanalysis_spec.set_defaults(func=cmd_reanalysis_spec)
+    reanalysis_compare = reanalysis_sub.add_parser("compare")
+    reanalysis_compare.add_argument("--gamm-metrics", required=True)
+    reanalysis_compare.add_argument("--xgboost-metrics", required=True)
+    reanalysis_compare.add_argument("--output", required=True)
+    reanalysis_compare.set_defaults(func=cmd_reanalysis_compare)
+    reanalysis_publish = reanalysis_sub.add_parser("publish")
+    reanalysis_publish.add_argument("--predictions", required=True)
+    reanalysis_publish.add_argument("--comparison", required=True)
+    reanalysis_publish.add_argument("--output-root", required=True)
+    reanalysis_publish.set_defaults(func=cmd_reanalysis_publish)
+    reanalysis_frames = reanalysis_sub.add_parser("frames")
+    reanalysis_frames.add_argument("--predictions-csv", required=True)
+    reanalysis_frames.add_argument("--model-family", choices=["gamm", "xgboost"], required=True)
+    reanalysis_frames.add_argument("--output", required=True)
+    reanalysis_frames.set_defaults(func=cmd_reanalysis_frames)
 
     bto_parser = subparsers.add_parser("bto")
     bto_sub = bto_parser.add_subparsers(required=True)

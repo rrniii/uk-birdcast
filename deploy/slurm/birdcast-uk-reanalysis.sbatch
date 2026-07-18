@@ -1,0 +1,40 @@
+#!/bin/bash
+#SBATCH --job-name=birdcast-uk-era5
+#SBATCH --time=12:00:00
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=48G
+#SBATCH --output=logs/birdcast-uk-reanalysis-%j.out
+#SBATCH --error=logs/birdcast-uk-reanalysis-%j.err
+
+set -euo pipefail
+
+: "${BIRDCAST_UK_ROOT:?Set the standalone repository path}"
+: "${BIRDCAST_UK_ARTIFACT_ROOT:?Set the published artifact root}"
+: "${BIRDCAST_UK_MODEL_FEATURES:?Set the joined hourly VPTS/ERA5 source}"
+: "${BIRDCAST_UK_ERA5_GRID_TABLE:?Set the hourly national ERA5 grid CSV with support scores}"
+: "${BIRDCAST_UK_GAMM_CONTAINER:?Set the Apptainer GAMM image path}"
+
+run_dir="${BIRDCAST_UK_ARTIFACT_ROOT}/reanalysis/run-$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir -p "$run_dir" "${BIRDCAST_UK_ARTIFACT_ROOT}/logs"
+
+birdcast-uk reanalysis prepare --joined-features "$BIRDCAST_UK_MODEL_FEATURES" --output "$run_dir/training.json"
+birdcast-uk reanalysis spec --table "$run_dir/training.json" --model-family gamm --output "$run_dir/gamm-spec.json"
+birdcast-uk reanalysis spec --table "$run_dir/training.json" --model-family xgboost --output "$run_dir/xgboost-spec.json"
+
+apptainer exec "$BIRDCAST_UK_GAMM_CONTAINER" Rscript "$BIRDCAST_UK_ROOT/scripts/fit_gamm.R" "$run_dir/gamm-spec.json" "$run_dir/gamm" "$BIRDCAST_UK_ERA5_GRID_TABLE"
+apptainer exec "$BIRDCAST_UK_GAMM_CONTAINER" python3 "$BIRDCAST_UK_ROOT/scripts/fit_xgboost.py" "$run_dir/xgboost-spec.json" "$run_dir/xgboost" "$BIRDCAST_UK_ERA5_GRID_TABLE"
+
+birdcast-uk reanalysis compare --gamm-metrics "$run_dir/gamm/metrics.json" --xgboost-metrics "$run_dir/xgboost/metrics.json" --output "$run_dir/model-selection.json"
+
+selected="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["selected_model_family"])' "$run_dir/model-selection.json")"
+if [ "$selected" = gamm ]; then
+  predictions="$run_dir/gamm/predictions_long.csv"
+else
+  first_prediction="$(find "$run_dir/xgboost" -maxdepth 1 -name 'prediction_*.csv' -print | sort | head -1)"
+  [ -n "$first_prediction" ]
+  head -1 "$first_prediction" > "$run_dir/xgboost/predictions_long.csv"
+  for prediction in "$run_dir"/xgboost/prediction_*.csv; do tail -n +2 "$prediction" >> "$run_dir/xgboost/predictions_long.csv"; done
+  predictions="$run_dir/xgboost/predictions_long.csv"
+fi
+birdcast-uk reanalysis frames --predictions-csv "$predictions" --model-family "$selected" --output "$run_dir/predictions.json"
+birdcast-uk reanalysis publish --predictions "$run_dir/predictions.json" --comparison "$run_dir/model-selection.json" --output-root "$BIRDCAST_UK_ARTIFACT_ROOT"
