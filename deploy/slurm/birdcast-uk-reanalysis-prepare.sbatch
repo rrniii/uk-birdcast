@@ -8,4 +8,5 @@
 set -euo pipefail
 : "${BIRDCAST_UK_MODEL_FEATURES:?Set the joined hourly VPTS/ERA5 source}"
 : "${BIRDCAST_UK_REANALYSIS_TRAINING_TABLE:?Set the rolling model table path}"
-birdcast-uk reanalysis prepare --joined-features "$BIRDCAST_UK_MODEL_FEATURES" --output "$BIRDCAST_UK_REANALYSIS_TRAINING_TABLE"
+: "${BIRDCAST_UK_PYTHON:?Set the project Python executable}"
+"$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli reanalysis prepare --joined-features "$BIRDCAST_UK_MODEL_FEATURES" --output "$BIRDCAST_UK_REANALYSIS_TRAINING_TABLE"
