@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 
 from birdcast_uk.reanalysis import build_prediction_frames, compare_models, prepare_training_table, publish_reanalysis, write_model_spec
+from birdcast_uk.era5 import _support_score
+from birdcast_uk.radars import BirdcastRadar
 
 
 def _joined_rows() -> list[dict[str, object]]:
@@ -118,3 +120,14 @@ def test_frames_require_support_and_merge_all_model_targets(tmp_path: Path) -> N
 
     assert result["frame_count"] == 1
     assert payload["frames"][0]["cells"][0]["support"] == 0.8
+
+
+def test_grid_support_penalises_distance_and_out_of_range_weather() -> None:
+    radars = [BirdcastRadar("chenies", "05", "Chenies", latitude=51.6894, longitude=-0.5303)]
+    ranges = {"temperature_850_k": (275.0, 285.0)}
+    nearby = _support_score(51.7, -0.5, {"temperature_850_k": 280.0}, radars, ranges)
+    distant = _support_score(60.5, -10.0, {"temperature_850_k": 280.0}, radars, ranges)
+    novel = _support_score(51.7, -0.5, {"temperature_850_k": 310.0}, radars, ranges)
+
+    assert nearby > distant
+    assert nearby > novel

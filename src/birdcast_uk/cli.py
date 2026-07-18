@@ -20,7 +20,7 @@ from .config import (
     VPTS_MAX_CATALOG_AGE_HOURS,
     VPTS_MAX_INCREMENT_DAYS,
 )
-from .era5 import build_day, download_request, extract_site_features, extract_zip_archive, write_request
+from .era5 import build_day, download_request, extract_grid_features, extract_site_features, extract_zip_archive, write_request
 from .ecmwf import archive_cycle
 from .forecast import build_forecast
 from .historical import NATURAL_EARTH_10M_COUNTRIES_URL, build_historical_products
@@ -84,6 +84,18 @@ def cmd_era5_features(args: argparse.Namespace) -> int:
         single_levels=Path(args.single_levels) if args.single_levels else None,
         pressure_levels=Path(args.pressure_levels) if args.pressure_levels else None,
         radars_path=Path(args.radars) if args.radars else None,
+        output=Path(args.output),
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_era5_grid_features(args: argparse.Namespace) -> int:
+    result = extract_grid_features(
+        single_levels=Path(args.single_levels) if args.single_levels else None,
+        pressure_levels=Path(args.pressure_levels) if args.pressure_levels else None,
+        radars_path=Path(args.radars) if args.radars else None,
+        training_table=Path(args.training_table) if args.training_table else None,
         output=Path(args.output),
     )
     print(json.dumps(result, indent=2, sort_keys=True))
@@ -335,6 +347,13 @@ def build_parser() -> argparse.ArgumentParser:
     era5_features.add_argument("--radars")
     era5_features.add_argument("--output", required=True)
     era5_features.set_defaults(func=cmd_era5_features)
+    era5_grid_features = era5_sub.add_parser("grid-features")
+    era5_grid_features.add_argument("--single-levels")
+    era5_grid_features.add_argument("--pressure-levels")
+    era5_grid_features.add_argument("--radars")
+    era5_grid_features.add_argument("--training-table")
+    era5_grid_features.add_argument("--output", required=True)
+    era5_grid_features.set_defaults(func=cmd_era5_grid_features)
 
     era5_build_day = era5_sub.add_parser("build-day")
     era5_build_day.add_argument("--day", required=True)

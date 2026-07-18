@@ -9,6 +9,7 @@ from birdcast_uk.era5 import (
     EARTHKIT_BACKEND,
     _features_for_radar,
     _open_datasets,
+    _support_score,
     build_day,
     download_request,
     write_request,
@@ -123,6 +124,7 @@ def test_era5_request_declares_earthkit_backend(tmp_path: Path) -> None:
     payload = json.loads((tmp_path / "request.json").read_text(encoding="utf-8"))
     assert request.backend == EARTHKIT_BACKEND
     assert payload["backend"] == EARTHKIT_BACKEND
+    assert "total_precipitation" in payload["request"]["variable"]
 
 
 def test_era5_download_uses_earthkit_cds_source(tmp_path: Path, monkeypatch) -> None:

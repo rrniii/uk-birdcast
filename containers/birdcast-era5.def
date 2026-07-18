@@ -1,0 +1,12 @@
+Bootstrap: docker
+From: python:3.11-slim
+
+%post
+    pip install --no-cache-dir earthkit-data h5netcdf netCDF4 numpy pandas pyarrow pyproj xarray zarr
+
+%environment
+    export PYTHONPATH=/app/src:${PYTHONPATH}
+
+%labels
+    org.opencontainers.image.title UK BirdCast ERA5 batch runtime
+    org.opencontainers.image.description Earthkit ERA5 extraction runtime for JASMIN

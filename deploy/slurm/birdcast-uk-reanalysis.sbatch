@@ -13,16 +13,17 @@ set -euo pipefail
 : "${BIRDCAST_UK_MODEL_FEATURES:?Set the joined hourly VPTS/ERA5 source}"
 : "${BIRDCAST_UK_ERA5_GRID_TABLE:?Set the hourly national ERA5 grid CSV with support scores}"
 : "${BIRDCAST_UK_GAMM_CONTAINER:?Set the Apptainer GAMM image path}"
+: "${BIRDCAST_UK_REANALYSIS_TRAINING_TABLE:?Set the reusable rolling model table path}"
 
 run_dir="${BIRDCAST_UK_ARTIFACT_ROOT}/reanalysis/run-$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$run_dir" "${BIRDCAST_UK_ARTIFACT_ROOT}/logs"
+export SINGULARITY_BINDPATH="${SINGULARITY_BINDPATH:-/gws}"
 
-birdcast-uk reanalysis prepare --joined-features "$BIRDCAST_UK_MODEL_FEATURES" --output "$run_dir/training.json"
-birdcast-uk reanalysis spec --table "$run_dir/training.json" --model-family gamm --output "$run_dir/gamm-spec.json"
-birdcast-uk reanalysis spec --table "$run_dir/training.json" --model-family xgboost --output "$run_dir/xgboost-spec.json"
+birdcast-uk reanalysis spec --table "$BIRDCAST_UK_REANALYSIS_TRAINING_TABLE" --model-family gamm --output "$run_dir/gamm-spec.json"
+birdcast-uk reanalysis spec --table "$BIRDCAST_UK_REANALYSIS_TRAINING_TABLE" --model-family xgboost --output "$run_dir/xgboost-spec.json"
 
-apptainer exec "$BIRDCAST_UK_GAMM_CONTAINER" Rscript "$BIRDCAST_UK_ROOT/scripts/fit_gamm.R" "$run_dir/gamm-spec.json" "$run_dir/gamm" "$BIRDCAST_UK_ERA5_GRID_TABLE"
-apptainer exec "$BIRDCAST_UK_GAMM_CONTAINER" python3 "$BIRDCAST_UK_ROOT/scripts/fit_xgboost.py" "$run_dir/xgboost-spec.json" "$run_dir/xgboost" "$BIRDCAST_UK_ERA5_GRID_TABLE"
+singularity exec --bind "$BIRDCAST_UK_ROOT:/app" "$BIRDCAST_UK_GAMM_CONTAINER" Rscript /app/scripts/fit_gamm.R "$run_dir/gamm-spec.json" "$run_dir/gamm" "$BIRDCAST_UK_ERA5_GRID_TABLE"
+singularity exec --bind "$BIRDCAST_UK_ROOT:/app" "$BIRDCAST_UK_GAMM_CONTAINER" python3 /app/scripts/fit_xgboost.py "$run_dir/xgboost-spec.json" "$run_dir/xgboost" "$BIRDCAST_UK_ERA5_GRID_TABLE"
 
 birdcast-uk reanalysis compare --gamm-metrics "$run_dir/gamm/metrics.json" --xgboost-metrics "$run_dir/xgboost/metrics.json" --output "$run_dir/model-selection.json"
 
