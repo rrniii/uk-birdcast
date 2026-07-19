@@ -282,8 +282,26 @@ footer {
 @media (max-width: 560px) {
   header { align-items: end; }
   .badge { max-width: 115px; text-align: center; }
-  .control-bar { align-items: end; }
-  .segmented button { min-width: 54px; padding: 0 9px; }
+  .control-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 34px;
+    align-items: end;
+    gap: 10px 8px;
+    overflow-x: visible;
+  }
+  .control-bar label, .control-bar fieldset { min-width: 0; }
+  .date-control { grid-column: 1; }
+  .time-control { grid-column: 2; }
+  #playButton { grid-column: 3; }
+  .pulse-field { grid-column: 1; }
+  .metric-field { grid-column: 2 / 4; }
+  .vectors-control { grid-column: 1; }
+  .uncertainty-control { grid-column: 2 / 4; }
+  .date-control input, .metric-field select, .segmented { width: 100%; }
+  .hour-control { min-width: 0; gap: 5px; }
+  .hour-control input { min-width: 0; width: auto; flex: 1 1 auto; }
+  .hour-control output { min-width: 34px; }
+  .segmented button { min-width: 0; padding: 0 9px; flex: 1 1 0; }
   .map-heading { padding: 11px 14px; }
   .map-resolution { display: none; }
   #mapCanvas { height: 67vh; min-height: 500px; }

@@ -22,23 +22,23 @@
           <button type="button" data-view="modelled">Modelled flow</button>
         </nav>
         <div class="control-bar">
-          <label>
+          <label class="date-control">
             <span>Date</span>
             <input id="dateInput" type="date">
           </label>
-          <label class="model-control" hidden>
+          <label class="time-control model-control" hidden>
             <span>UTC hour</span>
             <div class="hour-control"><input id="hourInput" type="range" min="0" max="23" value="0"><output id="hourValue">00:00</output></div>
           </label>
           <button id="playButton" class="icon-button model-control" type="button" title="Play hourly animation" hidden aria-label="Play hourly animation">▶</button>
-          <fieldset>
+          <fieldset class="pulse-field">
             <legend>Radar pulse</legend>
             <div class="segmented" id="pulseControl">
               <button type="button" class="active" data-value="lp">LP</button>
               <button type="button" data-value="sp">SP</button>
             </div>
           </fieldset>
-          <label class="observed-control">
+          <label class="metric-field observed-control">
             <span>Map variable</span>
             <select id="metricSelect">
               <option value="vid">VID passage</option>
@@ -46,15 +46,15 @@
               <option value="speed_ms">Ground speed</option>
             </select>
           </label>
-          <fieldset class="model-control" hidden>
+          <fieldset class="metric-field model-control" hidden>
             <legend>Map variable</legend>
             <div class="segmented" id="modelMetricControl">
               <button type="button" class="active" data-value="mtr_birds_km_h">MTR</button>
               <button type="button" data-value="vid_birds_per_km2">VID</button>
             </div>
           </fieldset>
-          <label class="check-control model-control" hidden><input id="arrowsToggle" type="checkbox" checked><span>Bird vectors</span></label>
-          <label class="check-control model-control" hidden><input id="uncertaintyToggle" type="checkbox"><span>Uncertainty</span></label>
+          <label class="check-control vectors-control model-control" hidden><input id="arrowsToggle" type="checkbox" checked><span>Bird vectors</span></label>
+          <label class="check-control uncertainty-control model-control" hidden><input id="uncertaintyToggle" type="checkbox"><span>Uncertainty</span></label>
         </div>
 
         <div class="map-layout">
