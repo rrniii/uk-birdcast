@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from pathlib import Path
 import sys
 
@@ -50,6 +51,7 @@ def main() -> int:
     except ModuleNotFoundError as exc:
         raise SystemExit(f"missing JASMIN benchmark dependency: {exc.name}") from exc
     spec = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    workers = max(1, int(os.environ.get("SLURM_CPUS_PER_TASK", "1")))
     output = Path(sys.argv[2]); output.mkdir(parents=True, exist_ok=True)
     grid = pd.read_csv(sys.argv[3]) if len(sys.argv) >= 4 else None
     frame = pd.read_csv(spec["training_csv"])
@@ -79,7 +81,7 @@ def main() -> int:
             held_observed, held_predicted = [], []
             for radar in sorted(data.radar.unique()):
                 train = data.radar != radar; test = ~train
-                model = xgb.XGBRegressor(n_estimators=500, max_depth=5, learning_rate=.035, subsample=.8, colsample_bytree=.9, objective="reg:squarederror", n_jobs=1)
+                model = xgb.XGBRegressor(n_estimators=500, max_depth=5, learning_rate=.035, subsample=.8, colsample_bytree=.9, objective="reg:squarederror", n_jobs=workers)
                 model.fit(data.loc[train, predictors], y[train.to_numpy()], sample_weight=(data.loc[train, "profile_count"].clip(lower=1) if intensity else data.loc[train, "mtr_birds_km_h"].clip(lower=.01)))
                 predicted = model.predict(data.loc[test, predictors]); predicted = np.maximum(predicted, 0) ** 3 if intensity else predicted
                 held_observed.extend(data.loc[test, target]); held_predicted.extend(predicted)
@@ -88,12 +90,12 @@ def main() -> int:
             if blocked is not None:
                 train, test, cutoff = blocked
                 y_train = np.cbrt(train[target].clip(lower=0).to_numpy()) if intensity else train[target].to_numpy()
-                time_model = xgb.XGBRegressor(n_estimators=500, max_depth=5, learning_rate=.035, subsample=.8, colsample_bytree=.9, objective="reg:squarederror", n_jobs=1)
+                time_model = xgb.XGBRegressor(n_estimators=500, max_depth=5, learning_rate=.035, subsample=.8, colsample_bytree=.9, objective="reg:squarederror", n_jobs=workers)
                 time_model.fit(train[predictors], y_train, sample_weight=(train["profile_count"].clip(lower=1) if intensity else train["mtr_birds_km_h"].clip(lower=.01)))
                 time_predicted = time_model.predict(test[predictors])
                 time_predicted = np.maximum(time_predicted, 0) ** 3 if intensity else time_predicted
                 metrics.append({"pulse": pulse, "target": target, "validation": "blocked_time", "row_count": len(test), "cutoff_time_utc": cutoff, **score(test[target], time_predicted)})
-            final = xgb.XGBRegressor(n_estimators=500, max_depth=5, learning_rate=.035, subsample=.8, colsample_bytree=.9, objective="reg:squarederror", n_jobs=1)
+            final = xgb.XGBRegressor(n_estimators=500, max_depth=5, learning_rate=.035, subsample=.8, colsample_bytree=.9, objective="reg:squarederror", n_jobs=workers)
             final.fit(data[predictors], y, sample_weight=(data["profile_count"].clip(lower=1) if intensity else data["mtr_birds_km_h"].clip(lower=.01)))
             final.save_model(output / f"xgboost_{pulse}_{target}.json")
             if grid is not None:

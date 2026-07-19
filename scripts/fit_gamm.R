@@ -16,6 +16,7 @@ dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 spec <- jsonlite::fromJSON(spec_path, simplifyVector = TRUE)
 data <- utils::read.csv(spec$training_csv, check.names = FALSE)
 data$radar <- factor(data$radar)
+threads <- max(1L, as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", "1")))
 predictors <- spec$predictors
 missing_predictors <- setdiff(predictors, names(data))
 if (length(missing_predictors)) {
@@ -89,7 +90,10 @@ for (pulse in spec$pulses) {
       train <- subset[subset$radar != held_radar, , drop = FALSE]
       test <- subset[subset$radar == held_radar, , drop = FALSE]
       if (nrow(train) < 30 || !nrow(test)) next
-      model <- mgcv::bam(formula, data = train, weights = weights[subset$radar != held_radar], method = "fREML", discrete = TRUE)
+      model <- mgcv::bam(
+        formula, data = train, weights = weights[subset$radar != held_radar],
+        method = "fREML", discrete = TRUE, nthreads = threads
+      )
       # The radar random effect is excluded for spatial transfer. Give mgcv a
       # level present in the fitted data so it does not warn about the
       # intentionally held-out factor level.
@@ -112,7 +116,7 @@ for (pulse in spec$pulses) {
       time_model <- mgcv::bam(
         formula, data = blocked$train,
         weights = if (is_intensity) pmax(blocked$train$profile_count, 1) else pmax(blocked$train$mtr_birds_km_h, 0.01),
-        method = "fREML", discrete = TRUE
+        method = "fREML", discrete = TRUE, nthreads = threads
       )
       time_predicted <- as.numeric(stats::predict(time_model, newdata = blocked$test, exclude = "s(radar)"))
       if (is_intensity) time_predicted <- pmax(time_predicted, 0)^3
@@ -123,7 +127,10 @@ for (pulse in spec$pulses) {
         time_metrics
       )
     }
-    final_model <- mgcv::bam(formula, data = subset, weights = weights, method = "fREML", discrete = TRUE)
+    final_model <- mgcv::bam(
+      formula, data = subset, weights = weights,
+      method = "fREML", discrete = TRUE, nthreads = threads
+    )
     saveRDS(final_model, file.path(output_dir, sprintf("gamm_%s_%s.rds", pulse, target)))
     if (!is.null(prediction_grid)) {
       # mgcv still requires every formula variable in newdata even when the
