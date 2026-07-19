@@ -10,6 +10,7 @@
 
 set -eo pipefail
 . /etc/profile.d/modules.sh
+. /etc/profile.d/zz-modules.sh
 set -u
 : "${BIRDCAST_UK_MODEL_FEATURES:?Set the joined hourly VPTS/ERA5 source}"
 : "${BIRDCAST_UK_REANALYSIS_TRAINING_TABLE:?Set the rolling model table path}"

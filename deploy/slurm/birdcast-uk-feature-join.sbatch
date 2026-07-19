@@ -10,6 +10,7 @@
 
 set -eo pipefail
 . /etc/profile.d/modules.sh
+. /etc/profile.d/zz-modules.sh
 set -u
 
 : "${BIRDCAST_UK_PYTHON:?Set the project Python executable}"

@@ -11,6 +11,7 @@
 
 set -eo pipefail
 . /etc/profile.d/modules.sh
+. /etc/profile.d/zz-modules.sh
 set -u
 
 : "${BIRDCAST_UK_ROOT:?Set the standalone repository path}"

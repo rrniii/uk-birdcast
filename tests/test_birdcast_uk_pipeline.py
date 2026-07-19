@@ -276,7 +276,9 @@ def test_slurm_scripts_initialise_jasmin_modules() -> None:
     for script in scripts_using_modules:
         content = script.read_text(encoding="utf-8")
         assert ". /etc/profile.d/modules.sh" in content, script.name
-        assert content.index(". /etc/profile.d/modules.sh") < content.index("set -u")
+        assert ". /etc/profile.d/zz-modules.sh" in content, script.name
+        assert content.index(". /etc/profile.d/modules.sh") < content.index(". /etc/profile.d/zz-modules.sh")
+        assert content.index(". /etc/profile.d/zz-modules.sh") < content.index("set -u")
         assert content.index(". /etc/profile.d/modules.sh") < content.index("module load ")
 
 
