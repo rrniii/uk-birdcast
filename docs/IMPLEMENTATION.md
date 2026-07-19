@@ -76,12 +76,13 @@ cloud cover, boundary-layer height, and hourly precipitation. Projected
 easting and northing are the only non-weather predictors. The pipeline fails
 instead of silently fitting a reduced predictor set.
 
-The annual backfill uses a bounded Slurm array with eight workers. Every worker
-requests one UTC day through Earthkit and writes independently named pressure,
-single-level, and radar-site feature artifacts. The reconciliation job checks
-the exact 365-day inventory and retries missing or incomplete days before the
-join can start. This limit keeps CDS concurrency controlled while allowing
-JASMIN to process completed requests in parallel.
+The annual backfill uses a bounded Slurm array with two workers and one Earthkit
+request per calendar-month segment. Each response is split atomically into
+independently named daily pressure and single-level files before radar-site
+features are extracted. The reconciliation job validates both predictor
+families in every radar-hour across the exact 365-day inventory and retries
+missing or incomplete days before the join can start. Monthly requests follow
+ECMWF guidance and avoid hundreds of independent CDS queue transactions.
 
 The GAMB2LE ERA5 flow is not an input to this product. Its live model-evaluation
 archive currently contains only the Iceland campaign day 2026-07-06 and has a

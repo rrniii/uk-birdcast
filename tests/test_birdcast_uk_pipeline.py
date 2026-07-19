@@ -11,8 +11,10 @@ from birdcast_uk.era5 import (
     _open_datasets,
     _support_score,
     build_day,
+    build_period_request,
     cds_readiness,
     download_request,
+    split_period_file,
     validate_day,
     write_request,
 )
@@ -127,6 +129,66 @@ def test_era5_request_declares_earthkit_backend(tmp_path: Path) -> None:
     assert request.backend == EARTHKIT_BACKEND
     assert payload["backend"] == EARTHKIT_BACKEND
     assert "total_precipitation" in payload["request"]["variable"]
+
+
+def test_era5_period_request_contains_each_day_in_one_month(tmp_path: Path) -> None:
+    request = build_period_request(
+        "2026-06-28",
+        "2026-06-30",
+        "single-levels",
+        tmp_path / "period.nc",
+    )
+
+    assert request.request["year"] == ["2026"]
+    assert request.request["month"] == ["06"]
+    assert request.request["day"] == ["28", "29", "30"]
+
+
+def test_era5_period_request_rejects_cross_month_range(tmp_path: Path) -> None:
+    try:
+        build_period_request(
+            "2026-06-30",
+            "2026-07-01",
+            "single-levels",
+            tmp_path / "period.nc",
+        )
+    except ValueError as exc:
+        assert "calendar month" in str(exc)
+    else:
+        raise AssertionError("cross-month ERA5 requests must be partitioned")
+
+
+def test_era5_period_split_writes_atomic_daily_files(tmp_path: Path, monkeypatch) -> None:
+    import numpy as np
+    import xarray as xr
+
+    times = np.arange(
+        np.datetime64("2026-07-01T00:00"),
+        np.datetime64("2026-07-03T00:00"),
+        np.timedelta64(1, "h"),
+    )
+    dataset = xr.Dataset(
+        {"t2m": (("valid_time", "latitude", "longitude"), np.ones((48, 1, 1)))},
+        coords={"valid_time": times, "latitude": [51.5], "longitude": [-0.5]},
+    )
+    monkeypatch.setattr("birdcast_uk.era5._open_datasets", lambda *paths: [dataset])
+
+    outputs = split_period_file(
+        source=tmp_path / "period.nc",
+        kind="single-levels",
+        start_day="2026-07-01",
+        end_day="2026-07-02",
+        raw_dir=tmp_path / "raw",
+    )
+
+    assert [Path(path).name for path in outputs] == [
+        "era5_single_levels_20260701_uk.nc",
+        "era5_single_levels_20260702_uk.nc",
+    ]
+    for path in outputs:
+        with xr.open_dataset(path) as daily:
+            assert daily.sizes["valid_time"] == 24
+    assert not list((tmp_path / "raw").glob("*.partial"))
 
 
 def test_era5_download_uses_earthkit_cds_source(tmp_path: Path, monkeypatch) -> None:

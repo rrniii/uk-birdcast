@@ -11,7 +11,7 @@ cd "$BIRDCAST_UK_ROOT"
 
 inventory="$(sbatch --parsable deploy/slurm/birdcast-uk-vpts-historical-inventory.sbatch)"
 hourly="$(sbatch --parsable --dependency="afterok:${inventory}" deploy/slurm/birdcast-uk-vpts-hourly.sbatch)"
-era5="$(sbatch --parsable --dependency="afterok:${inventory}" deploy/slurm/birdcast-uk-era5-backfill.sbatch)"
+era5="$(sbatch --parsable --dependency="afterok:${inventory}" deploy/slurm/birdcast-uk-era5-period-backfill.sbatch)"
 era5_reconciled="$(sbatch --parsable --dependency="afterany:${era5}" deploy/slurm/birdcast-uk-era5-reconcile.sbatch)"
 joined="$(sbatch --parsable --dependency="afterok:${hourly}:${era5_reconciled}" deploy/slurm/birdcast-uk-feature-join.sbatch)"
 prepared="$(sbatch --parsable --dependency="afterok:${joined}" deploy/slurm/birdcast-uk-reanalysis-prepare.sbatch)"

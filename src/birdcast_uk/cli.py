@@ -20,7 +20,7 @@ from .config import (
     VPTS_MAX_CATALOG_AGE_HOURS,
     VPTS_MAX_INCREMENT_DAYS,
 )
-from .era5 import build_day, cds_readiness, download_request, extract_grid_features, extract_site_features, extract_zip_archive, validate_day, write_request
+from .era5 import build_day, build_period, cds_readiness, download_request, extract_grid_features, extract_site_features, extract_zip_archive, validate_day, write_request
 from .ecmwf import archive_cycle
 from .forecast import build_forecast
 from .historical import NATURAL_EARTH_10M_COUNTRIES_URL, build_historical_products, write_boundary
@@ -127,6 +127,20 @@ def cmd_era5_validate_day(args: argparse.Namespace) -> int:
         day=args.day,
         raw_dir=Path(args.raw_dir),
         feature_output=Path(args.feature_output),
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0 if result["ok"] else 1
+
+
+def cmd_era5_build_period(args: argparse.Namespace) -> int:
+    result = build_period(
+        start_day=args.start_day,
+        end_day=args.end_day,
+        raw_dir=Path(args.raw_dir),
+        feature_dir=Path(args.feature_dir),
+        radars_path=Path(args.radars) if args.radars else None,
+        download=args.download,
+        overwrite=args.overwrite,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0 if result["ok"] else 1
@@ -447,6 +461,15 @@ def build_parser() -> argparse.ArgumentParser:
     era5_validate_day.add_argument("--raw-dir", required=True)
     era5_validate_day.add_argument("--feature-output", required=True)
     era5_validate_day.set_defaults(func=cmd_era5_validate_day)
+    era5_build_period = era5_sub.add_parser("build-period")
+    era5_build_period.add_argument("--start-day", required=True)
+    era5_build_period.add_argument("--end-day", required=True)
+    era5_build_period.add_argument("--raw-dir", required=True)
+    era5_build_period.add_argument("--feature-dir", required=True)
+    era5_build_period.add_argument("--radars")
+    era5_build_period.add_argument("--download", action="store_true")
+    era5_build_period.add_argument("--overwrite", action="store_true")
+    era5_build_period.set_defaults(func=cmd_era5_build_period)
 
     ecmwf_parser = subparsers.add_parser("ecmwf")
     ecmwf_sub = ecmwf_parser.add_subparsers(required=True)

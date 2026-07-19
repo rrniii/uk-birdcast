@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import date
+from datetime import date, timedelta
 from importlib.metadata import PackageNotFoundError, version
 import json
 import os
@@ -38,14 +38,32 @@ class Era5Request:
 
 
 def build_request(day: str, kind: str, output_file: Path, area: dict[str, float] | None = None) -> Era5Request:
-    selected = date.fromisoformat(day)
+    return build_period_request(day, day, kind, output_file, area=area)
+
+
+def build_period_request(
+    start_day: str,
+    end_day: str,
+    kind: str,
+    output_file: Path,
+    area: dict[str, float] | None = None,
+) -> Era5Request:
+    start = date.fromisoformat(start_day)
+    end = date.fromisoformat(end_day)
+    if end < start:
+        raise ValueError("end_day must not precede start_day")
+    if (start.year, start.month) != (end.year, end.month):
+        raise ValueError("one ERA5 period request must remain within one calendar month")
     domain = area or UK_ERA5_AREA
     base = {
         "product_type": ["reanalysis"],
         "variable": list(ERA5_SINGLE_LEVEL_VARIABLES if kind == "single-levels" else ERA5_PRESSURE_LEVEL_VARIABLES),
-        "year": [f"{selected.year:04d}"],
-        "month": [f"{selected.month:02d}"],
-        "day": [f"{selected.day:02d}"],
+        "year": [f"{start.year:04d}"],
+        "month": [f"{start.month:02d}"],
+        "day": [
+            f"{(start + timedelta(days=offset)).day:02d}"
+            for offset in range((end - start).days + 1)
+        ],
         "time": [f"{hour:02d}:00" for hour in range(24)],
         "data_format": "netcdf",
         "download_format": "unarchived",
@@ -63,6 +81,25 @@ def build_request(day: str, kind: str, output_file: Path, area: dict[str, float]
 
 def write_request(day: str, kind: str, output_file: Path, request_json: Path, area: dict[str, float] | None = None) -> Era5Request:
     request = build_request(day, kind, output_file, area=area)
+    write_json(request_json, request.to_dict())
+    return request
+
+
+def write_period_request(
+    start_day: str,
+    end_day: str,
+    kind: str,
+    output_file: Path,
+    request_json: Path,
+    area: dict[str, float] | None = None,
+) -> Era5Request:
+    request = build_period_request(
+        start_day,
+        end_day,
+        kind,
+        output_file,
+        area=area,
+    )
     write_json(request_json, request.to_dict())
     return request
 
@@ -386,6 +423,146 @@ def validate_day(
         "incomplete_radar_hour_count": len(incomplete),
         "errors": errors,
     }
+
+
+def split_period_file(
+    *,
+    source: Path,
+    kind: str,
+    start_day: str,
+    end_day: str,
+    raw_dir: Path,
+    overwrite: bool = False,
+) -> list[str]:
+    """Split one calendar-month ERA5 response into atomic daily NetCDF files."""
+
+    if kind not in {"single-levels", "pressure-levels"}:
+        raise ValueError("kind must be single-levels or pressure-levels")
+    start = date.fromisoformat(start_day)
+    end = date.fromisoformat(end_day)
+    if end < start:
+        raise ValueError("end_day must not precede start_day")
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    datasets = _open_datasets(source)
+    if len(datasets) != 1:
+        raise ValueError(f"expected one ERA5 dataset in {source}")
+    dataset = datasets[0]
+    time_name = "valid_time" if "valid_time" in dataset.coords else "time"
+    if time_name not in dataset.coords:
+        dataset.close()
+        raise ValueError(f"ERA5 period has no time coordinate: {source}")
+    day_indices: dict[str, list[int]] = {}
+    for index, value in enumerate(dataset[time_name].values):
+        day_indices.setdefault(str(value)[:10], []).append(index)
+    outputs: list[str] = []
+    try:
+        selected = start
+        while selected <= end:
+            day_text = selected.isoformat()
+            indices = day_indices.get(day_text, [])
+            if len(indices) != 24:
+                raise ValueError(
+                    f"ERA5 period has {len(indices)} hourly records for {day_text}; expected 24"
+                )
+            stamp = selected.strftime("%Y%m%d")
+            output = raw_dir / f"era5_{kind.replace('-', '_')}_{stamp}_uk.nc"
+            if output.is_file() and output.stat().st_size > 0 and not overwrite:
+                outputs.append(str(output))
+                selected += timedelta(days=1)
+                continue
+            temporary = output.with_suffix(output.suffix + ".partial")
+            daily = dataset.isel({time_name: indices})
+            daily.to_netcdf(temporary)
+            temporary.replace(output)
+            outputs.append(str(output))
+            selected += timedelta(days=1)
+    finally:
+        dataset.close()
+    return outputs
+
+
+def build_period(
+    *,
+    start_day: str,
+    end_day: str,
+    raw_dir: Path,
+    feature_dir: Path,
+    radars_path: Path | None,
+    download: bool = False,
+    overwrite: bool = False,
+) -> dict[str, object]:
+    """Download one monthly period, retain daily files, and build daily features."""
+
+    start = date.fromisoformat(start_day)
+    end = date.fromisoformat(end_day)
+    if (start.year, start.month) != (end.year, end.month):
+        raise ValueError("one ERA5 build period must remain within one calendar month")
+    period_dir = raw_dir / "periods"
+    period_dir.mkdir(parents=True, exist_ok=True)
+    feature_dir.mkdir(parents=True, exist_ok=True)
+    period_stamp = f"{start:%Y%m%d}_{end:%Y%m%d}"
+    requests: dict[str, str] = {}
+    downloads: list[dict[str, object]] = []
+    period_files: dict[str, Path] = {}
+    for kind in ("pressure-levels", "single-levels"):
+        stem = kind.replace("-", "_")
+        output = period_dir / f"era5_{stem}_{period_stamp}_uk.nc"
+        request_json = period_dir / f"era5_{stem}_{period_stamp}_request.json"
+        write_period_request(start_day, end_day, kind, output, request_json)
+        requests[kind] = str(request_json)
+        period_files[kind] = output
+        if download:
+            downloads.append(download_request(request_json, overwrite=overwrite))
+
+    split_files: dict[str, list[str]] = {}
+    for kind, source in period_files.items():
+        if not source.is_file():
+            continue
+        split_files[kind] = split_period_file(
+            source=source,
+            kind=kind,
+            start_day=start_day,
+            end_day=end_day,
+            raw_dir=raw_dir,
+            overwrite=overwrite,
+        )
+
+    validations = []
+    selected = start
+    while selected <= end:
+        stamp = selected.strftime("%Y%m%d")
+        feature_output = feature_dir / f"era5_site_features_{stamp}.json"
+        extract_site_features(
+            single_levels=raw_dir / f"era5_single_levels_{stamp}_uk.nc",
+            pressure_levels=raw_dir / f"era5_pressure_levels_{stamp}_uk.nc",
+            radars_path=radars_path,
+            output=feature_output,
+        )
+        validation = validate_day(
+            day=selected.isoformat(),
+            raw_dir=raw_dir,
+            feature_output=feature_output,
+        )
+        validations.append(validation)
+        if not validation["ok"]:
+            raise ValueError("; ".join(str(error) for error in validation["errors"]))
+        selected += timedelta(days=1)
+
+    status = {
+        "ok": True,
+        "backend": EARTHKIT_BACKEND,
+        "backend_version": _earthkit_version(),
+        "start_day": start_day,
+        "end_day": end_day,
+        "generated_at_utc": utc_now(),
+        "download_requested": download,
+        "requests": requests,
+        "downloads": downloads,
+        "split_files": split_files,
+        "validated_day_count": len(validations),
+    }
+    write_json(period_dir / f"era5_{period_stamp}_build-status.json", status)
+    return status
 
 
 def _load_boundary_polygons(path: Path) -> list[list[list[tuple[float, float]]]]:
