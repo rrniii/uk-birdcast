@@ -252,6 +252,18 @@ def test_cds_readiness_rejects_legacy_endpoint_and_uid_key(tmp_path: Path, monke
     assert any("CDS URL must be" in note for note in result["notes"])
 
 
+def test_historical_reanalysis_submission_preflights_cds_credentials() -> None:
+    script = (
+        Path(__file__).parents[1]
+        / "deploy"
+        / "slurm"
+        / "submit-historical-reanalysis.sh"
+    ).read_text(encoding="utf-8")
+
+    assert '"$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli era5 readiness' in script
+    assert script.index("era5 readiness") < script.index('inventory="$(sbatch')
+
+
 def _write_json(path: Path, payload: dict[str, object]) -> Path:
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path

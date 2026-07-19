@@ -4,7 +4,10 @@
 set -euo pipefail
 
 : "${BIRDCAST_UK_ROOT:?Set the standalone repository path}"
+: "${BIRDCAST_UK_PYTHON:?Set the project Python executable}"
 cd "$BIRDCAST_UK_ROOT"
+
+"$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli era5 readiness
 
 inventory="$(sbatch --parsable deploy/slurm/birdcast-uk-vpts-historical-inventory.sbatch)"
 hourly="$(sbatch --parsable --dependency="afterok:${inventory}" deploy/slurm/birdcast-uk-vpts-hourly.sbatch)"
