@@ -1,0 +1,26 @@
+#!/bin/bash
+#SBATCH --job-name=birdcast-uk-vpts-archive
+#SBATCH --time=02:00:00
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=4G
+#SBATCH --output=logs/birdcast-uk-vpts-archive-%j.out
+#SBATCH --error=logs/birdcast-uk-vpts-archive-%j.err
+
+set -euo pipefail
+
+: "${BIRDCAST_UK_PYTHON:?Set the project Python executable}"
+: "${BIRDCAST_UK_RADARS_FILE:?Set the radar metadata path}"
+: "${BIRDCAST_UK_VPTS_ARCHIVE_INVENTORY:?Set the historical inventory path}"
+: "${BIRDCAST_UK_VPTS_CATALOG_URL:?Set the VPTS catalogue URL}"
+: "${BIRDCAST_UK_PUBLIC_BASE_URL:?Set the public Object Store base URL}"
+: "${BIRDCAST_UK_OBJECT_STORE_BUCKET:?Set the Object Store bucket}"
+
+module load jaspy/3.12/v20250704
+mkdir -p "$(dirname "$BIRDCAST_UK_VPTS_ARCHIVE_INVENTORY")" "$(dirname "$BIRDCAST_UK_RADARS_FILE")"
+"$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli radars from-pvol-catalog --output "$BIRDCAST_UK_RADARS_FILE"
+"$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli vpts historical-inventory \
+  --output "$BIRDCAST_UK_VPTS_ARCHIVE_INVENTORY" \
+  --catalog-url "$BIRDCAST_UK_VPTS_CATALOG_URL" \
+  --public-base-url "$BIRDCAST_UK_PUBLIC_BASE_URL" \
+  --bucket "$BIRDCAST_UK_OBJECT_STORE_BUCKET" \
+  --days 365 --max-workers "${SLURM_CPUS_PER_TASK:-16}"

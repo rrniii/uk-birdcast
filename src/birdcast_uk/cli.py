@@ -25,12 +25,12 @@ from .ecmwf import archive_cycle
 from .forecast import build_forecast
 from .historical import NATURAL_EARTH_10M_COUNTRIES_URL, build_historical_products
 from .joined import join_observed_to_era5
-from .observed import build_observed_products
+from .observed import build_hourly_observations, build_observed_products
 from .publication import build_publication_plan, write_sync_commands
 from .radars import radars_from_pvol_catalog, write_radars
 from .reanalysis import build_prediction_frames, compare_models, prepare_training_table, publish_reanalysis, write_model_spec
 from .static_artifacts import build_static_artifacts, install_static_site
-from .vpts import build_catalog_inventory, validate_manifest
+from .vpts import build_catalog_inventory, build_historical_inventory, validate_manifest
 
 
 def cmd_static_build(args: argparse.Namespace) -> int:
@@ -190,6 +190,34 @@ def cmd_vpts_inventory(args: argparse.Namespace) -> int:
     return 0 if payload["ok"] else 1
 
 
+def cmd_vpts_historical_inventory(args: argparse.Namespace) -> int:
+    payload = build_historical_inventory(
+        output=Path(args.output),
+        catalog_url=args.catalog_url,
+        public_base_url=args.public_base_url,
+        bucket=args.bucket,
+        days=args.days,
+        end_date=args.end_date,
+        max_workers=args.max_workers,
+        max_catalog_age_hours=args.max_catalog_age_hours,
+    )
+    print(
+        json.dumps(
+            {
+                "wrote": args.output,
+                "ok": payload["ok"],
+                "status": payload["status"],
+                "record_count": payload["record_count"],
+                "window": payload.get("window"),
+                "errors": payload.get("errors", []),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if payload["ok"] else 1
+
+
 def cmd_observed_build(args: argparse.Namespace) -> int:
     result = build_observed_products(
         input_path=Path(args.input),
@@ -201,6 +229,16 @@ def cmd_observed_build(args: argparse.Namespace) -> int:
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0 if result["ok"] else 1
+
+
+def cmd_observed_hourly(args: argparse.Namespace) -> int:
+    result = build_hourly_observations(
+        inventory_path=Path(args.input),
+        output=Path(args.output),
+        max_files=args.max_files,
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
 
 
 def cmd_join_era5(args: argparse.Namespace) -> int:
@@ -417,6 +455,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     vpts_inventory.set_defaults(func=cmd_vpts_inventory)
 
+    vpts_historical_inventory = vpts_sub.add_parser("historical-inventory")
+    vpts_historical_inventory.add_argument("--output", required=True)
+    vpts_historical_inventory.add_argument("--catalog-url", default=UKMO_VPTS_CATALOG_URL)
+    vpts_historical_inventory.add_argument("--bucket", default=DEFAULT_BUCKET)
+    vpts_historical_inventory.add_argument("--public-base-url", default=DEFAULT_PUBLIC_BASE_URL)
+    vpts_historical_inventory.add_argument("--days", type=int, default=365)
+    vpts_historical_inventory.add_argument("--end-date")
+    vpts_historical_inventory.add_argument("--max-workers", type=int, default=16)
+    vpts_historical_inventory.add_argument(
+        "--max-catalog-age-hours",
+        type=float,
+        default=VPTS_MAX_CATALOG_AGE_HOURS,
+    )
+    vpts_historical_inventory.set_defaults(func=cmd_vpts_historical_inventory)
+
     vpts_validate = vpts_sub.add_parser("validate-manifest")
     vpts_validate.add_argument("--input", required=True)
     vpts_validate.add_argument("--output")
@@ -432,6 +485,11 @@ def build_parser() -> argparse.ArgumentParser:
     observed_build.add_argument("--max-files", type=int)
     observed_build.add_argument("--cursor")
     observed_build.set_defaults(func=cmd_observed_build)
+    observed_hourly = observed_sub.add_parser("hourly")
+    observed_hourly.add_argument("--input", required=True)
+    observed_hourly.add_argument("--output", required=True)
+    observed_hourly.add_argument("--max-files", type=int)
+    observed_hourly.set_defaults(func=cmd_observed_hourly)
 
     features_parser = subparsers.add_parser("features")
     features_sub = features_parser.add_subparsers(required=True)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 from datetime import date, datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor
 import email.utils
 import json
 from pathlib import Path
@@ -302,6 +303,139 @@ def build_catalog_inventory(
     return payload
 
 
+def build_historical_inventory(
+    *,
+    output: Path,
+    catalog_url: str = UKMO_VPTS_CATALOG_URL,
+    public_base_url: str = DEFAULT_PUBLIC_BASE_URL,
+    bucket: str = DEFAULT_BUCKET,
+    days: int = 365,
+    end_date: str | None = None,
+    max_workers: int = 16,
+    max_catalog_age_hours: float = VPTS_MAX_CATALOG_AGE_HOURS,
+    now: datetime | None = None,
+    head: HeadFunction = head_public_object,
+) -> dict[str, Any]:
+    """Create an all-hour, pulse-preserving VPTS archive inventory.
+
+    This is intentionally separate from :func:`build_catalog_inventory`.
+    The latter protects the operational incremental pipeline by looking at only
+    a few days; historical ERA5 reanalysis needs a fixed rolling window.  The
+    public catalogue contains coverage rather than object-level manifests, so
+    bounded concurrent HEAD requests establish the exact, reproducible input
+    set without recursively listing the bucket.
+    """
+
+    if days < 1:
+        raise ValueError("days must be at least one")
+    if max_workers < 1:
+        raise ValueError("max_workers must be at least one")
+    checked_at = _as_utc(now or datetime.now(timezone.utc))
+    try:
+        catalog = fetch_json(catalog_url)
+        catalog_generated = _parse_datetime(catalog.get("generated_at"))
+        object_prefix = str(catalog["object_prefix"]).strip("/")
+        catalog_radars = _catalog_radars(catalog)
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError, OSError) as exc:
+        payload = _inventory_error(
+            catalog_url=catalog_url,
+            checked_at=checked_at,
+            errors=[f"malformed_catalog: {exc}"],
+        )
+        write_json(output, payload)
+        return payload
+
+    age_hours = (checked_at - catalog_generated).total_seconds() / 3600.0
+    errors: list[str] = []
+    if age_hours < -1.0:
+        errors.append("catalog_generated_in_future")
+    if age_hours > max_catalog_age_hours:
+        errors.append(f"stale_catalog: age_hours={age_hours:.2f} limit_hours={max_catalog_age_hours:.2f}")
+
+    catalog_last_days = [_parse_day(str(row["last_date"])) for row in catalog_radars]
+    latest_common_source_day = min(catalog_last_days)
+    selected_end = _parse_day(end_date) if end_date else latest_common_source_day - timedelta(days=1)
+    if selected_end > latest_common_source_day:
+        errors.append(
+            f"requested_end_after_catalog: end={_day_stamp(selected_end)} "
+            f"latest_common={_day_stamp(latest_common_source_day)}"
+        )
+    selected_start = selected_end - timedelta(days=days - 1)
+    tasks = [
+        (str(radar_record["radar"]), source_day)
+        for radar_record in catalog_radars
+        for source_day in _date_range(selected_start, selected_end)
+    ]
+
+    def select(task: tuple[str, date]) -> list[dict[str, object]]:
+        radar, source_day = task
+        return _select_pulse_records(
+            radar=radar,
+            source_day=source_day,
+            object_prefix=object_prefix,
+            public_base_url=public_base_url,
+            bucket=bucket,
+            head=head,
+            pulse_mode="both",
+        )
+
+    records: list[dict[str, object]] = []
+    missing_by_radar: dict[str, int] = {str(row["radar"]): 0 for row in catalog_radars}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for (radar, _), selected in zip(tasks, executor.map(select, tasks)):
+            if selected:
+                records.extend(selected)
+            else:
+                missing_by_radar[radar] += 1
+
+    expected_radar_count = int(catalog.get("radar_count") or len(catalog_radars))
+    if expected_radar_count != len(catalog_radars):
+        errors.append(
+            f"catalog_radar_count_mismatch: declared={expected_radar_count} records={len(catalog_radars)}"
+        )
+    record_days = {(str(row["radar"]), str(row["date"])) for row in records}
+    coverage = [
+        {
+            "radar": radar,
+            "requested_day_count": days,
+            "available_day_count": days - missing,
+            "missing_day_count": missing,
+            "coverage_fraction": round((days - missing) / days, 6),
+        }
+        for radar, missing in sorted(missing_by_radar.items())
+    ]
+    payload = {
+        "schema_version": 3,
+        "ok": not errors and bool(records),
+        "status": "ready" if not errors and records else "error",
+        "no_change": False,
+        "generated_at_utc": _format_datetime(checked_at),
+        "bucket": bucket,
+        "catalog_url": catalog_url,
+        "catalog_generated_at_utc": _format_datetime(catalog_generated),
+        "catalog_age_hours": round(age_hours, 3),
+        "max_catalog_age_hours": max_catalog_age_hours,
+        "object_prefix": object_prefix,
+        "window": {
+            "days": days,
+            "start_date": _day_stamp(selected_start),
+            "end_date": _day_stamp(selected_end),
+            "latest_common_catalog_date": _day_stamp(latest_common_source_day),
+            "complete_day_policy": "catalog latest common source date minus one day unless explicitly pinned",
+        },
+        "pulse_policy": "all_available_lp_and_sp_separate",
+        "expected_radar_count": expected_radar_count,
+        "catalog_radar_count": len(catalog_radars),
+        "record_count": len(records),
+        "record_day_count": len(record_days),
+        "records": sorted(records, key=lambda item: (str(item["radar"]), str(item["date"]), str(item["pulse"]))),
+        "radar_coverage": coverage,
+        "errors": errors,
+    }
+    write_json(output, payload)
+    return payload
+
+
 def load_vpts_rows_from_inventory(
     inventory_path: Path,
     *,
@@ -407,6 +541,30 @@ def _select_pulse_record(
     bucket: str,
     head: HeadFunction,
 ) -> dict[str, object] | None:
+    records = _select_pulse_records(
+        radar=radar,
+        source_day=source_day,
+        object_prefix=object_prefix,
+        public_base_url=public_base_url,
+        bucket=bucket,
+        head=head,
+        pulse_mode="preferred",
+    )
+    return records[0] if records else None
+
+
+def _select_pulse_records(
+    *,
+    radar: str,
+    source_day: date,
+    object_prefix: str,
+    public_base_url: str,
+    bucket: str,
+    head: HeadFunction,
+    pulse_mode: str,
+) -> list[dict[str, object]]:
+    if pulse_mode not in {"preferred", "both"}:
+        raise ValueError("pulse_mode must be preferred or both")
     candidates: dict[str, tuple[str, str, dict[str, object]]] = {}
     for pulse in ("lp", "sp"):
         stamp = _day_stamp(source_day)
@@ -415,25 +573,36 @@ def _select_pulse_record(
         metadata = head(public_url)
         if metadata is not None:
             candidates[pulse] = (key, public_url, metadata)
-    selected_pulse = "lp" if "lp" in candidates else ("sp" if "sp" in candidates else None)
-    if selected_pulse is None:
-        return None
-    key, public_url, metadata = candidates[selected_pulse]
-    return {
-        "radar": radar,
-        "date": _day_stamp(source_day),
-        "pulse": selected_pulse,
-        "available_pulses": sorted(candidates),
-        "selection_policy": VPTS_PULSE_POLICY,
-        "key": key,
-        "file_format": "csv",
-        "size": int(metadata.get("size") or 0),
-        "etag": str(metadata.get("etag") or ""),
-        "modified_time": metadata.get("modified_time"),
-        "content_type": str(metadata.get("content_type") or "text/csv"),
-        "source_uri": f"s3://{bucket}/{key}",
-        "public_url": public_url,
-    }
+    selected_pulses = (
+        [pulse for pulse in ("lp", "sp") if pulse in candidates]
+        if pulse_mode == "both"
+        else (["lp"] if "lp" in candidates else (["sp"] if "sp" in candidates else []))
+    )
+    records = []
+    for selected_pulse in selected_pulses:
+        key, public_url, metadata = candidates[selected_pulse]
+        records.append(
+            {
+                "radar": radar,
+                "date": _day_stamp(source_day),
+                "pulse": selected_pulse,
+                "available_pulses": sorted(candidates),
+                "selection_policy": (
+                    "all_available_lp_and_sp_separate"
+                    if pulse_mode == "both"
+                    else VPTS_PULSE_POLICY
+                ),
+                "key": key,
+                "file_format": "csv",
+                "size": int(metadata.get("size") or 0),
+                "etag": str(metadata.get("etag") or ""),
+                "modified_time": metadata.get("modified_time"),
+                "content_type": str(metadata.get("content_type") or "text/csv"),
+                "source_uri": f"s3://{bucket}/{key}",
+                "public_url": public_url,
+            }
+        )
+    return records
 
 
 def _load_cursor(path: Path) -> dict[str, Any]:

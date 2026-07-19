@@ -204,6 +204,76 @@ def build_observed_products(
     }
 
 
+def build_hourly_observations(
+    *,
+    inventory_path: Path,
+    output: Path,
+    max_files: int | None = None,
+    altitude_min_m: float = VPTS_ALTITUDE_MIN_M,
+    altitude_max_m: float = VPTS_ALTITUDE_MAX_M,
+) -> dict[str, object]:
+    """Build an all-hour VPTS table for ERA5 model fitting.
+
+    This intentionally does not derive, select, or exclude a solar period,
+    migration season, or phenological phase.  It processes one VPTS object at
+    a time and retains LP and SP as independent observations, so a full-year
+    archive stays bounded in memory while preserving the model contract.
+    """
+
+    inventory = _read_json(inventory_path)
+    if inventory.get("ok") is not True:
+        raise ValueError("refusing unhealthy VPTS inventory: " + "; ".join(inventory.get("errors") or []))
+    hourly_rows: list[dict[str, object]] = []
+    input_row_count = 0
+    file_count = 0
+    for batch in iter_vpts_record_batches_from_inventory(inventory_path, max_files=max_files):
+        file_count += 1
+        input_row_count += len(batch)
+        profiles = _profiles_from_rows(
+            batch,
+            altitude_min_m=altitude_min_m,
+            altitude_max_m=altitude_max_m,
+        )
+        hourly_rows.extend(_hourly_rows(profiles, include_phenology=False))
+    if not hourly_rows:
+        raise ValueError("VPTS archive produced no parseable hourly profiles")
+    hourly_rows.sort(key=lambda row: (str(row["radar"]), str(row["pulse"]), str(row["time_utc"])))
+    payload = {
+        "schema_version": "birdcast-uk-hourly-vpts-1.0",
+        "data_available": True,
+        "generated_at_utc": utc_now(),
+        "processing_version": PROCESSING_VERSION,
+        "source_inventory": str(inventory_path),
+        "window": inventory.get("window"),
+        "pulse_policy": inventory.get("pulse_policy") or VPTS_PULSE_POLICY,
+        "analysis_policy": {
+            "cadence": "UTC hourly",
+            "daylight_filter": "none",
+            "twilight_filter": "none",
+            "season_filter": "none",
+            "phenology_filter": "none",
+        },
+        "quality_policy": {
+            "altitude_min_m": altitude_min_m,
+            "altitude_max_m": altitude_max_m,
+            "rain_suspect_profiles_excluded_from_mtr_mean": True,
+        },
+        "file_count": file_count,
+        "input_row_count": input_row_count,
+        "row_count": len(hourly_rows),
+        "radar_count": len({str(row["radar"]) for row in hourly_rows}),
+        "pulse_counts": {
+            pulse: sum(str(row["pulse"]) == pulse for row in hourly_rows)
+            for pulse in ("lp", "sp")
+        },
+        "first_time_utc": min(str(row["time_utc"]) for row in hourly_rows),
+        "last_time_utc": max(str(row["time_utc"]) for row in hourly_rows),
+        "rows": hourly_rows,
+    }
+    write_json(output, payload)
+    return {key: value for key, value in payload.items() if key != "rows"}
+
+
 def _profiles_from_rows(
     rows: list[dict[str, Any]],
     *,
@@ -497,7 +567,11 @@ def _night_metrics(
     }
 
 
-def _hourly_rows(profiles: list[dict[str, Any]]) -> list[dict[str, object]]:
+def _hourly_rows(
+    profiles: list[dict[str, Any]],
+    *,
+    include_phenology: bool = True,
+) -> list[dict[str, object]]:
     """Aggregate VPTS profiles by radar, pulse mode, and UTC hour.
 
     LP and SP have different sampling characteristics.  Keeping them separate
@@ -537,28 +611,28 @@ def _hourly_rows(profiles: list[dict[str, Any]]) -> list[dict[str, object]]:
             if _finite(value.get("dominant_direction_deg"))
             and _finite(value.get("mtr_birds_km_h"))
         ]
-        rows.append(
-            {
-                "radar": radar,
-                "pulse": pulse,
-                "time_utc": _format_datetime(hour),
-                "profile_count": len(values),
-                "usable_mtr_profile_count": len(valid_mtr),
-                "mean_mtr_birds_km_h": _rounded_mean(valid_mtr),
-                "mean_vid_birds_per_km2": _rounded_mean(valid_vid),
-                "mean_ground_speed_ms": _rounded_mean(speeds),
-                "dominant_direction_deg": _weighted_circular_mean(directions, direction_weights),
-                "rain_suspect_fraction": round(
-                    sum(bool(value.get("rain_suspect")) for value in values) / len(values),
-                    6,
-                ),
-                "night_profile_fraction": round(
-                    sum(bool(value.get("night_date")) for value in values) / len(values),
-                    6,
-                ),
-                "pulse_products": [pulse],
-            }
-        )
+        row: dict[str, object] = {
+            "radar": radar,
+            "pulse": pulse,
+            "time_utc": _format_datetime(hour),
+            "profile_count": len(values),
+            "usable_mtr_profile_count": len(valid_mtr),
+            "mean_mtr_birds_km_h": _rounded_mean(valid_mtr),
+            "mean_vid_birds_per_km2": _rounded_mean(valid_vid),
+            "mean_ground_speed_ms": _rounded_mean(speeds),
+            "dominant_direction_deg": _weighted_circular_mean(directions, direction_weights),
+            "rain_suspect_fraction": round(
+                sum(bool(value.get("rain_suspect")) for value in values) / len(values),
+                6,
+            ),
+            "pulse_products": [pulse],
+        }
+        if include_phenology:
+            row["night_profile_fraction"] = round(
+                sum(bool(value.get("night_date")) for value in values) / len(values),
+                6,
+            )
+        rows.append(row)
     return rows
 
 

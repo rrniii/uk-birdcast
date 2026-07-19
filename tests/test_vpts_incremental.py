@@ -7,9 +7,10 @@ from pathlib import Path
 import pytest
 
 from birdcast_uk.joined import join_observed_to_era5
-from birdcast_uk.observed import build_observed_products
+from birdcast_uk.observed import build_hourly_observations, build_observed_products
 from birdcast_uk.vpts import (
     build_catalog_inventory,
+    build_historical_inventory,
     commit_inventory_cursor,
     load_vpts_rows_from_inventory,
 )
@@ -89,6 +90,34 @@ def test_catalog_inventory_uses_sp_only_as_fallback(tmp_path: Path) -> None:
     assert {row["pulse"] for row in result["records"]} == {"sp"}
 
 
+def test_historical_inventory_keeps_lp_and_sp_separate(tmp_path: Path) -> None:
+    catalog = _catalog(tmp_path, generated_at="2026-07-17T05:00:00Z")
+    calls: list[str] = []
+
+    def head(url: str):
+        calls.append(url)
+        return {"size": 10, "etag": Path(url).name, "content_type": "text/csv"}
+
+    result = build_historical_inventory(
+        output=tmp_path / "historical.json",
+        catalog_url=str(catalog),
+        public_base_url="https://example.invalid/bucket",
+        days=3,
+        end_date="20260713",
+        max_workers=2,
+        now=NOW,
+        head=head,
+    )
+
+    assert result["ok"] is True
+    assert result["window"]["start_date"] == "20260711"
+    assert result["window"]["end_date"] == "20260713"
+    assert result["record_count"] == 6
+    assert {row["pulse"] for row in result["records"]} == {"lp", "sp"}
+    assert all(row["selection_policy"] == "all_available_lp_and_sp_separate" for row in result["records"])
+    assert len(calls) == 6
+
+
 def test_catalog_inventory_fails_closed_for_stale_or_missing_target(
     tmp_path: Path,
 ) -> None:
@@ -144,6 +173,46 @@ def test_inventory_loader_overrides_unknown_radar_from_object_key(
     assert rows[0]["date"] == "20260714"
     assert rows[0]["pulse"] == "lp"
     assert rows[0]["source_etag"] == "abc"
+
+
+def test_hourly_observations_are_all_hour_and_without_phenology_filter(tmp_path: Path) -> None:
+    source = tmp_path / "source.csv"
+    source.write_text(
+        "radar,datetime,height,dens,ff,gap\n"
+        "UNKNOWN,2026-07-14 12:05:00,200,10,8,FALSE\n"
+        "UNKNOWN,2026-07-14 12:05:00,400,11,9,FALSE\n",
+        encoding="utf-8",
+    )
+    inventory = tmp_path / "inventory.json"
+    inventory.write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "window": {"days": 1, "start_date": "20260714", "end_date": "20260714"},
+                "pulse_policy": "all_available_lp_and_sp_separate",
+                "records": [
+                    {
+                        "radar": "chenies",
+                        "date": "20260714",
+                        "pulse": "lp",
+                        "key": "ukmo-nimrod/vpts/current_ci_le4/chenies/2026/20260714_lp_vpts.csv",
+                        "source_uri": "s3://bucket/key",
+                        "public_url": source.as_uri(),
+                        "etag": "abc",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = build_hourly_observations(inventory_path=inventory, output=tmp_path / "hourly.json")
+    payload = json.loads((tmp_path / "hourly.json").read_text(encoding="utf-8"))
+
+    assert result["row_count"] == 1
+    assert payload["analysis_policy"]["daylight_filter"] == "none"
+    assert payload["rows"][0]["time_utc"] == "2026-07-14T12:00:00Z"
+    assert "night_profile_fraction" not in payload["rows"][0]
 
 
 def test_layer_mtr_and_nightly_time_integration(tmp_path: Path) -> None:
