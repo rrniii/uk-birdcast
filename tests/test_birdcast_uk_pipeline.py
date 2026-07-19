@@ -369,6 +369,8 @@ def test_historical_reanalysis_submission_preflights_cds_credentials() -> None:
     ).read_text(encoding="utf-8")
 
     assert '"$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli era5 readiness' in script
+    assert "compgen -A variable BIRDCAST_UK_" in script
+    assert script.index("compgen -A variable BIRDCAST_UK_") < script.index('inventory="$(sbatch')
     assert script.index("era5 readiness") < script.index('inventory="$(sbatch')
     assert 'published="$(sbatch --parsable --dependency="afterok:${model}"' in script
     assert "birdcast-uk-object-store-publish.sbatch" in script

@@ -5,6 +5,13 @@ set -euo pipefail
 
 : "${BIRDCAST_UK_ROOT:?Set the standalone repository path}"
 : "${BIRDCAST_UK_PYTHON:?Set the project Python executable}"
+
+# Environment files commonly assign without `export`. Slurm receives only
+# exported values, so promote the complete BirdCast namespace before sbatch.
+while IFS= read -r variable_name; do
+  export "$variable_name"
+done < <(compgen -A variable BIRDCAST_UK_)
+
 cd "$BIRDCAST_UK_ROOT"
 
 "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli era5 readiness
