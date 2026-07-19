@@ -866,6 +866,18 @@ def _training_feature_ranges(table: Path | None) -> dict[str, tuple[float, float
     if table is None or not table.exists():
         return {}
     payload = json.loads(table.read_text(encoding="utf-8"))
+    declared = payload.get("feature_ranges") if isinstance(payload, dict) else None
+    if isinstance(declared, dict):
+        result = {}
+        for name, bounds in declared.items():
+            if not isinstance(bounds, dict):
+                continue
+            lower = _as_float(bounds.get("lower"))
+            upper = _as_float(bounds.get("upper"))
+            if lower is not None and upper is not None:
+                result[str(name)] = (lower, upper)
+        if result:
+            return result
     rows = payload.get("rows") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
         return {}

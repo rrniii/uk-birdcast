@@ -84,6 +84,8 @@ def test_prepare_table_is_pulse_separated_and_has_no_time_predictor(tmp_path: Pa
     assert table["model_time_terms"] == "none"
     assert "timestamp" not in spec["predictors"]
     assert "u_850_ms" in table["feature_columns"]
+    assert table["feature_ranges"]["u_850_ms"] == {"lower": 4.0, "upper": 4.0}
+    assert "rows" not in table
 
 
 def test_prepare_table_accepts_decimal_pressure_level_keys(tmp_path: Path) -> None:

@@ -76,6 +76,12 @@ def prepare_training_table(
         raise ValueError("no rows remain in selected rolling window")
 
     fieldnames = _fieldnames(rows)
+    feature_ranges = {
+        name: {"lower": lower, "upper": upper}
+        for name in ERA5_FEATURES
+        if (bounds := _percentile_range(rows, name)) is not None
+        for lower, upper in (bounds,)
+    }
     csv_path = output.with_suffix(".csv")
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     with csv_path.open("w", encoding="utf-8", newline="") as handle:
@@ -97,6 +103,7 @@ def prepare_training_table(
         "radar_count": len({str(row["radar"]) for row in rows}),
         "pulse_counts": {pulse: sum(row["pulse"] == pulse for row in rows) for pulse in PULSES},
         "feature_columns": [name for name in ERA5_FEATURES if name in fieldnames],
+        "feature_ranges": feature_ranges,
         "target_columns": [*INTENSITY_TARGETS, *VECTOR_TARGETS],
         "quality_policy": {
             "minimum_profiles_per_hour": min_profiles_per_hour,
@@ -104,10 +111,9 @@ def prepare_training_table(
             "missing_hours": "excluded rather than interpreted as zero",
             "era5_predictors": "complete cases for every declared ERA5 feature",
         },
-        "rows": rows,
     }
     write_json(output, result)
-    return {key: value for key, value in result.items() if key != "rows"}
+    return result
 
 
 def write_model_spec(output: Path, *, table: Path, model_family: str) -> dict[str, object]:
@@ -560,6 +566,15 @@ def _fieldnames(rows: list[dict[str, object]]) -> list[str]:
     preferred = ["radar", "pulse", "time_utc", "latitude", "longitude", "easting_m", "northing_m", *INTENSITY_TARGETS, *VECTOR_TARGETS, "profile_count", "rain_suspect_fraction", *ERA5_FEATURES]
     observed = {key for row in rows for key in row}
     return [key for key in preferred if key in observed] + sorted(observed - set(preferred))
+
+
+def _percentile_range(rows: list[dict[str, object]], name: str) -> tuple[float, float] | None:
+    values = sorted(value for row in rows if (value := _number(row.get(name))) is not None)
+    if not values:
+        return None
+    lower = values[max(0, int(len(values) * 0.01) - 1)]
+    upper = values[min(len(values) - 1, int(len(values) * 0.99))]
+    return lower, upper
 
 
 def _grid_step(values: list[float]) -> float:
