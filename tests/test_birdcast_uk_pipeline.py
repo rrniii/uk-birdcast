@@ -18,6 +18,11 @@ from birdcast_uk.era5 import (
     validate_day,
     write_request,
 )
+from birdcast_uk.config import (
+    ERA5_PRESSURE_LEVELS,
+    ERA5_PRESSURE_LEVEL_VARIABLES,
+    ERA5_SINGLE_LEVEL_VARIABLES,
+)
 from birdcast_uk.observed import build_observed_products
 from birdcast_uk.radars import BirdcastRadar, radars_from_pvol_catalog, write_radars
 from birdcast_uk.vpts import validate_manifest
@@ -129,6 +134,23 @@ def test_era5_request_declares_earthkit_backend(tmp_path: Path) -> None:
     assert request.backend == EARTHKIT_BACKEND
     assert payload["backend"] == EARTHKIT_BACKEND
     assert "total_precipitation" in payload["request"]["variable"]
+
+
+def test_era5_requests_match_the_nine_model_predictors() -> None:
+    assert ERA5_SINGLE_LEVEL_VARIABLES == (
+        "surface_pressure",
+        "mean_sea_level_pressure",
+        "total_cloud_cover",
+        "boundary_layer_height",
+        "total_precipitation",
+    )
+    assert ERA5_PRESSURE_LEVEL_VARIABLES == (
+        "temperature",
+        "relative_humidity",
+        "u_component_of_wind",
+        "v_component_of_wind",
+    )
+    assert ERA5_PRESSURE_LEVELS == ("850",)
 
 
 def test_era5_period_request_contains_each_day_in_one_month(tmp_path: Path) -> None:

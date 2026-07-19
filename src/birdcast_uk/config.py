@@ -64,53 +64,22 @@ ECMWF_OPEN_DATA_PRESSURE_PARAMETERS = ("u", "v", "t", "r", "w")
 ECMWF_OPEN_DATA_PRESSURE_LEVELS = (1000, 925, 850, 700)
 
 ERA5_SINGLE_LEVEL_VARIABLES = (
-    "2m_temperature",
-    "2m_dewpoint_temperature",
-    "10m_u_component_of_wind",
-    "10m_v_component_of_wind",
     "surface_pressure",
     "mean_sea_level_pressure",
     "total_cloud_cover",
-    "low_cloud_cover",
-    "medium_cloud_cover",
-    "high_cloud_cover",
     "boundary_layer_height",
-    "total_column_water_vapour",
     "total_precipitation",
 )
 
 ERA5_PRESSURE_LEVEL_VARIABLES = (
-    "geopotential",
     "temperature",
-    "specific_humidity",
     "relative_humidity",
     "u_component_of_wind",
     "v_component_of_wind",
-    "vertical_velocity",
-    "fraction_of_cloud_cover",
 )
 
 ERA5_PRESSURE_LEVELS = (
-    "1000",
-    "975",
-    "950",
-    "925",
-    "900",
-    "875",
     "850",
-    "800",
-    "750",
-    "700",
-    "650",
-    "600",
-    "550",
-    "500",
-    "450",
-    "400",
-    "350",
-    "300",
-    "250",
-    "200",
 )
 
 VPTS_REQUIRED_FIELDS = (

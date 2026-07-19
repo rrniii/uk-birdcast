@@ -76,6 +76,12 @@ cloud cover, boundary-layer height, and hourly precipitation. Projected
 easting and northing are the only non-weather predictors. The pipeline fails
 instead of silently fitting a reduced predictor set.
 
+The Earthkit request contains exactly those nine ERA5 fields. Pressure-level
+retrieval is limited to the four required variables at 850 hPa; unused levels
+and ancillary variables are not downloaded. This keeps every calendar-month
+request below CDS cost limits and makes acquisition provenance identical to the
+model feature contract.
+
 The annual backfill uses a bounded Slurm array with two workers and one Earthkit
 request per calendar-month segment. Each response is split atomically into
 independently named daily pressure and single-level files before radar-site
