@@ -15,6 +15,7 @@ for (pkg in c("mgcv", "jsonlite")) {
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 spec <- jsonlite::fromJSON(spec_path, simplifyVector = TRUE)
 data <- utils::read.csv(spec$training_csv, check.names = FALSE)
+data$radar <- factor(data$radar)
 predictors <- spec$predictors
 predictors <- predictors[predictors %in% names(data)]
 if (!all(c("easting_m", "northing_m") %in% predictors)) stop("projected spatial predictors are required")
@@ -47,7 +48,11 @@ score <- function(observed, predicted) {
 }
 
 fit_formula <- function(target, variables) {
-  terms <- c("s(easting_m, northing_m, bs='tp')", sprintf("s(%s, bs='tp')", variables), "s(radar, bs='re')")
+  terms <- c(
+    "s(easting_m, northing_m, bs='tp', k=10)",
+    sprintf("s(%s, bs='tp')", variables),
+    "s(radar, bs='re')"
+  )
   stats::as.formula(sprintf("response ~ %s", paste(terms, collapse = " + ")))
 }
 
