@@ -3,7 +3,7 @@
 #SBATCH --account=ncas_radar
 #SBATCH --qos=standard
 #SBATCH --partition=standard
-#SBATCH --array=0-364%4
+#SBATCH --array=0-364%8
 #SBATCH --time=03:00:00
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=12G
