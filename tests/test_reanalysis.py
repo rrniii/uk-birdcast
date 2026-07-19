@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from birdcast_uk.reanalysis import build_prediction_frames, compare_models, prepare_training_table, publish_reanalysis, write_model_spec
-from birdcast_uk.era5 import _support_score
+from birdcast_uk.era5 import _point_in_boundary, _support_score
 from birdcast_uk.radars import BirdcastRadar
 
 
@@ -152,3 +152,16 @@ def test_grid_support_penalises_distance_and_out_of_range_weather() -> None:
 
     assert nearby > distant
     assert nearby > novel
+
+
+def test_grid_boundary_mask_keeps_land_and_excludes_holes() -> None:
+    polygons = [
+        [
+            [(-2.0, 50.0), (2.0, 50.0), (2.0, 54.0), (-2.0, 54.0), (-2.0, 50.0)],
+            [(-0.5, 51.0), (0.5, 51.0), (0.5, 52.0), (-0.5, 52.0), (-0.5, 51.0)],
+        ]
+    ]
+
+    assert _point_in_boundary(-1.0, 52.0, polygons) is True
+    assert _point_in_boundary(0.0, 51.5, polygons) is False
+    assert _point_in_boundary(3.0, 52.0, polygons) is False

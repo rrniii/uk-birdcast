@@ -102,6 +102,7 @@ def cmd_era5_grid_features(args: argparse.Namespace) -> int:
         pressure_levels=Path(args.pressure_levels) if args.pressure_levels else None,
         radars_path=Path(args.radars) if args.radars else None,
         training_table=Path(args.training_table) if args.training_table else None,
+        boundary_path=Path(args.boundary) if args.boundary else None,
         output=Path(args.output),
     )
     print(json.dumps(result, indent=2, sort_keys=True))
@@ -407,6 +408,7 @@ def build_parser() -> argparse.ArgumentParser:
     era5_grid_features.add_argument("--pressure-levels")
     era5_grid_features.add_argument("--radars")
     era5_grid_features.add_argument("--training-table")
+    era5_grid_features.add_argument("--boundary")
     era5_grid_features.add_argument("--output", required=True)
     era5_grid_features.set_defaults(func=cmd_era5_grid_features)
 

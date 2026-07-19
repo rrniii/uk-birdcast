@@ -234,6 +234,7 @@ def extract_grid_features(
     radars_path: Path | None,
     output: Path,
     training_table: Path | None = None,
+    boundary_path: Path | None = None,
 ) -> dict[str, object]:
     """Extract native ERA5 grid features plus an explicit support score.
 
@@ -251,6 +252,7 @@ def extract_grid_features(
     radars = [radar for radar in load_radars(radars_path) if radar.latitude is not None and radar.longitude is not None]
     ranges = _training_feature_ranges(training_table)
     training_window = _training_window(training_table)
+    boundary = _load_boundary_polygons(boundary_path) if boundary_path else None
     rows: list[dict[str, object]] = []
     try:
         reference = single or pressure
@@ -261,6 +263,12 @@ def extract_grid_features(
         time_name = "valid_time" if "valid_time" in reference.coords else "time"
         latitudes = [float(value) for value in reference[latitude_name].values.tolist()]
         longitudes = [float(value) for value in reference[longitude_name].values.tolist()]
+        grid_points = [
+            (latitude, longitude)
+            for latitude in latitudes
+            for longitude in longitudes
+            if boundary is None or _point_in_boundary(longitude, latitude, boundary)
+        ]
         for time_value, point in _time_points(reference, time_name):
             timestamp = str(time_value) if time_value is not None else ""
             if training_window is not None:
@@ -272,16 +280,15 @@ def extract_grid_features(
                     continue
             single_point = _select_time(single, time_name, time_value) if single is not None else None
             pressure_point = _select_time(pressure, time_name, time_value) if pressure is not None else None
-            for latitude in latitudes:
-                for longitude in longitudes:
-                    row = {
-                        "time_utc": timestamp,
-                        "latitude": latitude,
-                        "longitude": longitude,
-                    }
-                    row.update(_grid_weather_values(single_point, pressure_point, latitude_name, longitude_name, latitude, longitude))
-                    row["support"] = round(_support_score(latitude, longitude, row, radars, ranges), 6)
-                    rows.append(row)
+            for latitude, longitude in grid_points:
+                row = {
+                    "time_utc": timestamp,
+                    "latitude": latitude,
+                    "longitude": longitude,
+                }
+                row.update(_grid_weather_values(single_point, pressure_point, latitude_name, longitude_name, latitude, longitude))
+                row["support"] = round(_support_score(latitude, longitude, row, radars, ranges), 6)
+                rows.append(row)
     finally:
         for dataset in datasets:
             close = getattr(dataset, "close", None)
@@ -294,12 +301,71 @@ def extract_grid_features(
         "output": str(output),
         "row_count": len(rows),
         "grid_resolution": "ERA5 native 0.25 degree",
+        "grid_cell_count": len(grid_points),
+        "boundary": str(boundary_path) if boundary_path else None,
+        "boundary_policy": "Great Britain land cells only" if boundary_path else "unmasked request domain",
         "support_definition": "radar proximity multiplied by covariate-range support",
         "training_table": str(training_table) if training_table else None,
         "training_window": [value.isoformat() for value in training_window] if training_window else None,
     }
     write_json(output.with_suffix(output.suffix + ".status.json"), status)
     return status
+
+
+def _load_boundary_polygons(path: Path) -> list[list[list[tuple[float, float]]]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    polygons: list[list[list[tuple[float, float]]]] = []
+    for feature in payload.get("features", []):
+        if not isinstance(feature, dict):
+            continue
+        properties = feature.get("properties") or {}
+        if properties.get("ADM0_A3") != "GBR":
+            continue
+        geometry = feature.get("geometry") or {}
+        coordinates = geometry.get("coordinates") or []
+        if geometry.get("type") == "Polygon":
+            candidates = [coordinates]
+        elif geometry.get("type") == "MultiPolygon":
+            candidates = coordinates
+        else:
+            continue
+        for polygon in candidates:
+            rings = [
+                [(float(point[0]), float(point[1])) for point in ring]
+                for ring in polygon
+                if len(ring) >= 3
+            ]
+            if rings:
+                polygons.append(rings)
+    if not polygons:
+        raise ValueError(f"boundary contains no GBR polygon geometry: {path}")
+    return polygons
+
+
+def _point_in_boundary(
+    longitude: float,
+    latitude: float,
+    polygons: list[list[list[tuple[float, float]]]],
+) -> bool:
+    for polygon in polygons:
+        if _point_in_ring(longitude, latitude, polygon[0]) and not any(
+            _point_in_ring(longitude, latitude, hole) for hole in polygon[1:]
+        ):
+            return True
+    return False
+
+
+def _point_in_ring(longitude: float, latitude: float, ring: list[tuple[float, float]]) -> bool:
+    inside = False
+    previous_x, previous_y = ring[-1]
+    for current_x, current_y in ring:
+        crosses = (current_y > latitude) != (previous_y > latitude)
+        if crosses:
+            crossing_x = (previous_x - current_x) * (latitude - current_y) / (previous_y - current_y) + current_x
+            if longitude < crossing_x:
+                inside = not inside
+        previous_x, previous_y = current_x, current_y
+    return inside
 
 
 def build_day(

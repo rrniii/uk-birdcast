@@ -21,8 +21,10 @@ set -u
 : "${BIRDCAST_UK_ERA5_GRID_DIR:?Set the daily national ERA5 grid output directory}"
 : "${BIRDCAST_UK_REANALYSIS_TRAINING_TABLE:?Set the prepared rolling model table}"
 : "${BIRDCAST_UK_RADARS_FILE:?Set radar metadata}"
+: "${BIRDCAST_UK_BOUNDARY:?Set the high-resolution UK boundary path}"
 
 module load jaspy/3.12/v20250704
+"$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli historical boundary --output "$BIRDCAST_UK_BOUNDARY"
 day="$("$BIRDCAST_UK_PYTHON" -c 'import datetime,json,sys; window=json.load(open(sys.argv[1]))["window"]; end=datetime.datetime.strptime(window["end_date"], "%Y%m%d").date(); print((end-datetime.timedelta(days=int(sys.argv[2]))).isoformat())' "$BIRDCAST_UK_VPTS_ARCHIVE_INVENTORY" "${SLURM_ARRAY_TASK_ID}")"
 stamp="${day//-/}"
 single="$BIRDCAST_UK_ERA5_RAW_DIR/era5_single_levels_${stamp}_uk.nc"
@@ -33,4 +35,5 @@ mkdir -p "$BIRDCAST_UK_ERA5_GRID_DIR"
   --single-levels "$single" --pressure-levels "$pressure" \
   --radars "$BIRDCAST_UK_RADARS_FILE" \
   --training-table "$BIRDCAST_UK_REANALYSIS_TRAINING_TABLE" \
+  --boundary "$BIRDCAST_UK_BOUNDARY" \
   --output "$BIRDCAST_UK_ERA5_GRID_DIR/era5_grid_${stamp}.csv"
