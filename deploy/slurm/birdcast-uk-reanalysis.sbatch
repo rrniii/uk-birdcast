@@ -4,7 +4,7 @@
 #SBATCH --qos=standard
 #SBATCH --partition=standard
 #SBATCH --time=12:00:00
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=1
 #SBATCH --mem=48G
 #SBATCH --output=logs/birdcast-uk-reanalysis-%j.out
 #SBATCH --error=logs/birdcast-uk-reanalysis-%j.err
