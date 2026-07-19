@@ -98,15 +98,30 @@ def fetch_json(source: str, *, timeout_seconds: float = 60.0) -> dict[str, Any]:
     return payload
 
 
-def head_public_object(url: str, *, timeout_seconds: float = 30.0) -> dict[str, object] | None:
+def head_public_object(
+    url: str,
+    *,
+    timeout_seconds: float = 30.0,
+    retries: int = 5,
+) -> dict[str, object] | None:
+    if retries < 1:
+        raise ValueError("retries must be at least one")
     request = Request(url, method="HEAD")
-    try:
-        with urlopen(request, timeout=timeout_seconds) as response:
-            headers = response.headers
-    except HTTPError as exc:
-        if exc.code == 404:
-            return None
-        raise
+    for attempt in range(retries):
+        try:
+            with urlopen(request, timeout=timeout_seconds) as response:
+                headers = response.headers
+            break
+        except HTTPError as exc:
+            if exc.code == 404:
+                return None
+            retryable = exc.code in {429, 500, 502, 503, 504}
+            if not retryable or attempt + 1 >= retries:
+                raise
+        except (URLError, TimeoutError):
+            if attempt + 1 >= retries:
+                raise
+        time.sleep(2**attempt)
     modified = headers.get("Last-Modified")
     modified_time = None
     if modified:

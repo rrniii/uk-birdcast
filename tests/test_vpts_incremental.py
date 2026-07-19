@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+from urllib.error import HTTPError
 
 import pytest
 
@@ -12,11 +13,49 @@ from birdcast_uk.vpts import (
     build_catalog_inventory,
     build_historical_inventory,
     commit_inventory_cursor,
+    head_public_object,
     load_vpts_rows_from_inventory,
 )
 
 
 NOW = datetime(2026, 7, 17, 6, 0, tzinfo=timezone.utc)
+
+
+def test_head_public_object_retries_transient_503(monkeypatch) -> None:
+    attempts = 0
+
+    class Response:
+        headers = {
+            "Content-Length": "123",
+            "ETag": '"abc"',
+            "Content-Type": "text/csv",
+        }
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def open_with_transient_failure(request, *, timeout):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise HTTPError(request.full_url, 503, "Service Unavailable", {}, None)
+        return Response()
+
+    monkeypatch.setattr("birdcast_uk.vpts.urlopen", open_with_transient_failure)
+    monkeypatch.setattr("birdcast_uk.vpts.time.sleep", lambda _seconds: None)
+
+    result = head_public_object("https://example.invalid/file.csv")
+
+    assert attempts == 2
+    assert result == {
+        "size": 123,
+        "etag": "abc",
+        "modified_time": None,
+        "content_type": "text/csv",
+    }
 
 
 def test_catalog_inventory_is_bounded_and_cursor_driven(tmp_path: Path) -> None:
