@@ -24,9 +24,16 @@ set -u
 module load jaspy/3.12/v20250704
 mkdir -p "$(dirname "$BIRDCAST_UK_VPTS_ARCHIVE_INVENTORY")" "$(dirname "$BIRDCAST_UK_RADARS_FILE")"
 "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli radars from-pvol-catalog --output "$BIRDCAST_UK_RADARS_FILE"
+inventory_args=(
+  --output "$BIRDCAST_UK_VPTS_ARCHIVE_INVENTORY"
+  --catalog-url "$BIRDCAST_UK_VPTS_CATALOG_URL"
+  --public-base-url "$BIRDCAST_UK_PUBLIC_BASE_URL"
+  --bucket "$BIRDCAST_UK_OBJECT_STORE_BUCKET"
+  --days 365
+  --max-workers 16
+)
+if [ -n "${BIRDCAST_UK_REANALYSIS_END_DATE:-}" ]; then
+  inventory_args+=(--end-date "$BIRDCAST_UK_REANALYSIS_END_DATE")
+fi
 "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli vpts historical-inventory \
-  --output "$BIRDCAST_UK_VPTS_ARCHIVE_INVENTORY" \
-  --catalog-url "$BIRDCAST_UK_VPTS_CATALOG_URL" \
-  --public-base-url "$BIRDCAST_UK_PUBLIC_BASE_URL" \
-  --bucket "$BIRDCAST_UK_OBJECT_STORE_BUCKET" \
-  --days 365 --max-workers 16
+  "${inventory_args[@]}"
