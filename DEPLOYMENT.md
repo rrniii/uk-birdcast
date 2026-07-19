@@ -57,79 +57,50 @@ The site is then available at:
 http://130.246.212.190/birdcast-uk/
 ```
 
-## systemd Timers
+## Web-Only systemd Timer
 
 ```bash
 sudo install -m 0644 deploy/systemd/birdcast-uk-*.service /etc/systemd/system/
 sudo install -m 0644 deploy/systemd/birdcast-uk-*.timer /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now \
+sudo systemctl enable --now birdcast-uk-static-site-refresh.timer
+```
+
+The cloud workstation is a web server only. VPTS inventory, ERA5 retrieval,
+feature preparation, model fitting, and Object Store publication run in the
+JASMIN batch/GWS flow. Disable all data-production timers on this host:
+
+```bash
+sudo systemctl disable --now \
   birdcast-uk-radars-refresh.timer \
   birdcast-uk-vpts-inventory.timer \
   birdcast-uk-observed-build.timer \
   birdcast-uk-era5-build-day.timer \
   birdcast-uk-feature-join.timer \
-  birdcast-uk-static-site-refresh.timer \
   birdcast-uk-object-store-plan.timer \
-  birdcast-uk-object-store-sync.timer
-```
-
-The legacy ECMWF Open Data and forecast units remain in the repository only for
-provenance. They are not part of the historical reanalysis service and must not
-be enabled:
-
-```bash
-sudo systemctl disable --now \
+  birdcast-uk-object-store-sync.timer \
   birdcast-uk-ecmwf-archive.timer \
   birdcast-uk-forecast-build.timer
 ```
 
-The VPTS reader uses only the public catalogue and exact object URLs. It never
-modifies the production VPTS prefix. The publication timers write only beneath
-the `birdcast-uk/` prefix.
+The web client reads immutable daily assets and `latest/*.json` directly from
+the public `birdcast-uk/` Object Store prefix. It has no credentials and cannot
+modify VPTS, ERA5, or publication data.
 
 The public artifact tree contains historical radar and ERA5-reanalysis
 products only. Immutable assets are uploaded before the `latest/*.json`
 manifests so readers do not observe a partial publication.
 
-```bash
-sudo -u birdcast /bin/sh /opt/birdcast-uk/data/object-store/sync.sh
-```
-
 ## BTO Validation Request
 
-Generate the BTO request draft:
-
-```bash
-sudo -u birdcast /opt/birdcast-uk/venv/bin/birdcast-uk bto request-template \
-  --output /opt/birdcast-uk/data/validation/bto/bto-data-request.md
-```
-
-Keep licensed BTO source data outside public Object Store prefixes. Publish only aggregate validation summaries.
+Generate and process the BTO request on JASMIN batch/GWS, not on the cloud web
+host. Keep licensed BTO source data outside public Object Store prefixes and
+publish only aggregate validation summaries.
 
 ## ERA5 with ECMWF Earthkit
 
 The independent BirdCast ERA5 flow uses `earthkit-data` for CDS retrieval,
 cache management, file decoding, and conversion to Xarray before extracting
-the nearest native-grid values for the 17 UK radar sites. Configure the CDS
-token in `/opt/birdcast-uk/.cdsapirc`; the systemd service sets `CDSAPI_RC`
-explicitly and keeps a bounded 20 GB Earthkit cache under
-`/opt/birdcast-uk/data/earthkit-cache`.
-
-The daily timer requests data from seven days earlier to allow for ERA5T
-availability. Request JSON, raw NetCDF, site features, and build status remain
-separate artifacts.
-
-### Request Smoke Test
-
-```bash
-sudo -u birdcast /opt/birdcast-uk/venv/bin/birdcast-uk era5 request \
-  --day 2026-06-27 \
-  --kind pressure-levels \
-  --output-file /gws/ssde/j25a/ncas_radar/vol2/avocet/birdcast-uk/era5/raw/era5_pressure_levels_20260627_uk.nc \
-  --request-json /opt/birdcast-uk/data/era5/era5_pressure_levels_20260627_request.json
-```
-
-This builds the CDS request JSON without downloading. To exercise Earthkit and
-produce site features, add `--download` to `era5 build-day`. CDS credentials
-and the ERA5 dataset terms must already be accepted by the account.
+the nearest native-grid values for the 17 UK radar sites. CDS credentials,
+Earthkit cache, request JSON, raw NetCDF, site features, and model tables all
+remain on JASMIN. The cloud host has no ERA5 credential or processing role.
