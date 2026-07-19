@@ -20,7 +20,7 @@ set -u
 
 module load jaspy/3.12/v20250704
 mkdir -p "$(dirname "$BIRDCAST_UK_MODEL_FEATURES")"
-"$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli join era5 \
+"$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli features join-era5 \
   --observed-hourly "$BIRDCAST_UK_OBSERVED_HOURLY" \
   --era5-dir "$BIRDCAST_UK_ERA5_FEATURE_DIR" \
   --output "$BIRDCAST_UK_MODEL_FEATURES"
