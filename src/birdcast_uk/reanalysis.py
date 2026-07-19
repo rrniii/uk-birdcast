@@ -138,9 +138,12 @@ def compare_models(*, gamm_metrics: Path, xgboost_metrics: Path, output: Path) -
 
     gamm = _read_json(gamm_metrics)
     xgboost = _read_json(xgboost_metrics)
-    gamm_rows = _metric_index(gamm)
-    xgb_rows = _metric_index(xgboost)
+    gamm_rows = _metric_index(gamm, validation="leave_one_radar_out")
+    xgb_rows = _metric_index(xgboost, validation="leave_one_radar_out")
+    gamm_time_rows = _metric_index(gamm, validation="blocked_time")
+    xgb_time_rows = _metric_index(xgboost, validation="blocked_time")
     checks = []
+    temporal_checks = []
     for pulse in PULSES:
         for target in INTENSITY_TARGETS:
             baseline = gamm_rows.get((pulse, target))
@@ -151,15 +154,27 @@ def compare_models(*, gamm_metrics: Path, xgboost_metrics: Path, output: Path) -
             improvement = _improvement(baseline.get("rmse"), candidate.get("rmse"))
             event_better = _number(candidate.get("top_decile_precision")) >= _number(baseline.get("top_decile_precision")) and _number(candidate.get("top_decile_recall")) >= _number(baseline.get("top_decile_recall"))
             checks.append({"pulse": pulse, "target": target, "rmse_improvement_fraction": improvement, "event_detection_improved": event_better, "passed": improvement >= 0.10 and event_better})
+            temporal_baseline = gamm_time_rows.get((pulse, target))
+            temporal_candidate = xgb_time_rows.get((pulse, target))
+            if temporal_baseline is None or temporal_candidate is None:
+                temporal_checks.append({"pulse": pulse, "target": target, "passed": False, "reason": "missing_metrics"})
+                continue
+            temporal_improvement = _improvement(temporal_baseline.get("rmse"), temporal_candidate.get("rmse"))
+            temporal_events = _number(temporal_candidate.get("top_decile_precision")) >= _number(temporal_baseline.get("top_decile_precision")) and _number(temporal_candidate.get("top_decile_recall")) >= _number(temporal_baseline.get("top_decile_recall"))
+            temporal_checks.append({"pulse": pulse, "target": target, "rmse_improvement_fraction": temporal_improvement, "event_detection_improved": temporal_events, "passed": temporal_improvement >= 0.10 and temporal_events})
     vector_ok = _vectors_not_worse(gamm_rows, xgb_rows)
-    selected = "xgboost" if checks and all(bool(check["passed"]) for check in checks) and vector_ok else "gamm"
+    temporal_required = _has_validation_rows(gamm, "blocked_time") or _has_validation_rows(xgboost, "blocked_time")
+    temporal_ok = bool(temporal_checks) and all(bool(check["passed"]) for check in temporal_checks)
+    selected = "xgboost" if checks and all(bool(check["passed"]) for check in checks) and vector_ok and (temporal_ok if temporal_required else True) else "gamm"
     payload = {
         "schema_version": REANALYSIS_SCHEMA_VERSION,
         "generated_at_utc": utc_now(),
         "processing_version": PROCESSING_VERSION,
         "selected_model_family": selected,
-        "decision_rule": "Promote XGBoost only if it improves held-out-radar RMSE by at least 10 percent for MTR and VID in LP and SP, improves top-decile event precision and recall, and does not worsen vector error.",
+        "decision_rule": "Promote XGBoost only if it improves held-out-radar RMSE by at least 10 percent for MTR and VID in LP and SP, improves top-decile event precision and recall, does not worsen vector error, and meets the same criteria on blocked-time validation when available.",
         "intensity_checks": checks,
+        "temporal_validation_required": temporal_required,
+        "temporal_intensity_checks": temporal_checks,
         "vectors_not_worse": vector_ok,
         "sources": {"gamm": str(gamm_metrics), "xgboost": str(xgboost_metrics)},
     }
@@ -365,11 +380,20 @@ def _grid_step(values: list[float]) -> float:
     return min(steps) if steps else 0.25
 
 
-def _metric_index(payload: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:
+def _metric_index(payload: dict[str, Any], *, validation: str) -> dict[tuple[str, str], dict[str, Any]]:
     rows = payload.get("metrics")
     if not isinstance(rows, list):
         return {}
-    return {(str(row.get("pulse")), str(row.get("target"))): row for row in rows if isinstance(row, dict)}
+    matching = [row for row in rows if isinstance(row, dict) and row.get("validation", "leave_one_radar_out") == validation]
+    return {(str(row.get("pulse")), str(row.get("target"))): row for row in matching}
+
+
+def _has_validation_rows(payload: dict[str, Any], validation: str) -> bool:
+    rows = payload.get("metrics")
+    return isinstance(rows, list) and any(
+        isinstance(row, dict) and row.get("validation") == validation
+        for row in rows
+    )
 
 
 def _vectors_not_worse(gamm: dict[tuple[str, str], dict[str, Any]], xgb: dict[tuple[str, str], dict[str, Any]]) -> bool:

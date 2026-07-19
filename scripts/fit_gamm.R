@@ -44,6 +44,17 @@ fit_formula <- function(target, variables) {
   stats::as.formula(sprintf("response ~ %s", paste(terms, collapse = " + ")))
 }
 
+blocked_time_split <- function(data) {
+  times <- sort(unique(as.character(data$time_utc)))
+  if (length(times) < 10) return(NULL)
+  cut_index <- max(1, floor(length(times) * .8))
+  cutoff <- times[[cut_index]]
+  train <- data[as.character(data$time_utc) <= cutoff, , drop = FALSE]
+  test <- data[as.character(data$time_utc) > cutoff, , drop = FALSE]
+  if (nrow(train) < 30 || !nrow(test)) return(NULL)
+  list(train = train, test = test, cutoff = cutoff)
+}
+
 for (pulse in spec$pulses) {
   pulse_data <- data[data$pulse == pulse, , drop = FALSE]
   for (target in targets) {
@@ -69,6 +80,22 @@ for (pulse in spec$pulses) {
     metrics <- score(validated$observed, validated$predicted)
     row_id <- row_id + 1
     metric_rows[[row_id]] <- c(list(pulse = pulse, target = target, validation = "leave_one_radar_out", row_count = nrow(validated)), metrics)
+    blocked <- blocked_time_split(subset)
+    if (!is.null(blocked)) {
+      time_model <- mgcv::bam(
+        formula, data = blocked$train,
+        weights = if (is_intensity) pmax(blocked$train$profile_count, 1) else pmax(blocked$train$mtr_birds_km_h, 0.01),
+        method = "fREML", discrete = TRUE
+      )
+      time_predicted <- as.numeric(stats::predict(time_model, newdata = blocked$test, exclude = "s(radar)"))
+      if (is_intensity) time_predicted <- pmax(time_predicted, 0)^3
+      time_metrics <- score(blocked$test[[target]], time_predicted)
+      row_id <- row_id + 1
+      metric_rows[[row_id]] <- c(
+        list(pulse = pulse, target = target, validation = "blocked_time", row_count = nrow(blocked$test), cutoff_time_utc = blocked$cutoff),
+        time_metrics
+      )
+    }
     final_model <- mgcv::bam(formula, data = subset, weights = weights, method = "fREML", discrete = TRUE)
     saveRDS(final_model, file.path(output_dir, sprintf("gamm_%s_%s.rds", pulse, target)))
     if (!is.null(grid_path) && file.exists(grid_path)) {
