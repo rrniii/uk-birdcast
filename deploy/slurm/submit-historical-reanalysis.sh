@@ -17,5 +17,6 @@ prepared="$(sbatch --parsable --dependency="afterok:${joined}" deploy/slurm/bird
 grid="$(sbatch --parsable --dependency="afterok:${prepared}" deploy/slurm/birdcast-uk-era5-grid-day.sbatch)"
 merged="$(sbatch --parsable --dependency="afterok:${grid}" deploy/slurm/birdcast-uk-era5-grid-merge.sbatch)"
 model="$(sbatch --parsable --dependency="afterok:${merged}" deploy/slurm/birdcast-uk-reanalysis.sbatch)"
-printf 'inventory=%s\nhourly=%s\nera5=%s\njoined=%s\nprepared=%s\ngrid=%s\nmerged=%s\nmodel=%s\n' \
-  "$inventory" "$hourly" "$era5" "$joined" "$prepared" "$grid" "$merged" "$model"
+published="$(sbatch --parsable --dependency="afterok:${model}" deploy/slurm/birdcast-uk-object-store-publish.sbatch)"
+printf 'inventory=%s\nhourly=%s\nera5=%s\njoined=%s\nprepared=%s\ngrid=%s\nmerged=%s\nmodel=%s\npublished=%s\n' \
+  "$inventory" "$hourly" "$era5" "$joined" "$prepared" "$grid" "$merged" "$model" "$published"

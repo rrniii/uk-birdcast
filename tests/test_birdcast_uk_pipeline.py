@@ -262,6 +262,8 @@ def test_historical_reanalysis_submission_preflights_cds_credentials() -> None:
 
     assert '"$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli era5 readiness' in script
     assert script.index("era5 readiness") < script.index('inventory="$(sbatch')
+    assert 'published="$(sbatch --parsable --dependency="afterok:${model}"' in script
+    assert "birdcast-uk-object-store-publish.sbatch" in script
 
 
 def test_slurm_scripts_initialise_jasmin_modules() -> None:
