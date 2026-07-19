@@ -26,4 +26,4 @@ mkdir -p "$(dirname "$BIRDCAST_UK_VPTS_ARCHIVE_INVENTORY")" "$(dirname "$BIRDCAS
   --catalog-url "$BIRDCAST_UK_VPTS_CATALOG_URL" \
   --public-base-url "$BIRDCAST_UK_PUBLIC_BASE_URL" \
   --bucket "$BIRDCAST_UK_OBJECT_STORE_BUCKET" \
-  --days 365 --max-workers "${SLURM_CPUS_PER_TASK:-1}"
+  --days 365 --max-workers 16
