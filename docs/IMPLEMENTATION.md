@@ -69,6 +69,25 @@ and archived test cycles remain for provenance but are outside the operational
 product. The ERA5 model has no hour-of-day, date, season, daylight, twilight,
 sunrise, sunset, or phenology predictor.
 
+The production training table is complete-case across all declared weather
+predictors. A row is excluded unless it contains 850 hPa temperature, relative
+humidity, u wind and v wind, surface pressure, mean sea-level pressure, total
+cloud cover, boundary-layer height, and hourly precipitation. Projected
+easting and northing are the only non-weather predictors. The pipeline fails
+instead of silently fitting a reduced predictor set.
+
+The annual backfill uses a bounded Slurm array with eight workers. Every worker
+requests one UTC day through Earthkit and writes independently named pressure,
+single-level, and radar-site feature artifacts. The reconciliation job checks
+the exact 365-day inventory and retries missing or incomplete days before the
+join can start. This limit keeps CDS concurrency controlled while allowing
+JASMIN to process completed requests in parallel.
+
+The GAMB2LE ERA5 flow is not an input to this product. Its live model-evaluation
+archive currently contains only the Iceland campaign day 2026-07-06 and has a
+different domain and variable contract. UK BirdCast therefore owns its ERA5
+requests, files, feature extraction, provenance, and completeness checks.
+
 ## Plot rules
 
 - LP and SP plots are separate; no combined LP+SP population interpretation.

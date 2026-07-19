@@ -54,6 +54,10 @@ least 10%, improves top-decile event detection, and does not worsen vectors.
 The JASMIN entrypoint is `deploy/slurm/birdcast-uk-reanalysis.sbatch`. Its
 national ERA5 grid input must carry a support score for every cell; unsupported
 extrapolation is faded in the web map rather than hidden or presented equally.
+Training rows must be complete for all nine ERA5 predictors. The annual
+Earthkit backfill runs with at most eight concurrent requests and is followed
+by an exact 365-day reconciliation gate; no join or model fit can run from a
+partial weather archive.
 
 ## Development
 
