@@ -122,10 +122,33 @@ def write_sync_commands(plan_path: Path, output: Path, *, bucket: str, endpoint_
             )
         )
     )
-    lines.append(
-        f'if [ -d {_shell_quote(str(latest_dir))} ]; then '
-        + " ".join(_shell_quote(part) for part in sync(latest_dir, f"{object_prefix}/latest"))
-        + "; fi"
+    latest_target = f"s3://{bucket}/{object_prefix}/latest/"
+    latest_without_manifests = sync(latest_dir, f"{object_prefix}/latest", "--exclude", "*.json")
+    manifest_copy = [
+        *aws_base,
+        "s3",
+        "cp",
+        '"$manifest"',
+        latest_target,
+        "--content-type",
+        "application/json",
+        "--acl",
+        "public-read",
+        "--only-show-errors",
+    ]
+    latest_source = _shell_quote(str(latest_dir))
+    lines.extend(
+        [
+            f"if [ -d {latest_source} ]; then",
+            "  " + " ".join(_shell_quote(part) for part in latest_without_manifests),
+            f"  find {latest_source} -maxdepth 1 -type f -name '*.json' -print | sort | while IFS= read -r manifest; do",
+            "    " + " ".join(
+                part if part == '"$manifest"' else _shell_quote(part)
+                for part in manifest_copy
+            ),
+            "  done",
+            "fi",
+        ]
     )
     output.write_text("\n".join(lines) + "\n", encoding="utf-8")
     output.chmod(0o750)
