@@ -33,6 +33,30 @@ The JASMIN Cloud host consumes that package, creates browser-ready artifacts,
 and publishes them under `birdcast-uk/historical/`. Year partitioning limits a
 normal browser request to one year of radar-day data.
 
+### Public Object Store CORS
+
+The public bucket must allow browser `GET` and `HEAD` requests. Apply the
+version-controlled policy after creating or replacing the bucket:
+
+```bash
+s3cmd --config "$BIRDCAST_UK_S3CMD_CONFIG" setcors \
+  deploy/object-store/public-read-cors.xml \
+  "s3://$BIRDCAST_UK_OBJECT_STORE_BUCKET"
+```
+
+Verify both anonymous access and the browser-origin response before deploying
+the web client:
+
+```bash
+curl --fail --silent --show-error --dump-header - --output /dev/null \
+  -H "Origin: http://uk-birdcast.tailea56a2.ts.net" \
+  "$BIRDCAST_UK_PUBLIC_BASE_URL/birdcast-uk/latest/historical.json"
+```
+
+The response must be `200` and include `Access-Control-Allow-Origin` and
+`Access-Control-Allow-Methods: GET,HEAD`. This CORS policy does not make private
+objects public and grants no browser write permissions.
+
 ## Historical weather flow
 
 ERA5 remains a standalone BirdCast flow using Earthkit. Radar summaries are
