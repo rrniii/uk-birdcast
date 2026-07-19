@@ -11,7 +11,6 @@ const state = {
   date: null,
   hour: 0,
   pulse: "lp",
-  period: "night",
   metric: "vid",
   modelMetric: "mtr_birds_km_h",
   showArrows: true,
@@ -121,7 +120,6 @@ function configureControls() {
     render();
   });
   bindSegment("pulseControl", "pulse", async () => { if (state.view === "modelled") await loadModelDay(); });
-  bindSegment("periodControl", "period");
   bindSegment("modelMetricControl", "modelMetric");
   const metric = document.getElementById("metricSelect");
   metric.addEventListener("change", () => { state.metric = metric.value; render(); });
@@ -148,7 +146,6 @@ function render() {
   document.querySelectorAll(".model-control").forEach((element) => { element.hidden = state.view !== "modelled"; });
   document.querySelectorAll(".observed-control").forEach((element) => { element.hidden = state.view === "modelled"; });
   document.querySelectorAll("#pulseControl button").forEach((button) => button.classList.toggle("active", button.dataset.value === state.pulse));
-  document.querySelectorAll("#periodControl button").forEach((button) => button.classList.toggle("active", button.dataset.value === state.period));
   document.querySelectorAll("#modelMetricControl button").forEach((button) => button.classList.toggle("active", button.dataset.value === state.modelMetric));
   document.getElementById("dateInput").value = state.date;
   document.getElementById("hourInput").value = state.hour;
@@ -159,13 +156,13 @@ function render() {
 
 function renderObserved() {
   const rows = state.yearPayload && state.yearPayload.rows || [];
-  state.visibleRows = rows.filter((row) => row.date === state.date && row.pulse === state.pulse && row.period === state.period);
+  state.visibleRows = aggregateObservedRows(rows.filter((row) => row.date === state.date && row.pulse === state.pulse));
   state.modelFrame = null;
   const metric = observedMetric();
   const values = state.visibleRows.map((row) => Number(row[state.metric])).filter(Number.isFinite);
   const mean = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
   document.getElementById("mapTitle").textContent = "Daily radar reanalysis";
-  document.getElementById("mapSubtitle").textContent = `${formatDate(state.date)} · ${state.pulse.toUpperCase()} · ${formatPeriod(state.period)} · ${state.visibleRows.length} radars`;
+  document.getElementById("mapSubtitle").textContent = `${formatDate(state.date)} · ${state.pulse.toUpperCase()} · all available hours · ${state.visibleRows.length} radars`;
   document.getElementById("legendUnit").textContent = metric.label;
   document.getElementById("networkValue").textContent = mean === null ? "No observations" : metric.format(mean);
   document.getElementById("networkUnit").textContent = mean === null ? "Choose another date or product" : `${metric.meanLabel} across reporting radars`;
@@ -174,6 +171,35 @@ function renderObserved() {
   renderRadarList(metric);
   renderPlots((state.historical.assets && state.historical.assets.plots) || []);
   drawMap();
+}
+
+function aggregateObservedRows(rows) {
+  const byRadar = new Map();
+  for (const row of rows) {
+    const current = byRadar.get(row.radar) || {
+      ...row,
+      profiles: 0,
+      vid: 0,
+      _heightTotal: 0,
+      _speedTotal: 0,
+      _weightedProfiles: 0,
+    };
+    const profiles = Number(row.profiles) || 0;
+    const vid = Number(row.vid);
+    if (Number.isFinite(vid)) current.vid += vid;
+    current.profiles += profiles;
+    for (const [metric, total] of [["height_m", "_heightTotal"], ["speed_ms", "_speedTotal"]]) {
+      const value = Number(row[metric]);
+      if (Number.isFinite(value) && profiles > 0) current[total] += value * profiles;
+    }
+    current._weightedProfiles += profiles;
+    byRadar.set(row.radar, current);
+  }
+  return [...byRadar.values()].map((row) => ({
+    ...row,
+    height_m: row._weightedProfiles ? row._heightTotal / row._weightedProfiles : null,
+    speed_ms: row._weightedProfiles ? row._speedTotal / row._weightedProfiles : null,
+  }));
 }
 
 function renderModelled() {

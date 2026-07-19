@@ -179,3 +179,6 @@ def test_static_ui_is_historical_not_forecast() -> None:
     assert "Historical archive" in javascript
     assert "uk_boundary.geojson" not in javascript
     assert "devicePixelRatio" in javascript
+    assert "periodControl" not in html
+    assert "row.period" not in javascript
+    assert "aggregateObservedRows" in javascript
