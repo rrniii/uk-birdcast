@@ -18,6 +18,7 @@ set -euo pipefail
 : "${BIRDCAST_UK_ERA5_FEATURE_DIR:?Set the ERA5 site-feature directory}"
 : "${BIRDCAST_UK_RADARS_FILE:?Set the radar metadata path}"
 
+. /etc/profile.d/modules.sh
 module load jaspy/3.12/v20250704
 "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli era5 readiness
 day="$("$BIRDCAST_UK_PYTHON" -c 'import datetime,json,sys; window=json.load(open(sys.argv[1]))["window"]; end=datetime.datetime.strptime(window["end_date"], "%Y%m%d").date(); print((end-datetime.timedelta(days=int(sys.argv[2]))).isoformat())' "$BIRDCAST_UK_VPTS_ARCHIVE_INVENTORY" "${SLURM_ARRAY_TASK_ID}")"

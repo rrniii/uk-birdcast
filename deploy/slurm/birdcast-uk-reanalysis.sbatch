@@ -24,6 +24,7 @@ mkdir -p "$run_dir" "${BIRDCAST_UK_ARTIFACT_ROOT}/logs"
 "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli reanalysis spec --table "$BIRDCAST_UK_REANALYSIS_TRAINING_TABLE" --model-family gamm --output "$run_dir/gamm-spec.json"
 "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli reanalysis spec --table "$BIRDCAST_UK_REANALYSIS_TRAINING_TABLE" --model-family xgboost --output "$run_dir/xgboost-spec.json"
 
+. /etc/profile.d/modules.sh
 module load jasr/4.4/v20250704
 Rscript "$BIRDCAST_UK_ROOT/scripts/fit_gamm.R" "$run_dir/gamm-spec.json" "$run_dir/gamm" "$BIRDCAST_UK_ERA5_GRID_TABLE"
 module load jaspy/3.12/v20250704

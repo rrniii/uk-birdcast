@@ -15,6 +15,7 @@ set -euo pipefail
 : "${BIRDCAST_UK_VPTS_ARCHIVE_INVENTORY:?Set the historical inventory path}"
 : "${BIRDCAST_UK_OBSERVED_HOURLY:?Set the hourly output path}"
 
+. /etc/profile.d/modules.sh
 module load jaspy/3.12/v20250704
 mkdir -p "$(dirname "$BIRDCAST_UK_OBSERVED_HOURLY")"
 "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli observed hourly \

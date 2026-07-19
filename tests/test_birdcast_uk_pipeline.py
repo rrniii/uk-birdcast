@@ -264,6 +264,21 @@ def test_historical_reanalysis_submission_preflights_cds_credentials() -> None:
     assert script.index("era5 readiness") < script.index('inventory="$(sbatch')
 
 
+def test_slurm_scripts_initialise_jasmin_modules() -> None:
+    slurm_dir = Path(__file__).parents[1] / "deploy" / "slurm"
+    scripts_using_modules = [
+        path
+        for path in slurm_dir.glob("*.sbatch")
+        if "\nmodule load " in path.read_text(encoding="utf-8")
+    ]
+
+    assert scripts_using_modules
+    for script in scripts_using_modules:
+        content = script.read_text(encoding="utf-8")
+        assert ". /etc/profile.d/modules.sh" in content, script.name
+        assert content.index(". /etc/profile.d/modules.sh") < content.index("module load ")
+
+
 def _write_json(path: Path, payload: dict[str, object]) -> Path:
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
