@@ -1,8 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=birdcast-uk-era5-backfill
+#SBATCH --account=ncas_radar
+#SBATCH --qos=standard
+#SBATCH --partition=standard
 #SBATCH --array=0-364%4
 #SBATCH --time=03:00:00
-#SBATCH --cpus-per-task=2
+#SBATCH --cpus-per-task=1
 #SBATCH --mem=12G
 #SBATCH --output=logs/birdcast-uk-era5-backfill-%A_%a.out
 #SBATCH --error=logs/birdcast-uk-era5-backfill-%A_%a.err

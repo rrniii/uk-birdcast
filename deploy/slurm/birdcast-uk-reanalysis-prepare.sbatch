@@ -1,5 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=birdcast-uk-reanalysis-prepare
+#SBATCH --account=ncas_radar
+#SBATCH --qos=standard
+#SBATCH --partition=standard
 #SBATCH --time=00:30:00
 #SBATCH --mem=4G
 #SBATCH --output=logs/birdcast-uk-reanalysis-prepare-%j.out

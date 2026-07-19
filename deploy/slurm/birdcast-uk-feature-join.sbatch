@@ -1,5 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=birdcast-uk-feature-join
+#SBATCH --account=ncas_radar
+#SBATCH --qos=standard
+#SBATCH --partition=standard
 #SBATCH --time=00:30:00
 #SBATCH --mem=8G
 #SBATCH --output=logs/birdcast-uk-feature-join-%j.out

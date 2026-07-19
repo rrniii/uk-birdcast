@@ -1,7 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=birdcast-uk-era5-grid
+#SBATCH --account=ncas_radar
+#SBATCH --qos=standard
+#SBATCH --partition=standard
 #SBATCH --time=08:00:00
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=1
 #SBATCH --mem=24G
 #SBATCH --output=logs/birdcast-uk-era5-grid-%j.out
 #SBATCH --error=logs/birdcast-uk-era5-grid-%j.err

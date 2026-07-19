@@ -1,7 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=birdcast-uk-vpts-archive
+#SBATCH --account=ncas_radar
+#SBATCH --qos=standard
+#SBATCH --partition=standard
 #SBATCH --time=02:00:00
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=1
 #SBATCH --mem=4G
 #SBATCH --output=logs/birdcast-uk-vpts-archive-%j.out
 #SBATCH --error=logs/birdcast-uk-vpts-archive-%j.err
@@ -23,4 +26,4 @@ mkdir -p "$(dirname "$BIRDCAST_UK_VPTS_ARCHIVE_INVENTORY")" "$(dirname "$BIRDCAS
   --catalog-url "$BIRDCAST_UK_VPTS_CATALOG_URL" \
   --public-base-url "$BIRDCAST_UK_PUBLIC_BASE_URL" \
   --bucket "$BIRDCAST_UK_OBJECT_STORE_BUCKET" \
-  --days 365 --max-workers "${SLURM_CPUS_PER_TASK:-16}"
+  --days 365 --max-workers "${SLURM_CPUS_PER_TASK:-1}"

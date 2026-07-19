@@ -1,7 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=birdcast-uk-vpts-hourly
+#SBATCH --account=ncas_radar
+#SBATCH --qos=standard
+#SBATCH --partition=standard
 #SBATCH --time=12:00:00
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=1
 #SBATCH --mem=24G
 #SBATCH --output=logs/birdcast-uk-vpts-hourly-%j.out
 #SBATCH --error=logs/birdcast-uk-vpts-hourly-%j.err
