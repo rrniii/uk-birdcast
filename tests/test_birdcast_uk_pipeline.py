@@ -437,6 +437,9 @@ def test_historical_reanalysis_submission_preflights_cds_credentials() -> None:
     assert "compgen -A variable BIRDCAST_UK_" in script
     assert script.index("compgen -A variable BIRDCAST_UK_") < script.index('inventory="$(sbatch')
     assert script.index("era5 readiness") < script.index('inventory="$(sbatch')
+    assert 'gamm="$(sbatch --parsable --dependency="afterok:${merged}"' in script
+    assert 'xgboost="$(sbatch --parsable --dependency="afterok:${merged}"' in script
+    assert 'model="$(sbatch --parsable --dependency="afterok:${gamm}:${xgboost}"' in script
     assert 'published="$(sbatch --parsable --dependency="afterok:${model}"' in script
     assert "birdcast-uk-object-store-publish.sbatch" in script
 

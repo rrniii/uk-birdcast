@@ -51,8 +51,10 @@ XGBoost uses the same ERA5 and spatial inputs as a benchmark. XGBoost is
 published only when it improves every held-out-radar MTR/VID comparison by at
 least 10%, improves top-decile event detection, and does not worsen vectors.
 
-The JASMIN entrypoint is `deploy/slurm/birdcast-uk-reanalysis.sbatch`. Its
-national ERA5 grid input must carry a support score for every cell; unsupported
+The JASMIN entrypoint is `deploy/slurm/submit-historical-reanalysis.sh`. It
+runs GAMM and XGBoost as independent Slurm jobs before model selection so the
+one-CPU standard QoS does not serialize the candidate fits. The national ERA5
+grid input must carry a support score for every cell; unsupported
 extrapolation is faded in the web map rather than hidden or presented equally.
 Training rows must be complete for all nine ERA5 predictors. The annual
 Earthkit backfill uses at most two concurrent calendar-month requests, splits

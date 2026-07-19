@@ -25,7 +25,10 @@ prepared="$(sbatch --parsable --dependency="afterok:${joined}" deploy/slurm/bird
 grid="$(sbatch --parsable --dependency="afterok:${prepared}" deploy/slurm/birdcast-uk-era5-grid-day.sbatch)"
 grid_reconciled="$(sbatch --parsable --dependency="afterany:${grid}" deploy/slurm/birdcast-uk-era5-grid-reconcile.sbatch)"
 merged="$(sbatch --parsable --dependency="afterok:${grid_reconciled}" deploy/slurm/birdcast-uk-era5-grid-merge.sbatch)"
-model="$(sbatch --parsable --dependency="afterok:${merged}" deploy/slurm/birdcast-uk-reanalysis.sbatch)"
+export BIRDCAST_UK_REANALYSIS_RUN_DIR="${BIRDCAST_UK_ARTIFACT_ROOT}/reanalysis/run-$(date -u +%Y%m%dT%H%M%SZ)"
+gamm="$(sbatch --parsable --dependency="afterok:${merged}" deploy/slurm/birdcast-uk-reanalysis-gamm.sbatch)"
+xgboost="$(sbatch --parsable --dependency="afterok:${merged}" deploy/slurm/birdcast-uk-reanalysis-xgboost.sbatch)"
+model="$(sbatch --parsable --dependency="afterok:${gamm}:${xgboost}" deploy/slurm/birdcast-uk-reanalysis-finalize.sbatch)"
 published="$(sbatch --parsable --dependency="afterok:${model}" deploy/slurm/birdcast-uk-object-store-publish.sbatch)"
-printf 'inventory=%s\nhourly=%s\nera5=%s\nera5_reconciled=%s\njoined=%s\nprepared=%s\ngrid=%s\ngrid_reconciled=%s\nmerged=%s\nmodel=%s\npublished=%s\n' \
-  "$inventory" "$hourly" "$era5" "$era5_reconciled" "$joined" "$prepared" "$grid" "$grid_reconciled" "$merged" "$model" "$published"
+printf 'inventory=%s\nhourly=%s\nera5=%s\nera5_reconciled=%s\njoined=%s\nprepared=%s\ngrid=%s\ngrid_reconciled=%s\nmerged=%s\ngamm=%s\nxgboost=%s\nmodel=%s\npublished=%s\n' \
+  "$inventory" "$hourly" "$era5" "$era5_reconciled" "$joined" "$prepared" "$grid" "$grid_reconciled" "$merged" "$gamm" "$xgboost" "$model" "$published"
