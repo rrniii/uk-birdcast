@@ -441,6 +441,18 @@ def test_historical_reanalysis_submission_preflights_cds_credentials() -> None:
     assert "birdcast-uk-object-store-publish.sbatch" in script
 
 
+def test_feature_join_slurm_uses_current_cli_command() -> None:
+    script = (
+        Path(__file__).parents[1]
+        / "deploy"
+        / "slurm"
+        / "birdcast-uk-feature-join.sbatch"
+    ).read_text(encoding="utf-8")
+
+    assert "-m birdcast_uk.cli features join-era5" in script
+    assert "-m birdcast_uk.cli join " not in script
+
+
 def test_slurm_scripts_initialise_jasmin_modules() -> None:
     slurm_dir = Path(__file__).parents[1] / "deploy" / "slurm"
     scripts_using_modules = [
