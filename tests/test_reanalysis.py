@@ -77,6 +77,26 @@ def test_model_comparison_requires_all_pulses_targets_and_vectors(tmp_path: Path
     assert result["selected_model_family"] == "xgboost"
 
 
+def test_model_comparison_keeps_gamm_when_blocked_time_is_worse(tmp_path: Path) -> None:
+    gamm = tmp_path / "gamm.json"
+    xgb = tmp_path / "xgb.json"
+    spatial_gamm = _metrics(10.0)["metrics"]
+    spatial_xgb = _metrics(8.5, 0.85, 0.85)["metrics"]
+    temporal_gamm = _metrics(10.0)["metrics"]
+    temporal_xgb = _metrics(11.0, 0.9, 0.9)["metrics"]
+    for row in spatial_gamm + spatial_xgb:
+        row["validation"] = "leave_one_radar_out"
+    for row in temporal_gamm + temporal_xgb:
+        row["validation"] = "blocked_time"
+    gamm.write_text(json.dumps({"metrics": spatial_gamm + temporal_gamm}), encoding="utf-8")
+    xgb.write_text(json.dumps({"metrics": spatial_xgb + temporal_xgb}), encoding="utf-8")
+
+    result = compare_models(gamm_metrics=gamm, xgboost_metrics=xgb, output=tmp_path / "selection.json")
+
+    assert result["temporal_validation_required"] is True
+    assert result["selected_model_family"] == "gamm"
+
+
 def test_publish_writes_immutable_daily_assets_before_latest_manifest(tmp_path: Path) -> None:
     comparison = tmp_path / "comparison.json"
     comparison.write_text(json.dumps({"selected_model_family": "gamm"}), encoding="utf-8")
