@@ -3,7 +3,7 @@
 #SBATCH --account=ncas_radar
 #SBATCH --qos=standard
 #SBATCH --partition=standard
-#SBATCH --time=00:30:00
+#SBATCH --time=02:00:00
 #SBATCH --mem=4G
 #SBATCH --output=logs/birdcast-uk-reanalysis-prepare-%j.out
 #SBATCH --error=logs/birdcast-uk-reanalysis-prepare-%j.err
