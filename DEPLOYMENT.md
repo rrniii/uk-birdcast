@@ -69,22 +69,28 @@ sudo systemctl enable --now \
   birdcast-uk-observed-build.timer \
   birdcast-uk-era5-build-day.timer \
   birdcast-uk-feature-join.timer \
-  birdcast-uk-ecmwf-archive.timer \
-  birdcast-uk-forecast-build.timer \
   birdcast-uk-static-site-refresh.timer \
   birdcast-uk-object-store-plan.timer \
   birdcast-uk-object-store-sync.timer
+```
+
+The legacy ECMWF Open Data and forecast units remain in the repository only for
+provenance. They are not part of the historical reanalysis service and must not
+be enabled:
+
+```bash
+sudo systemctl disable --now \
+  birdcast-uk-ecmwf-archive.timer \
+  birdcast-uk-forecast-build.timer
 ```
 
 The VPTS reader uses only the public catalogue and exact object URLs. It never
 modifies the production VPTS prefix. The publication timers write only beneath
 the `birdcast-uk/` prefix.
 
-ECMWF cycles are archived under `/opt/birdcast-uk/data/ecmwf/cycles`; only
-derived forecast products are copied into the public artifact tree. The
-successful archive service also syncs raw selected-variable GRIB cycles to
-`birdcast-uk/ecmwf/cycles/` in Object Store. Forecast manifests are written
-last so readers never observe a partially published run.
+The public artifact tree contains historical radar and ERA5-reanalysis
+products only. Immutable assets are uploaded before the `latest/*.json`
+manifests so readers do not observe a partial publication.
 
 ```bash
 sudo -u birdcast /bin/sh /opt/birdcast-uk/data/object-store/sync.sh
