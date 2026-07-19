@@ -13,6 +13,17 @@ from birdcast_uk.reanalysis import (
     publish_wide_reanalysis,
     write_model_spec,
 )
+
+
+def test_projection_transformer_is_reused() -> None:
+    from birdcast_uk import reanalysis
+
+    reanalysis._projection_transformer.cache_clear()
+    reanalysis._project(-1.5, 52.0)
+    reanalysis._project(-2.0, 53.0)
+
+    assert reanalysis._projection_transformer.cache_info().misses == 1
+    assert reanalysis._projection_transformer.cache_info().hits == 1
 from birdcast_uk.era5 import _point_in_boundary, _project_grid_point, _support_score
 from birdcast_uk.radars import BirdcastRadar
 

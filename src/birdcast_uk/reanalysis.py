@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import csv
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 import json
 import math
 import os
@@ -613,10 +614,17 @@ def _parse_time(value: str) -> datetime:
 
 def _project(longitude: float, latitude: float) -> tuple[float, float]:
     try:
-        from pyproj import Transformer
-        return tuple(float(value) for value in Transformer.from_crs("EPSG:4326", "EPSG:3035", always_xy=True).transform(longitude, latitude))
+        transformer = _projection_transformer()
+        return tuple(float(value) for value in transformer.transform(longitude, latitude))
     except ModuleNotFoundError:
         return longitude * 111_320.0 * math.cos(math.radians(latitude)), latitude * 110_540.0
+
+
+@lru_cache(maxsize=1)
+def _projection_transformer():
+    from pyproj import Transformer
+
+    return Transformer.from_crs("EPSG:4326", "EPSG:3035", always_xy=True)
 
 
 def _number(value: object) -> float | None:
