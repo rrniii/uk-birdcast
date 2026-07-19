@@ -24,6 +24,17 @@ def test_projection_transformer_is_reused() -> None:
 
     assert reanalysis._projection_transformer.cache_info().misses == 1
     assert reanalysis._projection_transformer.cache_info().hits == 1
+
+
+def test_grid_projection_transformer_is_reused() -> None:
+    from birdcast_uk import era5
+
+    era5._grid_projection_transformer.cache_clear()
+    era5._project_grid_point(-1.5, 52.0)
+    era5._project_grid_point(-2.0, 53.0)
+
+    assert era5._grid_projection_transformer.cache_info().misses == 1
+    assert era5._grid_projection_transformer.cache_info().hits == 1
 from birdcast_uk.era5 import _point_in_boundary, _project_grid_point, _support_score
 from birdcast_uk.radars import BirdcastRadar
 

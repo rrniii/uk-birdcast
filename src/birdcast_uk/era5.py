@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import date, timedelta
+from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
 import json
 import os
@@ -643,15 +644,20 @@ def _point_in_ring(longitude: float, latitude: float, ring: list[tuple[float, fl
 
 def _project_grid_point(longitude: float, latitude: float) -> tuple[float, float]:
     try:
-        from pyproj import Transformer
-
-        transformer = Transformer.from_crs("EPSG:4326", "EPSG:3035", always_xy=True)
+        transformer = _grid_projection_transformer()
         return tuple(float(value) for value in transformer.transform(longitude, latitude))
     except ModuleNotFoundError:
         return (
             longitude * 111_320.0 * math.cos(math.radians(latitude)),
             latitude * 110_540.0,
         )
+
+
+@lru_cache(maxsize=1)
+def _grid_projection_transformer():
+    from pyproj import Transformer
+
+    return Transformer.from_crs("EPSG:4326", "EPSG:3035", always_xy=True)
 
 
 def build_day(
