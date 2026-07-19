@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 from datetime import date
 from importlib.metadata import PackageNotFoundError, version
 import json
+import os
 from pathlib import Path
 import zipfile
 from typing import Any, Iterable
@@ -22,6 +23,7 @@ from .static_artifacts import utc_now, write_json
 
 
 EARTHKIT_BACKEND = "earthkit-data"
+CDS_API_URL = "https://cds.climate.copernicus.eu/api"
 
 
 @dataclass(frozen=True)
@@ -100,6 +102,55 @@ def download_request(request_json: Path, *, overwrite: bool = False) -> dict[str
         "dataset": request.dataset,
         "output_file": str(output),
         "size": output.stat().st_size,
+    }
+
+
+def cds_readiness(credentials_path: Path | None = None) -> dict[str, object]:
+    """Report Earthkit/CDS readiness without ever reading a credential value."""
+
+    configured = credentials_path or Path(os.environ.get("CDSAPI_RC") or Path.home() / ".cdsapirc")
+    url = ""
+    key_present = False
+    legacy_key = False
+    if configured.is_file():
+        for line in configured.read_text(encoding="utf-8").splitlines():
+            key, separator, value = line.partition(":")
+            if not separator:
+                continue
+            if key.strip().lower() == "url":
+                url = value.strip()
+            elif key.strip().lower() == "key":
+                token = value.strip()
+                key_present = bool(token)
+                legacy_key = ":" in token
+    try:
+        backend_version = _earthkit_version()
+        _earthkit_data()
+        earthkit_ready = True
+    except RuntimeError:
+        backend_version = None
+        earthkit_ready = False
+    notes = []
+    if not configured.is_file():
+        notes.append("CDS credential file is missing")
+    elif url != CDS_API_URL:
+        notes.append(f"CDS URL must be {CDS_API_URL}")
+    elif not key_present:
+        notes.append("CDS credential file has no key")
+    elif legacy_key:
+        notes.append("CDS key uses the retired UID:key format; use a personal access token")
+    if not earthkit_ready:
+        notes.append("earthkit-data is not importable")
+    return {
+        "ok": earthkit_ready and configured.is_file() and url == CDS_API_URL and key_present and not legacy_key,
+        "backend": EARTHKIT_BACKEND,
+        "backend_version": backend_version,
+        "credentials_path": str(configured),
+        "credentials_present": configured.is_file(),
+        "url": url or None,
+        "key_present": key_present,
+        "legacy_uid_prefixed_key": legacy_key,
+        "notes": notes,
     }
 
 

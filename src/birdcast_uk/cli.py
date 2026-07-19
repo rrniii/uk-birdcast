@@ -20,7 +20,7 @@ from .config import (
     VPTS_MAX_CATALOG_AGE_HOURS,
     VPTS_MAX_INCREMENT_DAYS,
 )
-from .era5 import build_day, download_request, extract_grid_features, extract_site_features, extract_zip_archive, write_request
+from .era5 import build_day, cds_readiness, download_request, extract_grid_features, extract_site_features, extract_zip_archive, write_request
 from .ecmwf import archive_cycle
 from .forecast import build_forecast
 from .historical import NATURAL_EARTH_10M_COUNTRIES_URL, build_historical_products
@@ -71,6 +71,12 @@ def cmd_era5_download(args: argparse.Namespace) -> int:
     result = download_request(Path(args.request_json), overwrite=args.overwrite)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
+
+
+def cmd_era5_readiness(args: argparse.Namespace) -> int:
+    result = cds_readiness(Path(args.credentials) if args.credentials else None)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0 if result["ok"] else 1
 
 
 def cmd_era5_extract_zip(args: argparse.Namespace) -> int:
@@ -373,6 +379,9 @@ def build_parser() -> argparse.ArgumentParser:
     era5_download.add_argument("--request-json", required=True)
     era5_download.add_argument("--overwrite", action="store_true")
     era5_download.set_defaults(func=cmd_era5_download)
+    era5_readiness = era5_sub.add_parser("readiness")
+    era5_readiness.add_argument("--credentials")
+    era5_readiness.set_defaults(func=cmd_era5_readiness)
 
     era5_extract_zip = era5_sub.add_parser("extract-zip")
     era5_extract_zip.add_argument("--archive", required=True)

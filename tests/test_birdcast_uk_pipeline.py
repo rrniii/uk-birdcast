@@ -11,6 +11,7 @@ from birdcast_uk.era5 import (
     _open_datasets,
     _support_score,
     build_day,
+    cds_readiness,
     download_request,
     write_request,
 )
@@ -233,6 +234,22 @@ def test_era5_build_status_identifies_earthkit_without_download(tmp_path: Path) 
     assert result["ok"] is True
     assert result["backend"] == EARTHKIT_BACKEND
     assert result["download_requested"] is False
+
+
+def test_cds_readiness_rejects_legacy_endpoint_and_uid_key(tmp_path: Path, monkeypatch) -> None:
+    credentials = tmp_path / ".cdsapirc"
+    credentials.write_text(
+        "url: https://cds.climate.copernicus.eu/api/v2\nkey: 12345:legacy\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("birdcast_uk.era5._earthkit_data", lambda: object())
+    monkeypatch.setattr("birdcast_uk.era5._earthkit_version", lambda: "test")
+
+    result = cds_readiness(credentials)
+
+    assert result["ok"] is False
+    assert result["legacy_uid_prefixed_key"] is True
+    assert any("CDS URL must be" in note for note in result["notes"])
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> Path:
