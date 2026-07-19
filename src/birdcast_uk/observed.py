@@ -235,6 +235,19 @@ def build_hourly_observations(
             altitude_max_m=altitude_max_m,
         )
         hourly_rows.extend(_hourly_rows(profiles, include_phenology=False))
+        if file_count % 100 == 0:
+            print(
+                json.dumps(
+                    {
+                        "event": "hourly_vpts_progress",
+                        "files_processed": file_count,
+                        "input_rows": input_row_count,
+                        "hourly_rows": len(hourly_rows),
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
     if not hourly_rows:
         raise ValueError("VPTS archive produced no parseable hourly profiles")
     hourly_rows.sort(key=lambda row: (str(row["radar"]), str(row["pulse"]), str(row["time_utc"])))
