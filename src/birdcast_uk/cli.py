@@ -341,6 +341,8 @@ def cmd_publish_script(args: argparse.Namespace) -> int:
         bucket=args.bucket,
         endpoint_url=args.endpoint_url,
         profile=args.profile,
+        client=args.client,
+        s3cmd_config=args.s3cmd_config,
     )
     print(json.dumps({"wrote": args.output}, indent=2, sort_keys=True))
     return 0
@@ -576,6 +578,8 @@ def build_parser() -> argparse.ArgumentParser:
     publish_script.add_argument("--bucket", default=DEFAULT_BUCKET)
     publish_script.add_argument("--endpoint-url", default=DEFAULT_INTERNAL_ENDPOINT)
     publish_script.add_argument("--profile")
+    publish_script.add_argument("--client", choices=["aws", "s3cmd"], default="aws")
+    publish_script.add_argument("--s3cmd-config")
     publish_script.set_defaults(func=cmd_publish_script)
 
     return parser

@@ -51,9 +51,36 @@ def build_publication_plan(source_dir: Path, output: Path, *, object_prefix: str
     return payload
 
 
-def sync_command(plan_path: Path, *, bucket: str, endpoint_url: str, profile: str | None = None) -> list[list[str]]:
+def sync_command(
+    plan_path: Path,
+    *,
+    bucket: str,
+    endpoint_url: str,
+    profile: str | None = None,
+    client: str = "aws",
+    s3cmd_config: str | None = None,
+) -> list[list[str]]:
     payload = json.loads(plan_path.read_text(encoding="utf-8"))
     commands = []
+    if client == "s3cmd":
+        base = ["s3cmd"]
+        if s3cmd_config:
+            base.extend(["-c", s3cmd_config])
+        for obj in payload.get("objects", []):
+            commands.append(
+                [
+                    *base,
+                    "put",
+                    str(obj["source"]),
+                    f"s3://{bucket}/{obj['key']}",
+                    "--acl-public",
+                    f"--mime-type={obj['content_type']}",
+                ]
+            )
+        return commands
+    if client != "aws":
+        raise ValueError(f"Unsupported object-store client: {client}")
+
     aws_base = ["aws"]
     if profile:
         aws_base.extend(["--profile", profile])
@@ -77,8 +104,36 @@ def sync_command(plan_path: Path, *, bucket: str, endpoint_url: str, profile: st
     return commands
 
 
-def write_sync_commands(plan_path: Path, output: Path, *, bucket: str, endpoint_url: str, profile: str | None = None) -> None:
+def write_sync_commands(
+    plan_path: Path,
+    output: Path,
+    *,
+    bucket: str,
+    endpoint_url: str,
+    profile: str | None = None,
+    client: str = "aws",
+    s3cmd_config: str | None = None,
+) -> None:
     payload = json.loads(plan_path.read_text(encoding="utf-8"))
+    if client == "s3cmd":
+        commands = sync_command(
+            plan_path,
+            bucket=bucket,
+            endpoint_url=endpoint_url,
+            client=client,
+            s3cmd_config=s3cmd_config,
+        )
+        latest_manifests = [command for command in commands if "/latest/" in command[-3] and command[-3].endswith(".json")]
+        other_objects = [command for command in commands if command not in latest_manifests]
+        output.parent.mkdir(parents=True, exist_ok=True)
+        lines = ["#!/bin/sh", "set -eu"]
+        lines.extend(" ".join(_shell_quote(part) for part in command) for command in [*other_objects, *latest_manifests])
+        output.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        output.chmod(0o750)
+        return
+    if client != "aws":
+        raise ValueError(f"Unsupported object-store client: {client}")
+
     source_dir = Path(str(payload["source_dir"]))
     object_prefix = str(payload["object_prefix"]).strip("/")
     aws_base = ["aws"]
