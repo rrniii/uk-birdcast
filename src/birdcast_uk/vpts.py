@@ -7,12 +7,14 @@ from datetime import date, datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 import email.utils
 import json
+import os
 from pathlib import Path
 import re
 import shutil
 from tempfile import TemporaryDirectory
+import time
 from typing import Any, Callable, Iterator
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
@@ -495,17 +497,37 @@ def iter_vpts_record_batches_from_inventory(
             yield batch
 
 
-def download_public_object(url: str, output: Path, *, timeout_seconds: float = 120.0) -> Path:
+def download_public_object(
+    url: str,
+    output: Path,
+    *,
+    timeout_seconds: float = 120.0,
+    retries: int = 3,
+) -> Path:
     output.parent.mkdir(parents=True, exist_ok=True)
     parsed = urlparse(url)
     if parsed.scheme in {"", "file"}:
         source = Path(parsed.path if parsed.scheme == "file" else url)
         shutil.copyfile(source, output)
         return output
-    request = Request(url, headers={"User-Agent": "birdcast-uk/0.2"})
-    with urlopen(request, timeout=timeout_seconds) as response, output.open("wb") as handle:
-        shutil.copyfileobj(response, handle)
-    return output
+    if retries < 1:
+        raise ValueError("retries must be at least one")
+    request = Request(url, headers={"User-Agent": "birdcast-uk/0.4"})
+    temporary = output.with_name(f".{output.name}.part")
+    last_error: OSError | None = None
+    for attempt in range(retries):
+        try:
+            with urlopen(request, timeout=timeout_seconds) as response, temporary.open("wb") as handle:
+                shutil.copyfileobj(response, handle)
+            os.replace(temporary, output)
+            return output
+        except (HTTPError, URLError, TimeoutError, OSError) as exc:
+            last_error = exc
+            temporary.unlink(missing_ok=True)
+            if attempt + 1 < retries:
+                time.sleep(2**attempt)
+    assert last_error is not None
+    raise last_error
 
 
 def commit_inventory_cursor(inventory_path: Path, cursor_path: Path) -> dict[str, Any]:
