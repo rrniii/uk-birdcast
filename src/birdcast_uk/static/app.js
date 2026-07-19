@@ -270,7 +270,9 @@ function drawMap() {
   const ratio = Math.min(3, window.devicePixelRatio || 1); canvas.width = Math.round(rect.width * ratio); canvas.height = Math.round(rect.height * ratio);
   const ctx = canvas.getContext("2d"); ctx.setTransform(ratio, 0, 0, ratio, 0, 0); const {width, height} = rect;
   ctx.fillStyle = "#dce9e7"; ctx.fillRect(0, 0, width, height); drawGraticule(ctx, width, height); drawBoundary(ctx, width, height, true);
-  if (state.view === "modelled") drawModelledField(ctx, width, height); else drawRadarValues(ctx, width, height);
+  if (state.view === "modelled") {
+    ctx.save(); clipToUK(ctx, width, height); drawModelledField(ctx, width, height); ctx.restore();
+  } else drawRadarValues(ctx, width, height);
   drawBoundary(ctx, width, height, false);
 }
 
@@ -283,11 +285,22 @@ function drawGraticule(ctx, width, height) {
 function drawBoundary(ctx, width, height, fill) {
   if (!state.boundary) return;
   for (const feature of state.boundary.features || []) {
-    const polygons = feature.geometry.type === "MultiPolygon" ? feature.geometry.coordinates : [feature.geometry.coordinates]; ctx.beginPath();
-    for (const polygon of polygons) for (const ring of polygon) { ring.forEach(([lon, lat], index) => { const point = project(lon, lat, width, height); if (index === 0) ctx.moveTo(point.x, point.y); else ctx.lineTo(point.x, point.y); }); ctx.closePath(); }
+    traceGeometry(ctx, feature.geometry, width, height);
     if (fill) { ctx.fillStyle = feature.properties.ADM0_A3 === "GBR" ? "#f7f8f5" : "#eef2ed"; ctx.fill("evenodd"); }
     else { ctx.strokeStyle = feature.properties.ADM0_A3 === "GBR" ? "#253a32" : "#849188"; ctx.lineWidth = feature.properties.ADM0_A3 === "GBR" ? 1.25 : 0.8; ctx.stroke(); }
   }
+}
+
+function traceGeometry(ctx, geometry, width, height) {
+  const polygons = geometry.type === "MultiPolygon" ? geometry.coordinates : [geometry.coordinates]; ctx.beginPath();
+  for (const polygon of polygons) for (const ring of polygon) { ring.forEach(([lon, lat], index) => { const point = project(lon, lat, width, height); if (index === 0) ctx.moveTo(point.x, point.y); else ctx.lineTo(point.x, point.y); }); ctx.closePath(); }
+}
+
+function clipToUK(ctx, width, height) {
+  const uk = (state.boundary && state.boundary.features || []).find((feature) => feature.properties && feature.properties.ADM0_A3 === "GBR");
+  if (!uk) return;
+  traceGeometry(ctx, uk.geometry, width, height);
+  ctx.clip("evenodd");
 }
 
 function drawModelledField(ctx, width, height) {

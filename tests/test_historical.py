@@ -182,3 +182,5 @@ def test_static_ui_is_historical_not_forecast() -> None:
     assert "periodControl" not in html
     assert "row.period" not in javascript
     assert "aggregateObservedRows" in javascript
+    assert "clipToUK" in javascript
+    assert 'ctx.clip("evenodd")' in javascript
