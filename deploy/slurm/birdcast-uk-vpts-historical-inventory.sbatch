@@ -9,7 +9,9 @@
 #SBATCH --output=logs/birdcast-uk-vpts-archive-%j.out
 #SBATCH --error=logs/birdcast-uk-vpts-archive-%j.err
 
-set -euo pipefail
+set -eo pipefail
+. /etc/profile.d/modules.sh
+set -u
 
 : "${BIRDCAST_UK_PYTHON:?Set the project Python executable}"
 : "${BIRDCAST_UK_RADARS_FILE:?Set the radar metadata path}"
@@ -18,7 +20,6 @@ set -euo pipefail
 : "${BIRDCAST_UK_PUBLIC_BASE_URL:?Set the public Object Store base URL}"
 : "${BIRDCAST_UK_OBJECT_STORE_BUCKET:?Set the Object Store bucket}"
 
-. /etc/profile.d/modules.sh
 module load jaspy/3.12/v20250704
 mkdir -p "$(dirname "$BIRDCAST_UK_VPTS_ARCHIVE_INVENTORY")" "$(dirname "$BIRDCAST_UK_RADARS_FILE")"
 "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli radars from-pvol-catalog --output "$BIRDCAST_UK_RADARS_FILE"

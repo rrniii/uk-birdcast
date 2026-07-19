@@ -10,7 +10,9 @@
 #SBATCH --output=logs/birdcast-uk-era5-grid-%A_%a.out
 #SBATCH --error=logs/birdcast-uk-era5-grid-%A_%a.err
 
-set -euo pipefail
+set -eo pipefail
+. /etc/profile.d/modules.sh
+set -u
 
 : "${BIRDCAST_UK_PYTHON:?Set the project Python executable}"
 : "${BIRDCAST_UK_VPTS_ARCHIVE_INVENTORY:?Set the historical inventory path}"
@@ -19,7 +21,6 @@ set -euo pipefail
 : "${BIRDCAST_UK_REANALYSIS_TRAINING_TABLE:?Set the prepared rolling model table}"
 : "${BIRDCAST_UK_RADARS_FILE:?Set radar metadata}"
 
-. /etc/profile.d/modules.sh
 module load jaspy/3.12/v20250704
 day="$("$BIRDCAST_UK_PYTHON" -c 'import datetime,json,sys; window=json.load(open(sys.argv[1]))["window"]; end=datetime.datetime.strptime(window["end_date"], "%Y%m%d").date(); print((end-datetime.timedelta(days=int(sys.argv[2]))).isoformat())' "$BIRDCAST_UK_VPTS_ARCHIVE_INVENTORY" "${SLURM_ARRAY_TASK_ID}")"
 stamp="${day//-/}"
