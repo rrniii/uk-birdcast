@@ -243,7 +243,50 @@ def test_era5_download_uses_earthkit_cds_source(tmp_path: Path, monkeypatch) -> 
     assert result["backend"] == EARTHKIT_BACKEND
     assert calls[0][0:3] == ("from_source", "cds", "reanalysis-era5-single-levels")
     assert calls[0][3]["prompt"] is False  # type: ignore[index]
-    assert calls[1] == ("to_target", "file", str(output_path))
+    assert calls[1][0:2] == ("to_target", "file")
+    assert str(calls[1][2]).endswith(".partial.nc")
+    assert output_path.is_file()
+
+
+def test_era5_download_merges_mixed_expver_response_atomically(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import numpy as np
+    import xarray as xr
+
+    calls = []
+
+    class MergeError(Exception):
+        pass
+
+    class FakeData:
+        def to_target(self, kind: str, output: str) -> None:
+            raise MergeError("conflicting values for variable 'expver'")
+
+        def to_xarray(self, **kwargs):
+            calls.append(kwargs)
+            return xr.Dataset(
+                {"tcc": (("valid_time",), np.array([0.5]))},
+                coords={"valid_time": [np.datetime64("2026-05-01T00:00")]},
+            )
+
+    class FakeEarthkit:
+        @staticmethod
+        def from_source(*args, **kwargs):
+            return FakeData()
+
+    monkeypatch.setattr("birdcast_uk.era5._earthkit_data", lambda: FakeEarthkit())
+    output_path = tmp_path / "era5.nc"
+    request_path = tmp_path / "request.json"
+    write_request("2026-05-01", "single-levels", output_path, request_path)
+
+    result = download_request(request_path)
+
+    assert result["ok"] is True
+    assert calls == [{"compat": "override"}]
+    assert output_path.is_file()
+    assert not list(tmp_path.glob(".*.partial.nc"))
 
 
 def test_era5_open_dataset_uses_earthkit_file_source(tmp_path: Path, monkeypatch) -> None:

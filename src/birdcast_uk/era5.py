@@ -130,7 +130,27 @@ def download_request(request_json: Path, *, overwrite: bool = False) -> dict[str
         request=request.request,
         prompt=False,
     )
-    data.to_target("file", str(output))
+    temporary = output.with_name(
+        f".{output.stem}.{os.getpid()}.partial{output.suffix}"
+    )
+    try:
+        try:
+            data.to_target("file", str(temporary))
+        except Exception as exc:
+            if type(exc).__name__ != "MergeError" or "expver" not in str(exc):
+                raise
+            # ERA5 occasionally returns mixed preliminary/final expver files
+            # inside one response. Their scalar expver coordinates conflict,
+            # but the meteorological variables and valid-time coordinates are
+            # compatible for this reanalysis request.
+            dataset = data.to_xarray(compat="override")
+            try:
+                dataset.to_netcdf(temporary)
+            finally:
+                dataset.close()
+        temporary.replace(output)
+    finally:
+        temporary.unlink(missing_ok=True)
     return {
         "ok": True,
         "skipped": False,
