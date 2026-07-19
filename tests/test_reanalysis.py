@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from birdcast_uk.reanalysis import (
+    ERA5_FEATURES,
     build_prediction_frames,
     compare_models,
     prepare_training_table,
@@ -61,6 +62,42 @@ def test_prepare_table_is_pulse_separated_and_has_no_time_predictor(tmp_path: Pa
     assert table["model_time_terms"] == "none"
     assert "timestamp" not in spec["predictors"]
     assert "u_850_ms" in table["feature_columns"]
+
+
+def test_prepare_table_accepts_decimal_pressure_level_keys(tmp_path: Path) -> None:
+    rows = _joined_rows()
+    replacements = {
+        "t_pressure_level_850": "t_pressure_level_850.0",
+        "r_pressure_level_850": "r_pressure_level_850.0",
+        "u_pressure_level_850": "u_pressure_level_850.0",
+        "v_pressure_level_850": "v_pressure_level_850.0",
+    }
+    for row in rows:
+        for old, new in replacements.items():
+            row[new] = row.pop(old)
+    joined = tmp_path / "joined.json"
+    joined.write_text(json.dumps({"rows": rows}), encoding="utf-8")
+
+    prepare_training_table(joined_features=joined, output=tmp_path / "table.json")
+    table = json.loads((tmp_path / "table.json").read_text(encoding="utf-8"))
+
+    assert table["feature_columns"] == list(ERA5_FEATURES)
+    assert table["row_count"] == 48
+
+
+def test_prepare_table_rejects_incomplete_era5_predictors(tmp_path: Path) -> None:
+    rows = _joined_rows()
+    for row in rows:
+        row.pop("u_pressure_level_850")
+    joined = tmp_path / "joined.json"
+    joined.write_text(json.dumps({"rows": rows}), encoding="utf-8")
+
+    try:
+        prepare_training_table(joined_features=joined, output=tmp_path / "table.json")
+    except ValueError as exc:
+        assert "complete declared ERA5 predictor set" in str(exc)
+    else:
+        raise AssertionError("incomplete ERA5 predictors must fail preparation")
 
 
 def _metrics(rmse: float, precision: float = 0.8, recall: float = 0.8) -> dict[str, object]:

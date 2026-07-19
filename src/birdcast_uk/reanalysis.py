@@ -54,9 +54,16 @@ def prepare_training_table(
     if not isinstance(source_rows, list):
         raise ValueError("joined features artifact has no rows")
     candidates = [_normalise_row(row, min_profiles_per_hour) for row in source_rows if isinstance(row, dict)]
-    candidates = [row for row in candidates if row is not None]
+    candidates = [
+        row
+        for row in candidates
+        if row is not None and all(_number(row.get(feature)) is not None for feature in ERA5_FEATURES)
+    ]
     if not candidates:
-        raise ValueError("joined features contains no quality-controlled LP/SP hourly rows")
+        raise ValueError(
+            "joined features contains no quality-controlled LP/SP hourly rows "
+            "with the complete declared ERA5 predictor set"
+        )
 
     complete_days = _complete_days(candidates)
     if not complete_days:
@@ -94,6 +101,7 @@ def prepare_training_table(
             "minimum_profiles_per_hour": min_profiles_per_hour,
             "rain_suspect_fraction_maximum": 0.5,
             "missing_hours": "excluded rather than interpreted as zero",
+            "era5_predictors": "complete cases for every declared ERA5 feature",
         },
         "rows": rows,
     }
@@ -527,10 +535,10 @@ def _normalise_row(row: dict[str, Any], min_profiles: int) -> dict[str, object] 
 
 
 _ERA5_ALIASES = {
-    "temperature_850_k": ("t_pressure_level_850", "t_isobaricInhPa_850", "temperature_850"),
-    "relative_humidity_850_percent": ("r_pressure_level_850", "r_isobaricInhPa_850", "relative_humidity_850"),
-    "u_850_ms": ("u_pressure_level_850", "u_isobaricInhPa_850", "u_850"),
-    "v_850_ms": ("v_pressure_level_850", "v_isobaricInhPa_850", "v_850"),
+    "temperature_850_k": ("t_pressure_level_850", "t_pressure_level_850.0", "t_isobaricInhPa_850", "temperature_850"),
+    "relative_humidity_850_percent": ("r_pressure_level_850", "r_pressure_level_850.0", "r_isobaricInhPa_850", "relative_humidity_850"),
+    "u_850_ms": ("u_pressure_level_850", "u_pressure_level_850.0", "u_isobaricInhPa_850", "u_850"),
+    "v_850_ms": ("v_pressure_level_850", "v_pressure_level_850.0", "v_isobaricInhPa_850", "v_850"),
     "surface_pressure_pa": ("sp", "surface_pressure"),
     "mean_sea_level_pressure_pa": ("msl", "mean_sea_level_pressure"),
     "total_cloud_cover_fraction": ("tcc", "total_cloud_cover"),
