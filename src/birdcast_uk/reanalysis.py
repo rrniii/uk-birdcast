@@ -240,7 +240,10 @@ def publish_reanalysis(
         "grid": grid,
         "pulses": list(PULSES),
         "variables": ["mtr_birds_km_h", "vid_birds_per_km2", "bird_u_ms", "bird_v_ms", "uncertainty", "support"],
-        "assets": {pulse: {day: str(archive_relative / path) for day, path in assets.items()} for pulse, assets in daily_assets.items()},
+        "assets": {
+            **{pulse: {day: str(archive_relative / path) for day, path in assets.items()} for pulse, assets in daily_assets.items()},
+            "boundary": "assets/uk-boundary.geojson",
+        },
         "comparison": str(archive_relative / "validation.json"),
         "source": str(archive_relative / "source.json"),
         "interpretation": "Historical modelled reanalysis. No phenology, solar-period, daylight, or timestamp predictor is used.",

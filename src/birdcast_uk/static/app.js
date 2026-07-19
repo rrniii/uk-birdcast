@@ -36,7 +36,8 @@ const state = {
     return;
   }
   if (!state.historical && state.model) state.view = "modelled";
-  const boundaryPath = state.historical && state.historical.assets && state.historical.assets.boundary;
+  const boundaryPath = (state.historical && state.historical.assets && state.historical.assets.boundary)
+    || (state.model && state.model.assets && state.model.assets.boundary);
   state.boundary = await fetchJson(assetUrl(boundaryPath), null);
   state.pulse = (state.historical && state.historical.default_pulse) || "lp";
   setRangeForView();

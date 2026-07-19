@@ -23,7 +23,7 @@ from .config import (
 from .era5 import build_day, cds_readiness, download_request, extract_grid_features, extract_site_features, extract_zip_archive, write_request
 from .ecmwf import archive_cycle
 from .forecast import build_forecast
-from .historical import NATURAL_EARTH_10M_COUNTRIES_URL, build_historical_products
+from .historical import NATURAL_EARTH_10M_COUNTRIES_URL, build_historical_products, write_boundary
 from .joined import join_observed_to_era5
 from .observed import build_hourly_observations, build_observed_products
 from .publication import build_publication_plan, write_sync_commands
@@ -151,6 +151,12 @@ def cmd_historical_build(args: argparse.Namespace) -> int:
         radars_path=Path(args.radars),
         boundary_source=args.boundary_source,
     )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_historical_boundary(args: argparse.Namespace) -> int:
+    result = write_boundary(Path(args.output), boundary_source=args.boundary_source)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 
@@ -438,6 +444,10 @@ def build_parser() -> argparse.ArgumentParser:
     historical_build.add_argument("--radars", required=True)
     historical_build.add_argument("--boundary-source", default=NATURAL_EARTH_10M_COUNTRIES_URL)
     historical_build.set_defaults(func=cmd_historical_build)
+    historical_boundary = historical_sub.add_parser("boundary")
+    historical_boundary.add_argument("--output", required=True)
+    historical_boundary.add_argument("--boundary-source", default=NATURAL_EARTH_10M_COUNTRIES_URL)
+    historical_boundary.set_defaults(func=cmd_historical_boundary)
 
     vpts_parser = subparsers.add_parser("vpts")
     vpts_sub = vpts_parser.add_subparsers(required=True)

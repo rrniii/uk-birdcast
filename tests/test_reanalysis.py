@@ -120,6 +120,7 @@ def test_publish_writes_immutable_daily_assets_before_latest_manifest(tmp_path: 
     latest = publish_reanalysis(predictions=predictions, comparison=comparison, output_root=tmp_path / "artifacts")
 
     assert latest["assets"]["lp"]["2025-07-01"].endswith("daily/lp/20250701.json")
+    assert latest["assets"]["boundary"] == "assets/uk-boundary.geojson"
     assert (tmp_path / "artifacts" / latest["assets"]["lp"]["2025-07-01"]).is_file()
     assert (tmp_path / "artifacts" / "latest" / "gam-era5.json").is_file()
 

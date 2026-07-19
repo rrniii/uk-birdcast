@@ -149,6 +149,19 @@ def _load_boundary(source: str | Path) -> dict[str, object]:
     }
 
 
+def write_boundary(output: Path, *, boundary_source: str | Path = NATURAL_EARTH_10M_COUNTRIES_URL) -> dict[str, object]:
+    """Write the shared high-resolution UK/Ireland map asset."""
+
+    boundary = _load_boundary(boundary_source)
+    _write_compact_json(output, boundary)
+    return {
+        "ok": True,
+        "output": str(output),
+        "resolution": str(boundary["properties"]["resolution"]),
+        "feature_count": len(boundary["features"]),
+    }
+
+
 def _svg_frame(title: str, subtitle: str, body: str, *, width: int = 1200, height: int = 680) -> str:
     return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" role="img">
   <title>{escape(title)}</title>

@@ -42,4 +42,5 @@ else
   predictions="$run_dir/xgboost/predictions_long.csv"
 fi
 "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli reanalysis frames --predictions-csv "$predictions" --model-family "$selected" --output "$run_dir/predictions.json"
+"$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli historical boundary --output "$BIRDCAST_UK_ARTIFACT_ROOT/assets/uk-boundary.geojson"
 "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli reanalysis publish --predictions "$run_dir/predictions.json" --comparison "$run_dir/model-selection.json" --output-root "$BIRDCAST_UK_ARTIFACT_ROOT"
