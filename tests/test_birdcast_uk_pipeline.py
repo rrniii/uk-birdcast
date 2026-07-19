@@ -13,6 +13,7 @@ from birdcast_uk.era5 import (
     build_day,
     cds_readiness,
     download_request,
+    validate_day,
     write_request,
 )
 from birdcast_uk.observed import build_observed_products
@@ -234,6 +235,51 @@ def test_era5_build_status_identifies_earthkit_without_download(tmp_path: Path) 
     assert result["ok"] is True
     assert result["backend"] == EARTHKIT_BACKEND
     assert result["download_requested"] is False
+
+
+def test_era5_day_validation_requires_both_feature_datasets(tmp_path: Path) -> None:
+    day = "2026-07-13"
+    for kind in ("single_levels", "pressure_levels"):
+        (tmp_path / f"era5_{kind}_20260713_uk.nc").write_bytes(b"netcdf")
+    feature_output = tmp_path / "features.json"
+    rows = []
+    for hour in range(24):
+        common = {
+            "radar": "chenies",
+            "time_utc": f"{day}T{hour:02d}:00:00",
+        }
+        rows.append(
+            {
+                **common,
+                "sp": 101000.0,
+                "msl": 101200.0,
+                "tcc": 0.5,
+                "blh": 800.0,
+                "tp": 0.0,
+            }
+        )
+        rows.append(
+            {
+                **common,
+                "t_pressure_level_850.0": 280.0,
+                "r_pressure_level_850.0": 75.0,
+                "u_pressure_level_850.0": 4.0,
+                "v_pressure_level_850.0": 2.0,
+            }
+        )
+    feature_output.write_text(json.dumps({"rows": rows}), encoding="utf-8")
+
+    valid = validate_day(day=day, raw_dir=tmp_path, feature_output=feature_output)
+    assert valid["ok"] is True
+    assert valid["radar_hour_count"] == 24
+
+    feature_output.write_text(
+        json.dumps({"rows": [row for row in rows if "sp" in row]}),
+        encoding="utf-8",
+    )
+    invalid = validate_day(day=day, raw_dir=tmp_path, feature_output=feature_output)
+    assert invalid["ok"] is False
+    assert invalid["incomplete_radar_hour_count"] == 24
 
 
 def test_cds_readiness_rejects_legacy_endpoint_and_uid_key(tmp_path: Path, monkeypatch) -> None:

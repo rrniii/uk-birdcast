@@ -314,6 +314,80 @@ def extract_grid_features(
     return status
 
 
+def validate_day(
+    *,
+    day: str,
+    raw_dir: Path,
+    feature_output: Path,
+) -> dict[str, object]:
+    """Require both ERA5 datasets and both feature rows for every radar-hour."""
+
+    selected = date.fromisoformat(day)
+    stamp = selected.strftime("%Y%m%d")
+    single_file = raw_dir / f"era5_single_levels_{stamp}_uk.nc"
+    pressure_file = raw_dir / f"era5_pressure_levels_{stamp}_uk.nc"
+    errors: list[str] = []
+    for label, path in (("single-level", single_file), ("pressure-level", pressure_file)):
+        if not path.is_file() or path.stat().st_size == 0:
+            errors.append(f"{label} ERA5 file is missing or empty: {path}")
+
+    rows: list[dict[str, object]] = []
+    if not feature_output.is_file() or feature_output.stat().st_size == 0:
+        errors.append(f"site-feature file is missing or empty: {feature_output}")
+    else:
+        try:
+            payload = json.loads(feature_output.read_text(encoding="utf-8"))
+            rows = [row for row in payload.get("rows", []) if isinstance(row, dict)]
+        except (json.JSONDecodeError, OSError) as exc:
+            errors.append(f"site-feature file cannot be read: {exc}")
+
+    required_single = {"sp", "msl", "tcc", "blh", "tp"}
+    required_pressure = {
+        "t_pressure_level_850.0",
+        "r_pressure_level_850.0",
+        "u_pressure_level_850.0",
+        "v_pressure_level_850.0",
+    }
+    grouped: dict[tuple[str, str], set[str]] = {}
+    for row in rows:
+        radar = str(row.get("radar") or "")
+        time_utc = str(row.get("time_utc") or "")
+        if not radar or not time_utc.startswith(selected.isoformat()):
+            continue
+        grouped.setdefault((radar, time_utc), set()).update(row)
+
+    radars = sorted({radar for radar, _ in grouped})
+    incomplete = [
+        (radar, time_utc)
+        for (radar, time_utc), keys in grouped.items()
+        if not required_single.issubset(keys) or not required_pressure.issubset(keys)
+    ]
+    expected_groups = len(radars) * 24
+    if not radars:
+        errors.append("site-feature file contains no radar-hours for the requested day")
+    elif len(grouped) != expected_groups:
+        errors.append(
+            f"site-feature file has {len(grouped)} radar-hours; expected {expected_groups}"
+        )
+    if incomplete:
+        errors.append(
+            f"{len(incomplete)} radar-hours lack the complete single- and pressure-level predictor set"
+        )
+
+    return {
+        "ok": not errors,
+        "day": selected.isoformat(),
+        "single_levels": str(single_file),
+        "pressure_levels": str(pressure_file),
+        "feature_output": str(feature_output),
+        "radar_count": len(radars),
+        "radar_hour_count": len(grouped),
+        "expected_radar_hour_count": expected_groups,
+        "incomplete_radar_hour_count": len(incomplete),
+        "errors": errors,
+    }
+
+
 def _load_boundary_polygons(path: Path) -> list[list[list[tuple[float, float]]]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     polygons: list[list[list[tuple[float, float]]]] = []

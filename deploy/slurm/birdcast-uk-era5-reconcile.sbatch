@@ -31,7 +31,10 @@ for offset in $(seq 0 364); do
   single="$BIRDCAST_UK_ERA5_RAW_DIR/era5_single_levels_${stamp}_uk.nc"
   pressure="$BIRDCAST_UK_ERA5_RAW_DIR/era5_pressure_levels_${stamp}_uk.nc"
   features="$BIRDCAST_UK_ERA5_FEATURE_DIR/era5_site_features_${stamp}.json"
-  if [ -s "$single" ] && [ -s "$pressure" ] && [ -s "$features" ]; then
+  if "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli era5 validate-day \
+    --day "$day" \
+    --raw-dir "$BIRDCAST_UK_ERA5_RAW_DIR" \
+    --feature-output "$features" >/dev/null; then
     continue
   fi
   "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli era5 build-day \
@@ -41,14 +44,20 @@ for offset in $(seq 0 364); do
     --radars "$BIRDCAST_UK_RADARS_FILE" \
     --download \
     --overwrite
+  "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli era5 validate-day \
+    --day "$day" \
+    --raw-dir "$BIRDCAST_UK_ERA5_RAW_DIR" \
+    --feature-output "$features"
   repaired=$((repaired + 1))
 done
 
 for offset in $(seq 0 364); do
   day="$(date -u -d "${end_date} -${offset} days" +%Y-%m-%d)"
   stamp="${day//-/}"
-  test -s "$BIRDCAST_UK_ERA5_RAW_DIR/era5_single_levels_${stamp}_uk.nc"
-  test -s "$BIRDCAST_UK_ERA5_RAW_DIR/era5_pressure_levels_${stamp}_uk.nc"
-  test -s "$BIRDCAST_UK_ERA5_FEATURE_DIR/era5_site_features_${stamp}.json"
+  "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli era5 validate-day \
+    --day "$day" \
+    --raw-dir "$BIRDCAST_UK_ERA5_RAW_DIR" \
+    --feature-output "$BIRDCAST_UK_ERA5_FEATURE_DIR/era5_site_features_${stamp}.json" \
+    >/dev/null
 done
 printf 'ERA5 reconciliation complete: repaired=%s window_days=365\n' "$repaired"
