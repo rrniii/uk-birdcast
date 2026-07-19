@@ -53,7 +53,13 @@ def main() -> int:
     output = Path(sys.argv[2]); output.mkdir(parents=True, exist_ok=True)
     grid = pd.read_csv(sys.argv[3]) if len(sys.argv) >= 4 else None
     frame = pd.read_csv(spec["training_csv"])
-    predictors = [name for name in spec["predictors"] if name in frame.columns]
+    predictors = list(spec["predictors"])
+    missing_predictors = sorted(set(predictors) - set(frame.columns))
+    if missing_predictors:
+        raise SystemExit(
+            "training table is missing declared predictors: "
+            + ", ".join(missing_predictors)
+        )
     targets = [*spec["intensity_targets"], *spec["vector_targets"]]
     metrics = []
     for pulse in spec["pulses"]:

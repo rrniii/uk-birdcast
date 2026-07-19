@@ -17,7 +17,10 @@ spec <- jsonlite::fromJSON(spec_path, simplifyVector = TRUE)
 data <- utils::read.csv(spec$training_csv, check.names = FALSE)
 data$radar <- factor(data$radar)
 predictors <- spec$predictors
-predictors <- predictors[predictors %in% names(data)]
+missing_predictors <- setdiff(predictors, names(data))
+if (length(missing_predictors)) {
+  stop(sprintf("training table is missing declared predictors: %s", paste(missing_predictors, collapse = ", ")))
+}
 if (!all(c("easting_m", "northing_m") %in% predictors)) stop("projected spatial predictors are required")
 smooth_features <- setdiff(predictors, c("easting_m", "northing_m"))
 targets <- c(spec$intensity_targets, spec$vector_targets)
@@ -87,7 +90,15 @@ for (pulse in spec$pulses) {
       test <- subset[subset$radar == held_radar, , drop = FALSE]
       if (nrow(train) < 30 || !nrow(test)) next
       model <- mgcv::bam(formula, data = train, weights = weights[subset$radar != held_radar], method = "fREML", discrete = TRUE)
-      predicted <- as.numeric(stats::predict(model, newdata = test, exclude = "s(radar)"))
+      # The radar random effect is excluded for spatial transfer. Give mgcv a
+      # level present in the fitted data so it does not warn about the
+      # intentionally held-out factor level.
+      prediction_test <- test
+      prediction_test$radar <- factor(
+        rep(as.character(train$radar[[1]]), nrow(test)),
+        levels = levels(train$radar)
+      )
+      predicted <- as.numeric(stats::predict(model, newdata = prediction_test, exclude = "s(radar)"))
       if (is_intensity) predicted <- pmax(predicted, 0)^3
       held_out[[length(held_out) + 1]] <- data.frame(observed = test[[target]], predicted = predicted)
     }
