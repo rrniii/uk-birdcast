@@ -101,6 +101,9 @@ for (pulse in spec$pulses) {
     if (!is.null(grid_path) && file.exists(grid_path)) {
       grid <- utils::read.csv(grid_path, check.names = FALSE)
       if (all(predictors %in% names(grid))) {
+        # mgcv still requires every formula variable in newdata even when the
+        # radar random effect is excluded from the national prediction.
+        grid$radar <- factor(as.character(subset$radar[[1]]), levels = levels(factor(subset$radar)))
         estimate <- stats::predict(final_model, newdata = grid, exclude = "s(radar)", se.fit = TRUE)
         value <- as.numeric(estimate$fit)
         if (is_intensity) value <- pmax(value, 0)^3
