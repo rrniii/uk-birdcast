@@ -5,9 +5,10 @@
 - Historical radar reanalysis only; no public forecast.
 - VPTS vertical integrated density from 200 to 4000 m.
 - LP and SP retained as separate products, with LP selected by default.
-- Daily radar-site maps for 2013 onward.
-- Annual nocturnal passage, solar-period activity, phenology, and archive
-  coverage plots.
+- Daily radar-site maps for the latest complete 365-day window.
+- All-hour radar-site summaries, time-series plots, and archive coverage
+  plots. The displayed radar values aggregate available day, twilight, and
+  night profiles rather than selecting a solar period.
 - Natural Earth 1:10m country geometry rendered on a device-pixel-aware canvas.
 - Versioned Object Store assets and an atomic `latest/historical.json` manifest.
 
@@ -41,14 +42,14 @@ checksums, and derived feature tables remain under `birdcast-uk/era5/`.
 
 ECMWF Open Data cycle retrieval and forecast generation are disabled. Their code
 and archived test cycles remain for provenance but are outside the operational
-product.
+product. The ERA5 model has no hour-of-day, date, season, daylight, twilight,
+sunrise, sunset, or phenology predictor.
 
 ## Plot rules
 
 - LP and SP plots are separate; no combined LP+SP population interpretation.
-- Partial 2026 is excluded from trend plots.
-- Network plots use the aggregate archive tables and report effort/coverage.
-- Phenology plots report median passage dates rather than implying abundance.
+- The initial release is a rolling 365-day historical reanalysis window.
+- Network plots use all available hours and report effort/coverage.
 - Every plot labels VID as a passage index.
 
 ## BTO validation

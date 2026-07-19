@@ -23,8 +23,10 @@ as an independent historical weather flow for attribution and model analysis.
 7. Fit an all-hour, pulse-separated ERA5 GAMM and an identical-predictor XGBoost benchmark on JASMIN batch compute.
 8. Select one model family using held-out-radar performance, publish hourly native-ERA5 UK flow frames, and compare aggregate activity with licensed BTO products.
 
-The first published snapshot contains 116,721 VPTS files, 23.8 million vertical
-profiles, and 344,946 radar-day summaries spanning 2013-2026.
+The first modelled release covers the latest complete 365-day overlap between
+the VPTS archive and ERA5. Published manifests record the exact input-file,
+profile, and radar-hour counts for each run; the public interface does not
+claim a fixed archive total.
 
 ## Scientific contract
 
