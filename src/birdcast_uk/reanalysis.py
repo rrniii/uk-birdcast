@@ -252,6 +252,183 @@ def publish_reanalysis(
     return latest
 
 
+def publish_wide_reanalysis(
+    *,
+    lp_csv: Path,
+    sp_csv: Path,
+    comparison: Path,
+    output_root: Path,
+    model_family: str,
+) -> dict[str, object]:
+    """Stream wide national predictions into daily browser assets."""
+
+    if model_family not in MODEL_FAMILIES:
+        raise ValueError(f"unknown model family: {model_family}")
+    selection = _read_json(comparison)
+    selected = str(selection.get("selected_model_family") or "")
+    if selected != model_family:
+        raise ValueError(f"model selection is {selected}, not {model_family}")
+    run_id = utc_now().replace(":", "").replace("-", "")
+    archive_relative = Path("archive") / "reanalysis" / "gam-era5" / run_id
+    archive_dir = output_root / archive_relative
+    output_root.mkdir(parents=True, exist_ok=True)
+    staging = Path(mkdtemp(prefix=".reanalysis.", dir=output_root))
+    try:
+        assets: dict[str, dict[str, str]] = {}
+        grids = []
+        first_times = []
+        last_times = []
+        for pulse, source in (("lp", lp_csv), ("sp", sp_csv)):
+            pulse_assets, grid, first_time, last_time = _stream_wide_daily_assets(
+                source,
+                staging,
+                pulse=pulse,
+                model_family=model_family,
+            )
+            assets[pulse] = {
+                day: str(archive_relative / relative)
+                for day, relative in pulse_assets.items()
+            }
+            grids.append(grid)
+            first_times.append(first_time)
+            last_times.append(last_time)
+        if grids[0] != grids[1]:
+            raise ValueError("LP and SP prediction grids differ")
+        write_json(staging / "validation.json", selection)
+        write_json(
+            staging / "source.json",
+            {
+                "generated_at_utc": utc_now(),
+                "model_family": model_family,
+                "lp_csv": str(lp_csv),
+                "sp_csv": str(sp_csv),
+                "streaming_policy": "one complete UTC day at a time",
+            },
+        )
+        if archive_dir.exists():
+            raise FileExistsError(f"refusing to overwrite immutable reanalysis archive: {archive_dir}")
+        archive_dir.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(staging, archive_dir)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+    latest = {
+        "schema_version": REANALYSIS_SCHEMA_VERSION,
+        "data_available": True,
+        "generated_at_utc": utc_now(),
+        "model_family": model_family,
+        "archive_prefix": str(archive_relative),
+        "first_time_utc": min(first_times),
+        "latest_time_utc": max(last_times),
+        "grid": grids[0],
+        "pulses": list(PULSES),
+        "variables": ["mtr_birds_km_h", "vid_birds_per_km2", "bird_u_ms", "bird_v_ms", "uncertainty", "support"],
+        "assets": {
+            **assets,
+            "boundary": "assets/uk-boundary.geojson",
+        },
+        "comparison": str(archive_relative / "validation.json"),
+        "source": str(archive_relative / "source.json"),
+        "interpretation": "Historical modelled reanalysis. No phenology, solar-period, daylight, or timestamp predictor is used.",
+    }
+    write_json(output_root / "latest" / "gam-era5.json", latest)
+    return latest
+
+
+def _stream_wide_daily_assets(
+    source: Path,
+    staging: Path,
+    *,
+    pulse: str,
+    model_family: str,
+) -> tuple[dict[str, str], dict[str, object], str, str]:
+    required = {
+        "time_utc",
+        "longitude",
+        "latitude",
+        "support",
+        *INTENSITY_TARGETS,
+        *VECTOR_TARGETS,
+    }
+    assets: dict[str, str] = {}
+    grid: dict[str, object] | None = None
+    first_time: str | None = None
+    last_time: str | None = None
+    current_day: str | None = None
+    frames: dict[str, list[dict[str, object]]] = {}
+
+    def flush(day: str) -> None:
+        nonlocal grid
+        if len(frames) != 24:
+            raise ValueError(f"{source} has {len(frames)} hourly frames for {day}, expected 24")
+        ordered = []
+        cell_counts = set()
+        for time_utc, cells in sorted(frames.items()):
+            cells.sort(key=lambda cell: (-float(cell["latitude"]), float(cell["longitude"])))
+            cell_counts.add(len(cells))
+            ordered.append({"model_family": model_family, "pulse": pulse, "time_utc": time_utc, "cells": cells})
+        if len(cell_counts) != 1 or not cell_counts or next(iter(cell_counts)) < 1:
+            raise ValueError(f"{source} has an inconsistent prediction grid for {day}")
+        if grid is None:
+            first_cells = ordered[0]["cells"]
+            longitudes = sorted({float(cell["longitude"]) for cell in first_cells})
+            latitudes = sorted({float(cell["latitude"]) for cell in first_cells}, reverse=True)
+            grid = {
+                "longitude_step": _grid_step(longitudes),
+                "latitude_step": _grid_step(latitudes),
+                "longitude_count": len(longitudes),
+                "latitude_count": len(latitudes),
+                "cell_count": len(first_cells),
+                "resolution": "ERA5 native 0.25 degree grid masked to Great Britain",
+            }
+        relative = Path("daily") / pulse / f"{day.replace('-', '')}.json"
+        write_json(
+            staging / relative,
+            {
+                "schema_version": REANALYSIS_SCHEMA_VERSION,
+                "grid": grid,
+                "pulse": pulse,
+                "date_utc": day,
+                "frames": ordered,
+            },
+        )
+        assets[day] = str(relative)
+
+    with source.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if not reader.fieldnames or not required.issubset(reader.fieldnames):
+            missing = sorted(required - set(reader.fieldnames or []))
+            raise ValueError(f"wide prediction CSV is missing fields: {', '.join(missing)}")
+        for row in reader:
+            timestamp = _canonical_time(row.get("time_utc"))
+            day = timestamp[:10]
+            if current_day is not None and day != current_day:
+                flush(current_day)
+                frames = {}
+            current_day = day
+            first_time = min(first_time, timestamp) if first_time else timestamp
+            last_time = max(last_time, timestamp) if last_time else timestamp
+            uncertainty_values = [
+                _number(row.get(f"uncertainty_{target}"))
+                for target in (*INTENSITY_TARGETS, *VECTOR_TARGETS)
+            ]
+            uncertainty = max((value for value in uncertainty_values if value is not None), default=0.0)
+            cell = {
+                "longitude": float(row["longitude"]),
+                "latitude": float(row["latitude"]),
+                "support": float(row["support"]),
+                "uncertainty": uncertainty,
+                **{target: float(row[target]) for target in (*INTENSITY_TARGETS, *VECTOR_TARGETS)},
+            }
+            frames.setdefault(timestamp, []).append(cell)
+    if current_day is None or first_time is None or last_time is None:
+        raise ValueError(f"wide prediction CSV is empty: {source}")
+    flush(current_day)
+    assert grid is not None
+    return assets, grid, first_time, last_time
+
+
 def build_prediction_frames(*, predictions_csv: Path, output: Path, model_family: str) -> dict[str, object]:
     """Pivot batch-model long predictions into the browser frame contract.
 

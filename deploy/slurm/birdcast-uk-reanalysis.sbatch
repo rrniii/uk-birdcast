@@ -35,15 +35,14 @@ module load jaspy/3.12/v20250704
 "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli reanalysis compare --gamm-metrics "$run_dir/gamm/metrics.json" --xgboost-metrics "$run_dir/xgboost/metrics.json" --output "$run_dir/model-selection.json"
 
 selected="$("$BIRDCAST_UK_PYTHON" -c 'import json,sys; print(json.load(open(sys.argv[1]))["selected_model_family"])' "$run_dir/model-selection.json")"
-if [ "$selected" = gamm ]; then
-  predictions="$run_dir/gamm/predictions_long.csv"
-else
-  first_prediction="$(find "$run_dir/xgboost" -maxdepth 1 -name 'prediction_*.csv' -print | sort | head -1)"
-  [ -n "$first_prediction" ]
-  head -1 "$first_prediction" > "$run_dir/xgboost/predictions_long.csv"
-  for prediction in "$run_dir"/xgboost/prediction_*.csv; do tail -n +2 "$prediction" >> "$run_dir/xgboost/predictions_long.csv"; done
-  predictions="$run_dir/xgboost/predictions_long.csv"
-fi
-"$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli reanalysis frames --predictions-csv "$predictions" --model-family "$selected" --output "$run_dir/predictions.json"
+lp_predictions="$run_dir/$selected/predictions_wide_lp.csv"
+sp_predictions="$run_dir/$selected/predictions_wide_sp.csv"
+[ -s "$lp_predictions" ]
+[ -s "$sp_predictions" ]
 "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli historical boundary --output "$BIRDCAST_UK_ARTIFACT_ROOT/assets/uk-boundary.geojson"
-"$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli reanalysis publish --predictions "$run_dir/predictions.json" --comparison "$run_dir/model-selection.json" --output-root "$BIRDCAST_UK_ARTIFACT_ROOT"
+"$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli reanalysis publish-wide \
+  --lp-csv "$lp_predictions" \
+  --sp-csv "$sp_predictions" \
+  --comparison "$run_dir/model-selection.json" \
+  --output-root "$BIRDCAST_UK_ARTIFACT_ROOT" \
+  --model-family "$selected"

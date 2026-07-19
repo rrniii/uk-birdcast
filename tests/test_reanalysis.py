@@ -4,8 +4,15 @@ from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 
-from birdcast_uk.reanalysis import build_prediction_frames, compare_models, prepare_training_table, publish_reanalysis, write_model_spec
-from birdcast_uk.era5 import _point_in_boundary, _support_score
+from birdcast_uk.reanalysis import (
+    build_prediction_frames,
+    compare_models,
+    prepare_training_table,
+    publish_reanalysis,
+    publish_wide_reanalysis,
+    write_model_spec,
+)
+from birdcast_uk.era5 import _point_in_boundary, _project_grid_point, _support_score
 from birdcast_uk.radars import BirdcastRadar
 
 
@@ -125,6 +132,42 @@ def test_publish_writes_immutable_daily_assets_before_latest_manifest(tmp_path: 
     assert (tmp_path / "artifacts" / "latest" / "gam-era5.json").is_file()
 
 
+def test_publish_wide_streams_complete_daily_pulse_assets(tmp_path: Path) -> None:
+    comparison = tmp_path / "comparison.json"
+    comparison.write_text(json.dumps({"selected_model_family": "gamm"}), encoding="utf-8")
+    header = (
+        "time_utc,longitude,latitude,support,mtr_birds_km_h,"
+        "vid_birds_per_km2,bird_u_ms,bird_v_ms,"
+        "uncertainty_mtr_birds_km_h,uncertainty_vid_birds_per_km2,"
+        "uncertainty_bird_u_ms,uncertainty_bird_v_ms\n"
+    )
+    rows = "".join(
+        f"2025-07-01T{hour:02d}:00:00Z,-0.5,51.5,0.8,2.0,1.0,1.0,0.5,0.2,0.1,0.1,0.1\n"
+        for hour in range(24)
+    )
+    lp_csv = tmp_path / "lp.csv"
+    sp_csv = tmp_path / "sp.csv"
+    lp_csv.write_text(header + rows, encoding="utf-8")
+    sp_csv.write_text(header + rows, encoding="utf-8")
+
+    latest = publish_wide_reanalysis(
+        lp_csv=lp_csv,
+        sp_csv=sp_csv,
+        comparison=comparison,
+        output_root=tmp_path / "artifacts",
+        model_family="gamm",
+    )
+
+    assert latest["data_available"] is True
+    assert latest["grid"]["cell_count"] == 1
+    assert latest["first_time_utc"] == "2025-07-01T00:00:00Z"
+    assert latest["latest_time_utc"] == "2025-07-01T23:00:00Z"
+    lp_asset = tmp_path / "artifacts" / latest["assets"]["lp"]["2025-07-01"]
+    sp_asset = tmp_path / "artifacts" / latest["assets"]["sp"]["2025-07-01"]
+    assert len(json.loads(lp_asset.read_text(encoding="utf-8"))["frames"]) == 24
+    assert len(json.loads(sp_asset.read_text(encoding="utf-8"))["frames"]) == 24
+
+
 def test_frames_require_support_and_merge_all_model_targets(tmp_path: Path) -> None:
     source = tmp_path / "predictions.csv"
     source.write_text(
@@ -165,3 +208,10 @@ def test_grid_boundary_mask_keeps_land_and_excludes_holes() -> None:
     assert _point_in_boundary(-1.0, 52.0, polygons) is True
     assert _point_in_boundary(0.0, 51.5, polygons) is False
     assert _point_in_boundary(3.0, 52.0, polygons) is False
+
+
+def test_grid_projection_emits_finite_model_coordinates() -> None:
+    easting, northing = _project_grid_point(-0.5, 51.5)
+
+    assert 3_500_000 < easting < 4_500_000
+    assert 2_500_000 < northing < 4_000_000

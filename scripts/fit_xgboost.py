@@ -58,6 +58,11 @@ def main() -> int:
     metrics = []
     for pulse in spec["pulses"]:
         source = frame.loc[frame.pulse == pulse]
+        pulse_prediction = (
+            grid[["time_utc", "longitude", "latitude", "support"]].copy()
+            if grid is not None
+            else None
+        )
         for target in targets:
             required = ["radar", target, *predictors]
             data = source.dropna(subset=required).copy()
@@ -90,9 +95,12 @@ def main() -> int:
                 if not all(name in grid.columns for name in required_grid):
                     raise SystemExit("national ERA5 grid must include time_utc, coordinates, support, and all predictors")
                 predicted = final.predict(grid[predictors]); predicted = np.maximum(predicted, 0) ** 3 if intensity else predicted
-                prediction = grid[["time_utc", "longitude", "latitude", "support"]].copy()
-                prediction["pulse"] = pulse; prediction["target"] = target; prediction["value"] = predicted; prediction["uncertainty"] = float("nan"); prediction["model_family"] = "xgboost"
-                prediction.to_csv(output / f"prediction_{pulse}_{target}.csv", index=False)
+                pulse_prediction[target] = predicted
+                pulse_prediction[f"uncertainty_{target}"] = float("nan")
+        if pulse_prediction is not None:
+            if not all(target in pulse_prediction.columns for target in targets):
+                raise SystemExit(f"missing national predictions for pulse {pulse}")
+            pulse_prediction.to_csv(output / f"predictions_wide_{pulse}.csv", index=False)
     (output / "metrics.json").write_text(json.dumps({"model_family": "xgboost", "metrics": metrics, "model_time_terms": "none", "predictors": predictors}, indent=2) + "\n", encoding="utf-8")
     return 0
 

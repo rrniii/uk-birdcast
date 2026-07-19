@@ -28,7 +28,7 @@ from .joined import join_observed_to_era5
 from .observed import build_hourly_observations, build_observed_products
 from .publication import build_publication_plan, write_sync_commands
 from .radars import radars_from_pvol_catalog, write_radars
-from .reanalysis import build_prediction_frames, compare_models, prepare_training_table, publish_reanalysis, write_model_spec
+from .reanalysis import build_prediction_frames, compare_models, prepare_training_table, publish_reanalysis, publish_wide_reanalysis, write_model_spec
 from .static_artifacts import build_static_artifacts, install_static_site
 from .vpts import build_catalog_inventory, build_historical_inventory, validate_manifest
 
@@ -319,6 +319,18 @@ def cmd_reanalysis_publish(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_reanalysis_publish_wide(args: argparse.Namespace) -> int:
+    result = publish_wide_reanalysis(
+        lp_csv=Path(args.lp_csv),
+        sp_csv=Path(args.sp_csv),
+        comparison=Path(args.comparison),
+        output_root=Path(args.output_root),
+        model_family=args.model_family,
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
 def cmd_reanalysis_frames(args: argparse.Namespace) -> int:
     result = build_prediction_frames(
         predictions_csv=Path(args.predictions_csv),
@@ -545,6 +557,13 @@ def build_parser() -> argparse.ArgumentParser:
     reanalysis_publish.add_argument("--comparison", required=True)
     reanalysis_publish.add_argument("--output-root", required=True)
     reanalysis_publish.set_defaults(func=cmd_reanalysis_publish)
+    reanalysis_publish_wide = reanalysis_sub.add_parser("publish-wide")
+    reanalysis_publish_wide.add_argument("--lp-csv", required=True)
+    reanalysis_publish_wide.add_argument("--sp-csv", required=True)
+    reanalysis_publish_wide.add_argument("--comparison", required=True)
+    reanalysis_publish_wide.add_argument("--output-root", required=True)
+    reanalysis_publish_wide.add_argument("--model-family", choices=["gamm", "xgboost"], required=True)
+    reanalysis_publish_wide.set_defaults(func=cmd_reanalysis_publish_wide)
     reanalysis_frames = reanalysis_sub.add_parser("frames")
     reanalysis_frames.add_argument("--predictions-csv", required=True)
     reanalysis_frames.add_argument("--model-family", choices=["gamm", "xgboost"], required=True)

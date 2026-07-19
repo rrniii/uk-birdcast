@@ -22,8 +22,15 @@ smooth_features <- setdiff(predictors, c("easting_m", "northing_m"))
 targets <- c(spec$intensity_targets, spec$vector_targets)
 
 metric_rows <- list()
-prediction_rows <- list()
 row_id <- 0
+prediction_grid <- NULL
+if (!is.null(grid_path) && file.exists(grid_path)) {
+  prediction_grid <- utils::read.csv(grid_path, check.names = FALSE)
+  grid_columns <- c("time_utc", "longitude", "latitude", "support")
+  if (!all(c(grid_columns, predictors) %in% names(prediction_grid))) {
+    stop("national ERA5 grid must include time_utc, coordinates, support, and all predictors")
+  }
+}
 
 score <- function(observed, predicted) {
   residual <- predicted - observed
@@ -57,6 +64,10 @@ blocked_time_split <- function(data) {
 
 for (pulse in spec$pulses) {
   pulse_data <- data[data$pulse == pulse, , drop = FALSE]
+  pulse_prediction <- NULL
+  if (!is.null(prediction_grid)) {
+    pulse_prediction <- prediction_grid[, c("time_utc", "longitude", "latitude", "support"), drop = FALSE]
+  }
   for (target in targets) {
     required <- unique(c("radar", target, predictors))
     subset <- pulse_data[stats::complete.cases(pulse_data[, required, drop = FALSE]), , drop = FALSE]
@@ -98,22 +109,36 @@ for (pulse in spec$pulses) {
     }
     final_model <- mgcv::bam(formula, data = subset, weights = weights, method = "fREML", discrete = TRUE)
     saveRDS(final_model, file.path(output_dir, sprintf("gamm_%s_%s.rds", pulse, target)))
-    if (!is.null(grid_path) && file.exists(grid_path)) {
-      grid <- utils::read.csv(grid_path, check.names = FALSE)
-      if (all(predictors %in% names(grid))) {
-        # mgcv still requires every formula variable in newdata even when the
-        # radar random effect is excluded from the national prediction.
-        grid$radar <- factor(as.character(subset$radar[[1]]), levels = levels(factor(subset$radar)))
-        estimate <- stats::predict(final_model, newdata = grid, exclude = "s(radar)", se.fit = TRUE)
-        value <- as.numeric(estimate$fit)
-        if (is_intensity) value <- pmax(value, 0)^3
-        grid_columns <- c("time_utc", "longitude", "latitude", "support")
-        if (!all(grid_columns %in% names(grid))) stop("national ERA5 grid must include a support score")
-        prediction_rows[[length(prediction_rows) + 1]] <- data.frame(grid[, grid_columns, drop = FALSE], pulse = pulse, target = target, value = value, uncertainty = as.numeric(estimate$se.fit), model_family = "gamm")
-      }
+    if (!is.null(prediction_grid)) {
+      # mgcv still requires every formula variable in newdata even when the
+      # radar random effect is excluded from the national prediction.
+      prediction_data <- prediction_grid
+      prediction_data$radar <- factor(
+        as.character(subset$radar[[1]]),
+        levels = levels(factor(subset$radar))
+      )
+      estimate <- stats::predict(
+        final_model,
+        newdata = prediction_data,
+        exclude = "s(radar)",
+        se.fit = TRUE
+      )
+      value <- as.numeric(estimate$fit)
+      if (is_intensity) value <- pmax(value, 0)^3
+      pulse_prediction[[target]] <- value
+      pulse_prediction[[sprintf("uncertainty_%s", target)]] <- as.numeric(estimate$se.fit)
     }
+  }
+  if (!is.null(pulse_prediction)) {
+    if (!all(targets %in% names(pulse_prediction))) {
+      stop(sprintf("missing national predictions for pulse %s", pulse))
+    }
+    utils::write.csv(
+      pulse_prediction,
+      file.path(output_dir, sprintf("predictions_wide_%s.csv", pulse)),
+      row.names = FALSE
+    )
   }
 }
 
 jsonlite::write_json(list(model_family = "gamm", metrics = metric_rows, model_time_terms = "none", predictors = predictors), file.path(output_dir, "metrics.json"), auto_unbox = TRUE, pretty = TRUE)
-if (length(prediction_rows)) utils::write.csv(do.call(rbind, prediction_rows), file.path(output_dir, "predictions_long.csv"), row.names = FALSE)

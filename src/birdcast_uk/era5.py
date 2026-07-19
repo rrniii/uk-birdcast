@@ -264,7 +264,7 @@ def extract_grid_features(
         latitudes = [float(value) for value in reference[latitude_name].values.tolist()]
         longitudes = [float(value) for value in reference[longitude_name].values.tolist()]
         grid_points = [
-            (latitude, longitude)
+            (latitude, longitude, *_project_grid_point(longitude, latitude))
             for latitude in latitudes
             for longitude in longitudes
             if boundary is None or _point_in_boundary(longitude, latitude, boundary)
@@ -280,11 +280,13 @@ def extract_grid_features(
                     continue
             single_point = _select_time(single, time_name, time_value) if single is not None else None
             pressure_point = _select_time(pressure, time_name, time_value) if pressure is not None else None
-            for latitude, longitude in grid_points:
+            for latitude, longitude, easting, northing in grid_points:
                 row = {
                     "time_utc": timestamp,
                     "latitude": latitude,
                     "longitude": longitude,
+                    "easting_m": easting,
+                    "northing_m": northing,
                 }
                 row.update(_grid_weather_values(single_point, pressure_point, latitude_name, longitude_name, latitude, longitude))
                 row["support"] = round(_support_score(latitude, longitude, row, radars, ranges), 6)
@@ -366,6 +368,19 @@ def _point_in_ring(longitude: float, latitude: float, ring: list[tuple[float, fl
                 inside = not inside
         previous_x, previous_y = current_x, current_y
     return inside
+
+
+def _project_grid_point(longitude: float, latitude: float) -> tuple[float, float]:
+    try:
+        from pyproj import Transformer
+
+        transformer = Transformer.from_crs("EPSG:4326", "EPSG:3035", always_xy=True)
+        return tuple(float(value) for value in transformer.transform(longitude, latitude))
+    except ModuleNotFoundError:
+        return (
+            longitude * 111_320.0 * math.cos(math.radians(latitude)),
+            latitude * 110_540.0,
+        )
 
 
 def build_day(
