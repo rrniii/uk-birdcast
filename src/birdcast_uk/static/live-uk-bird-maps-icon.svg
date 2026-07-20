@@ -1,19 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
   <title id="title">Flying British robin over weather-radar circles</title>
   <circle cx="64" cy="64" r="57" fill="#070a0b" stroke="#eef4ef" stroke-width="4"/>
-  <circle cx="64" cy="64" r="42" fill="none" stroke="#64736c" stroke-width="2"/>
-  <circle cx="64" cy="64" r="27" fill="none" stroke="#64736c" stroke-width="2"/>
+  <circle cx="64" cy="64" r="42" fill="none" stroke="#596660" stroke-width="2"/>
+  <circle cx="64" cy="64" r="27" fill="none" stroke="#596660" stroke-width="2"/>
 
-  <path d="M62 67C48 57 38 41 35 20c17 10 29 25 33 40 2 6-1 9-6 7Z" fill="#9ca6a0"/>
-
-  <path d="m43 67-28 9 28 8 15-11Z" fill="#7d8782"/>
-  <path d="M40 66c12-12 27-17 43-13 12 3 20 11 20 20-1 10-10 17-23 19-18 3-34-4-44-17Z" fill="#e8eeea"/>
-  <path d="M54 78c11 6 24 7 37 2-8 10-19 18-33 25-6-9-10-18-11-27Z" fill="#9ca6a0"/>
-  <path d="M57 83c8 7 17 12 27 16M65 82c7 5 14 8 22 10" fill="none" stroke="#707a75" stroke-width="2" stroke-linecap="round"/>
-
-  <path d="M76 52c13-1 24 7 27 19-2 9-9 16-19 20-9-3-15-9-18-18-2-8 2-16 10-21Z" fill="#c94f3c"/>
-  <path d="M66 72c7 7 17 10 28 8-4 7-11 11-20 13-8-2-14-7-18-13Z" fill="#d7dfda"/>
-  <circle cx="88" cy="60" r="3.1" fill="#070a0b"/>
-  <circle cx="89" cy="59" r=".9" fill="#eef4ef"/>
-  <path d="m100 65 16 4-16 4Z" fill="#b8c1bb"/>
+  <path d="M57 64C46 55 39 39 40 20c14 8 25 22 31 39 2 6-5 10-14 5Z" fill="#897b69"/>
+  <path d="m40 67-23 8 23 8 15-11Z" fill="#746b60"/>
+  <path d="M35 70c12-17 33-25 52-19 13 4 21 14 18 25-3 13-19 21-38 19-15-2-27-11-32-25Z" fill="#e8ede9"/>
+  <path d="M38 67c11-13 27-20 44-17-10 4-19 12-25 22-8 1-15-1-19-5Z" fill="#9b8b77"/>
+  <path d="M58 77c10 7 23 12 37 13-10 9-24 12-37 5-6-4-10-10-12-17Z" fill="#897b69"/>
+  <path d="M79 50c14 0 25 9 27 21-2 11-10 19-22 22-10-5-16-13-17-23 0-9 4-16 12-20Z" fill="#c94f3c"/>
+  <path d="M67 76c8 7 18 10 30 8-4 6-10 10-18 11-7-3-12-8-15-14Z" fill="#d8dfda"/>
+  <circle cx="91" cy="60" r="3.1" fill="#070a0b"/>
+  <circle cx="92" cy="59" r=".9" fill="#eef4ef"/>
+  <path d="m104 66 13 4-13 4Z" fill="#aeb8b2"/>
 </svg>
