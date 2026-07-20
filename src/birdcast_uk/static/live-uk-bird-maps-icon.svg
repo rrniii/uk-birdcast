@@ -3,10 +3,8 @@
   <circle cx="64" cy="64" r="57" fill="#070a0b" stroke="#eef4ef" stroke-width="4"/>
   <circle cx="64" cy="64" r="42" fill="none" stroke="#64736c" stroke-width="2"/>
   <circle cx="64" cy="64" r="27" fill="none" stroke="#64736c" stroke-width="2"/>
-  <path d="M64 64 102 35" fill="none" stroke="#64736c" stroke-width="2"/>
 
-  <path d="M58 64C47 57 37 42 32 21c10 5 19 15 25 27-3-16-1-29 5-39 6 14 8 29 4 44 7-13 17-23 29-29-6 18-17 33-30 42Z" fill="#9ca6a0"/>
-  <path d="M56 59C48 50 42 40 38 29M63 55c-2-14-2-26 0-36M69 57c5-12 12-21 20-27" fill="none" stroke="#6d7772" stroke-width="2" stroke-linecap="round"/>
+  <path d="M62 67C48 57 38 41 35 20c17 10 29 25 33 40 2 6-1 9-6 7Z" fill="#9ca6a0"/>
 
   <path d="m43 67-28 9 28 8 15-11Z" fill="#7d8782"/>
   <path d="M40 66c12-12 27-17 43-13 12 3 20 11 20 20-1 10-10 17-23 19-18 3-34-4-44-17Z" fill="#e8eeea"/>
