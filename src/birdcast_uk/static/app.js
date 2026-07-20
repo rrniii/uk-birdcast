@@ -515,22 +515,23 @@ function drawRadarIcon(ctx, x, y, colour) {
   ctx.translate(x, y);
   ctx.strokeStyle = colour;
   ctx.fillStyle = colour;
-  ctx.lineWidth = 1.45;
+  ctx.lineWidth = 1.2;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
-  // Compact dish, feed, and pedestal: deliberately no decorative signal waves.
+  // Small transmitting radar: dish, feed, mast, and two restrained broadcasts.
   ctx.beginPath();
-  ctx.moveTo(-5, -5);
-  ctx.quadraticCurveTo(-7, 3.5, 1.5, 5);
-  ctx.quadraticCurveTo(4.5, 5.4, 6, 3.2);
+  ctx.moveTo(-3.7, -2.9);
+  ctx.quadraticCurveTo(-4.3, 2.1, .8, 3.1);
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(-5, -5); ctx.lineTo(2, -1.4); ctx.lineTo(5.3, -6.2);
-  ctx.moveTo(.2, 4.7); ctx.lineTo(-.8, 8.2);
-  ctx.moveTo(-4.3, 8.2); ctx.lineTo(3.1, 8.2);
+  ctx.moveTo(-3.7, -2.9); ctx.lineTo(.5, -.8); ctx.lineTo(2.9, -4.3);
+  ctx.moveTo(-.1, 2.9); ctx.lineTo(-.8, 5.5);
+  ctx.moveTo(-3.3, 5.5); ctx.lineTo(2.1, 5.5);
   ctx.stroke();
-  ctx.beginPath(); ctx.arc(5.7, -6.7, 1.45, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(3.2, -4.6, 1, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(3.2, -4.6, 3.2, -1.05, .1); ctx.stroke();
+  ctx.beginPath(); ctx.arc(3.2, -4.6, 5.1, -1.04, .08); ctx.stroke();
   ctx.restore();
 }
 
