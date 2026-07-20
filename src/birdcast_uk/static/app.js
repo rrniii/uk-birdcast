@@ -488,13 +488,13 @@ function drawRadarValues(ctx, width, height) {
     const value = row && Number(row[state.metric]);
     if (!Number.isFinite(value)) continue;
     const point = project(radar.longitude, radar.latitude, width, height);
-    const glow = ctx.createRadialGradient(point.x, point.y, 2, point.x, point.y, 28);
+    const glow = ctx.createRadialGradient(point.x, point.y, 1, point.x, point.y, 20);
     const colour = quantitativeColor(value, scale);
     glow.addColorStop(0, colour);
     glow.addColorStop(.35, colour);
     glow.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = glow;
-    ctx.beginPath(); ctx.arc(point.x, point.y, 28, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(point.x, point.y, 20, 0, Math.PI * 2); ctx.fill();
   }
 }
 
@@ -513,14 +513,24 @@ function drawRadarMarkers(ctx, width, height) {
 function drawRadarIcon(ctx, x, y, colour) {
   ctx.save();
   ctx.translate(x, y);
-  ctx.fillStyle = colour;
-  ctx.strokeStyle = "#fff";
-  ctx.lineWidth = 1.1;
-  ctx.beginPath(); ctx.arc(0, -1, 6, 0, Math.PI); ctx.closePath(); ctx.fill(); ctx.stroke();
   ctx.strokeStyle = colour;
-  ctx.lineWidth = 1.8;
-  ctx.beginPath(); ctx.moveTo(0, 4); ctx.lineTo(0, 9); ctx.moveTo(-5, 9); ctx.lineTo(5, 9); ctx.moveTo(0, -1); ctx.lineTo(7, -8); ctx.stroke();
-  ctx.beginPath(); ctx.arc(1, -2, 9, -Math.PI / 3, 0); ctx.stroke();
+  ctx.fillStyle = colour;
+  ctx.lineWidth = 1.45;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  // Compact dish, feed, and pedestal: deliberately no decorative signal waves.
+  ctx.beginPath();
+  ctx.moveTo(-5, -5);
+  ctx.quadraticCurveTo(-7, 3.5, 1.5, 5);
+  ctx.quadraticCurveTo(4.5, 5.4, 6, 3.2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-5, -5); ctx.lineTo(2, -1.4); ctx.lineTo(5.3, -6.2);
+  ctx.moveTo(.2, 4.7); ctx.lineTo(-.8, 8.2);
+  ctx.moveTo(-4.3, 8.2); ctx.lineTo(3.1, 8.2);
+  ctx.stroke();
+  ctx.beginPath(); ctx.arc(5.7, -6.7, 1.45, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }
 

@@ -102,7 +102,7 @@ input[type="date"], select {
   text-shadow: 0 1px 6px #000;
 }
 .radar-key span { display: flex; align-items: center; gap: 7px; }
-.radar-symbol { width: 17px; height: 17px; background: currentColor; mask: url("radar-marker.svg") center/contain no-repeat; }
+.radar-symbol { width: 14px; height: 14px; background: currentColor; mask: url("radar-marker.svg") center/contain no-repeat; }
 .radar-symbol.active { color: #22ed5a; }
 .radar-symbol.inactive { color: #f14640; }
 
