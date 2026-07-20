@@ -7,15 +7,19 @@ from typing import Iterable
 
 
 INTENSITY_PALETTE = (
-    "#000000",
-    "#07134f",
-    "#2d23a8",
-    "#7e1fa2",
-    "#cf3e71",
-    "#f0793b",
-    "#f6d84a",
-    "#fffef0",
+    "#101817",
+    "#16484a",
+    "#43887a",
+    "#9fc57a",
+    "#e5d17c",
+    "#f2b863",
+    "#e47b52",
+    "#b94135",
 )
+
+# Robin passage: atmospheric charcoal through muted teal and pale gold, with
+# robin red reserved for the most intense five percent of the displayed scale.
+INTENSITY_PALETTE_POSITIONS = (0.0, 0.18, 0.38, 0.58, 0.75, 0.90, 0.95, 1.0)
 
 
 def log_colour_scale(values: Iterable[float], *, units: str) -> dict[str, object]:
@@ -34,7 +38,8 @@ def log_colour_scale(values: Iterable[float], *, units: str) -> dict[str, object
         "ticks": _log_ticks(lower, upper),
         "units": units,
         "palette": list(INTENSITY_PALETTE),
-        "zero_colour": "#000000",
+        "palette_positions": list(INTENSITY_PALETTE_POSITIONS),
+        "zero_colour": "#101817",
         "missing_colour": "transparent",
         "clamp": True,
         "scope": "complete published archive across LP and SP",
@@ -61,6 +66,7 @@ def linear_colour_scale(values: Iterable[float], *, units: str) -> dict[str, obj
         "ticks": [lower + step * index for index in range(5)],
         "units": units,
         "palette": list(INTENSITY_PALETTE),
+        "palette_positions": list(INTENSITY_PALETTE_POSITIONS),
         "missing_colour": "transparent",
         "clamp": True,
         "scope": "complete published archive across LP and SP",

@@ -1,5 +1,6 @@
 const FALLBACK_BOUNDS = {west: -11.5, east: 4.5, south: 46.5, north: 61.5};
-const PALETTE = ["#000000", "#07134f", "#2d23a8", "#7e1fa2", "#cf3e71", "#f0793b", "#f6d84a", "#fffef0"];
+const PALETTE = ["#101817", "#16484a", "#43887a", "#9fc57a", "#e5d17c", "#f2b863", "#e47b52", "#b94135"];
+const PALETTE_POSITIONS = [0, .18, .38, .58, .75, .90, .95, 1];
 
 const state = {
   base: "../",
@@ -292,11 +293,11 @@ function fallbackScale(values, transform) {
     const positive = finite.filter((value) => value > 0);
     const minimum = positive[Math.floor(positive.length * .01)] || 1;
     const maximum = positive[Math.min(positive.length - 1, Math.floor(positive.length * .99))] || 10;
-    return {transform, minimum, maximum: Math.max(maximum, minimum * 10), ticks: logTicks(minimum, Math.max(maximum, minimum * 10)), palette: PALETTE};
+    return {transform, minimum, maximum: Math.max(maximum, minimum * 10), ticks: logTicks(minimum, Math.max(maximum, minimum * 10)), palette: PALETTE, palette_positions: PALETTE_POSITIONS, zero_colour: PALETTE[0]};
   }
   const minimum = finite[Math.floor(finite.length * .05)] || 0;
   const maximum = finite[Math.min(finite.length - 1, Math.floor(finite.length * .95))] || minimum + 1;
-  return {transform, minimum, maximum, ticks: [minimum, (minimum + maximum) / 2, maximum], palette: PALETTE};
+  return {transform, minimum, maximum, ticks: [minimum, (minimum + maximum) / 2, maximum], palette: PALETTE, palette_positions: PALETTE_POSITIONS};
 }
 
 function setLegend(scale, metric) {
@@ -547,11 +548,18 @@ function quantitativeColor(value, scale) {
   if (!Number.isFinite(value)) return "rgba(0,0,0,0)";
   if (value <= 0 && scale.transform === "log10") return scale.zero_colour || "#000";
   const palette = scale.palette || PALETTE;
-  const scaled = scalePosition(value, scale) * (palette.length - 1);
-  const index = Math.min(palette.length - 2, Math.floor(scaled));
-  const fraction = scaled - index;
+  const positions = Array.isArray(scale.palette_positions) && scale.palette_positions.length === palette.length
+    ? scale.palette_positions.map(Number)
+    : palette.length === PALETTE.length
+      ? PALETTE_POSITIONS
+      : palette.map((_, index) => index / (palette.length - 1));
+  const position = scalePosition(value, scale);
+  const index = Math.max(0, positions.findIndex((stop) => stop >= position) - 1);
+  const endIndex = Math.min(palette.length - 1, index + 1);
+  const span = Math.max(positions[endIndex] - positions[index], Number.EPSILON);
+  const fraction = Math.max(0, Math.min(1, (position - positions[index]) / span));
   const start = hexToRgb(palette[index]);
-  const end = hexToRgb(palette[index + 1]);
+  const end = hexToRgb(palette[endIndex]);
   return `rgb(${start.map((channel, offset) => Math.round(channel + (end[offset] - channel) * fraction)).join(",")})`;
 }
 

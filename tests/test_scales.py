@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from birdcast_uk.scales import INTENSITY_PALETTE, linear_colour_scale, log_colour_scale
+from birdcast_uk.scales import (
+    INTENSITY_PALETTE,
+    INTENSITY_PALETTE_POSITIONS,
+    linear_colour_scale,
+    log_colour_scale,
+)
 
 
 def test_log_colour_scale_is_quantitative_and_outward_rounded() -> None:
@@ -13,6 +18,9 @@ def test_log_colour_scale_is_quantitative_and_outward_rounded() -> None:
     assert scale["ticks"][0] == scale["minimum"]
     assert scale["ticks"][-1] == scale["maximum"]
     assert scale["palette"] == list(INTENSITY_PALETTE)
+    assert scale["palette_positions"] == list(INTENSITY_PALETTE_POSITIONS)
+    assert scale["palette_positions"][-2] == 0.95
+    assert scale["palette"][-1] == "#b94135"
 
 
 def test_linear_colour_scale_has_numeric_ticks() -> None:

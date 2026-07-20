@@ -122,7 +122,7 @@ input[type="date"], select {
 .legend-scale > i {
   display: block;
   width: 28px;
-  background: linear-gradient(to top, #000 0%, #07134f 13%, #2d23a8 28%, #7e1fa2 44%, #cf3e71 60%, #f0793b 75%, #f6d84a 89%, #fffef0 100%);
+  background: linear-gradient(to top, #101817 0%, #16484a 18%, #43887a 38%, #9fc57a 58%, #e5d17c 75%, #f2b863 90%, #e47b52 95%, #b94135 100%);
   border: 1px solid #707a75;
 }
 .legend-ticks { position: relative; flex: 1; margin-left: 7px; }
