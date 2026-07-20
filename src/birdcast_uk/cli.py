@@ -16,6 +16,7 @@ from .config import (
     OBJECT_PREFIX,
     UKMO_PVOL_CATALOG_URL,
     UKMO_VPTS_CATALOG_URL,
+    UK_PVOL_MAX_RANGE_M,
     VPTS_BOOTSTRAP_LOOKBACK_DAYS,
     VPTS_MAX_CATALOG_AGE_HOURS,
     VPTS_MAX_INCREMENT_DAYS,
@@ -26,7 +27,7 @@ from .forecast import build_forecast
 from .historical import NATURAL_EARTH_10M_COUNTRIES_URL, build_historical_products, write_boundary
 from .joined import join_observed_to_era5
 from .observed import build_hourly_observations, build_observed_products
-from .publication import build_publication_plan, write_sync_commands
+from .publication import build_publication_plan, validate_release, write_sync_commands
 from .radars import radars_from_pvol_catalog, write_radars
 from .reanalysis import build_prediction_frames, compare_models, prepare_training_table, publish_reanalysis, publish_wide_reanalysis, write_model_spec
 from .static_artifacts import build_static_artifacts, install_static_site
@@ -187,7 +188,10 @@ def cmd_historical_boundary(args: argparse.Namespace) -> int:
 
 
 def cmd_radars_from_pvol(args: argparse.Namespace) -> int:
-    radars = radars_from_pvol_catalog(args.input)
+    radars = radars_from_pvol_catalog(
+        args.input,
+        default_max_range_m=args.default_max_range_m,
+    )
     payload = write_radars(Path(args.output), radars, source=args.input)
     print(json.dumps({"wrote": args.output, "radar_count": len(payload["radars"])}, indent=2, sort_keys=True))
     return 0
@@ -371,6 +375,15 @@ def cmd_publish_plan(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_publish_validate(args: argparse.Namespace) -> int:
+    result = validate_release(
+        Path(args.source_dir),
+        required_products=tuple(args.require),
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
 def cmd_publish_script(args: argparse.Namespace) -> int:
     write_sync_commands(
         Path(args.plan),
@@ -409,6 +422,12 @@ def build_parser() -> argparse.ArgumentParser:
     radars_pvol = radars_sub.add_parser("from-pvol-catalog")
     radars_pvol.add_argument("--input", default=UKMO_PVOL_CATALOG_URL)
     radars_pvol.add_argument("--output", required=True)
+    radars_pvol.add_argument(
+        "--default-max-range-m",
+        type=float,
+        default=UK_PVOL_MAX_RANGE_M,
+        help="ODIM-derived network range used when the aggregate catalogue omits max_range_m",
+    )
     radars_pvol.set_defaults(func=cmd_radars_from_pvol)
 
     era5_parser = subparsers.add_parser("era5")
@@ -626,6 +645,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     publish_parser = subparsers.add_parser("publish")
     publish_sub = publish_parser.add_subparsers(required=True)
+    publish_validate = publish_sub.add_parser("validate")
+    publish_validate.add_argument("--source-dir", required=True)
+    publish_validate.add_argument(
+        "--require",
+        action="append",
+        default=[],
+        choices=["historical", "gam-era5"],
+        required=True,
+    )
+    publish_validate.set_defaults(func=cmd_publish_validate)
     publish_plan = publish_sub.add_parser("plan")
     publish_plan.add_argument("--source-dir", required=True)
     publish_plan.add_argument("--output", required=True)

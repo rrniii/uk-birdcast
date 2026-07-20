@@ -14,6 +14,7 @@ from birdcast_uk.era5 import (
     build_period_request,
     cds_readiness,
     download_request,
+    radar_coverage_area,
     split_period_file,
     validate_day,
     write_request,
@@ -49,12 +50,32 @@ def test_radars_from_pvol_catalog_extracts_coordinates(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    radars = radars_from_pvol_catalog(catalog)
+    radars = radars_from_pvol_catalog(catalog, default_max_range_m=255_000.0)
 
     assert len(radars) == 1
     assert radars[0].slug == "chenies"
     assert radars[0].latitude == 51.68944444444444
     assert radars[0].height_m == 153.0
+    assert radars[0].max_range_m == 255_000.0
+    assert radars[0].range_source == "validated_odim_lp_geometry"
+
+
+def test_radar_coverage_area_extends_in_all_directions() -> None:
+    radar = BirdcastRadar(
+        "chenies",
+        "05",
+        "Chenies",
+        latitude=51.6894,
+        longitude=-0.5303,
+        max_range_m=255_000.0,
+    )
+
+    area = radar_coverage_area([radar], margin_cells=0)
+
+    assert area["north"] >= 54.0
+    assert area["south"] <= 49.25
+    assert area["west"] <= -4.0
+    assert area["east"] >= 3.0
 
 
 def test_observed_products_from_rows(tmp_path: Path) -> None:

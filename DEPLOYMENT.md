@@ -1,4 +1,4 @@
-# UK BirdCast Static Deployment
+# Live UK Bird Maps Static Deployment
 
 Target host:
 
@@ -7,7 +7,9 @@ uk-birdcast-workstation-ssh
 130.246.212.190
 ```
 
-The MVP serves a static site from the JASMIN Cloud host and reads public data artifacts from the JASMIN Object Store. Heavy processing and historical backfills should run on JASMIN batch/GWS.
+The site is served from the JASMIN Cloud host and reads public data artifacts
+from the JASMIN Object Store. Heavy processing and historical backfills run on
+JASMIN batch/GWS.
 
 ## Install
 
@@ -54,7 +56,7 @@ sudo systemctl reload nginx
 The site is then available at:
 
 ```text
-http://130.246.212.190/birdcast-uk/
+http://130.246.212.190/live-uk-bird-maps/
 ```
 
 ## Web-Only systemd Timer
@@ -89,7 +91,9 @@ modify VPTS, ERA5, or publication data.
 
 The public artifact tree contains historical radar and ERA5-reanalysis
 products only. Immutable assets are uploaded before the `latest/*.json`
-manifests so readers do not observe a partial publication.
+manifests so readers do not observe a partial publication. Publication fails
+closed if either required manifest is a placeholder or references a missing
+asset.
 
 ## BTO Validation Request
 
@@ -104,3 +108,8 @@ cache management, file decoding, and conversion to Xarray before extracting
 the nearest native-grid values for the 17 UK radar sites. CDS credentials,
 Earthkit cache, request JSON, raw NetCDF, site features, and model tables all
 remain on JASMIN. The cloud host has no ERA5 credential or processing role.
+
+The ERA5 request envelope and published grid are derived from the union of the
+radars' validated 255 km LP ranges, including sea areas. Natural Earth
+coastlines are visual context only and never constrain extraction, model
+support, or rendering.

@@ -176,11 +176,14 @@ def test_static_ui_is_historical_not_forecast() -> None:
     javascript = (static_root / "app.js").read_text(encoding="utf-8")
 
     assert "96-hour forecast" not in html
-    assert "Historical archive" in javascript
+    assert "Live UK Bird Maps" in html
+    assert "Historical UK weather-radar and ERA5 reanalysis" in html
     assert "uk_boundary.geojson" not in javascript
     assert "devicePixelRatio" in javascript
     assert "periodControl" not in html
     assert "row.period" not in javascript
     assert "aggregateObservedRows" in javascript
-    assert "clipToUK" in javascript
-    assert 'ctx.clip("evenodd")' in javascript
+    assert "clipToUK" not in javascript
+    assert 'ctx.clip("evenodd")' not in javascript
+    assert "max_range_m" in javascript
+    assert "drawRadarMarker" in javascript

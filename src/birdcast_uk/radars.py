@@ -18,6 +18,7 @@ class BirdcastRadar:
     longitude: float | None = None
     height_m: float | None = None
     max_range_m: float | None = None
+    range_source: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -75,6 +76,7 @@ def _radar_from_mapping(row: object) -> BirdcastRadar:
         longitude=_optional_float(row.get("longitude") or row.get("lon")),
         height_m=_optional_float(row.get("height_m") or row.get("height")),
         max_range_m=_optional_float(row.get("max_range_m") or row.get("range_m")),
+        range_source=str(row.get("range_source") or "") or None,
     )
 
 
@@ -92,7 +94,11 @@ def load_pvol_catalog(source: str | Path) -> dict[str, object]:
     return json.loads(Path(source).read_text(encoding="utf-8"))
 
 
-def radars_from_pvol_catalog(source: str | Path) -> list[BirdcastRadar]:
+def radars_from_pvol_catalog(
+    source: str | Path,
+    *,
+    default_max_range_m: float | None = None,
+) -> list[BirdcastRadar]:
     payload = load_pvol_catalog(source)
     rows = payload.get("radars", [])
     if not isinstance(rows, list):
@@ -105,6 +111,8 @@ def radars_from_pvol_catalog(source: str | Path) -> list[BirdcastRadar]:
         slug = str(row.get("radar") or row.get("slug") or "")
         if not slug:
             continue
+        catalog_range = _optional_float(spatial.get("max_range_m"))
+        max_range_m = catalog_range if catalog_range is not None else default_max_range_m
         radars.append(
             BirdcastRadar(
                 slug=slug,
@@ -113,7 +121,14 @@ def radars_from_pvol_catalog(source: str | Path) -> list[BirdcastRadar]:
                 latitude=_optional_float(spatial.get("latitude")),
                 longitude=_optional_float(spatial.get("longitude")),
                 height_m=_optional_float(spatial.get("height_m")),
-                max_range_m=_optional_float(spatial.get("max_range_m")),
+                max_range_m=max_range_m,
+                range_source=(
+                    "pvol_catalog_spatial"
+                    if catalog_range is not None
+                    else "validated_odim_lp_geometry"
+                    if max_range_m is not None
+                    else None
+                ),
             )
         )
     return sorted(radars, key=lambda radar: radar.slug)

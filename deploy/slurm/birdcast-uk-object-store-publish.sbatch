@@ -32,6 +32,10 @@ mkdir -p "$(dirname "$BIRDCAST_UK_OBJECT_STORE_PLAN")"
   --public-base-url "$BIRDCAST_UK_PUBLIC_BASE_URL" \
   --object-prefix "$BIRDCAST_UK_OBJECT_PREFIX" \
   --radars "$BIRDCAST_UK_RADARS_FILE"
+"$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli publish validate \
+  --source-dir "$BIRDCAST_UK_ARTIFACT_ROOT" \
+  --require historical \
+  --require gam-era5
 "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli publish plan \
   --source-dir "$BIRDCAST_UK_ARTIFACT_ROOT" \
   --output "$BIRDCAST_UK_OBJECT_STORE_PLAN" \

@@ -248,7 +248,16 @@ def test_frames_require_support_and_merge_all_model_targets(tmp_path: Path) -> N
 
 
 def test_grid_support_penalises_distance_and_out_of_range_weather() -> None:
-    radars = [BirdcastRadar("chenies", "05", "Chenies", latitude=51.6894, longitude=-0.5303)]
+    radars = [
+        BirdcastRadar(
+            "chenies",
+            "05",
+            "Chenies",
+            latitude=51.6894,
+            longitude=-0.5303,
+            max_range_m=255_000.0,
+        )
+    ]
     ranges = {"temperature_850_k": (275.0, 285.0)}
     nearby = _support_score(51.7, -0.5, {"temperature_850_k": 280.0}, radars, ranges)
     distant = _support_score(60.5, -10.0, {"temperature_850_k": 280.0}, radars, ranges)

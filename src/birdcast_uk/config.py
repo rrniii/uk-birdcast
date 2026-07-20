@@ -46,6 +46,11 @@ UK_ERA5_AREA = {
     "east": 3.0,
 }
 
+# The operational UK LP scan geometry is 425 gates at 600 m. This value is
+# used only when the aggregate PVOL catalogue omits max_range_m; generated
+# radar metadata records the ODIM-derived provenance explicitly.
+UK_PVOL_MAX_RANGE_M = 255_000.0
+
 # Canonical analysis grid. Bounds are an EPSG:3035 rectangle around the UK
 # radar network with roughly 300 km of transport context on every side.
 FORECAST_GRID_CRS = "EPSG:3035"

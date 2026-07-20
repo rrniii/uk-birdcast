@@ -68,6 +68,8 @@ def test_install_static_site_uses_same_origin_data_url(tmp_path: Path) -> None:
     assert result["data_base_url"] == "/birdcast-uk/data"
     assert config["data_base_url"] == "/birdcast-uk/data"
     assert (site_root / "index.html").is_file()
+    assert (site_root / "live-uk-bird-maps-icon.svg").is_file()
+    assert (site_root / "radar-marker.svg").is_file()
     assert (site_root / "config.json").stat().st_mode & 0o777 == 0o644
 
 

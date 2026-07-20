@@ -51,6 +51,59 @@ def build_publication_plan(source_dir: Path, output: Path, *, object_prefix: str
     return payload
 
 
+def validate_release(
+    source_dir: Path,
+    *,
+    required_products: tuple[str, ...] = ("historical", "gam-era5"),
+) -> dict[str, object]:
+    """Fail closed when a release would publish placeholder or dangling manifests."""
+
+    checked_assets = 0
+    products = {}
+    for product in required_products:
+        manifest_path = source_dir / "latest" / f"{product}.json"
+        if not manifest_path.is_file():
+            raise FileNotFoundError(f"required release manifest is missing: {manifest_path}")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("data_available") is not True:
+            raise ValueError(f"required product {product} is not data-bearing")
+        missing = []
+        for asset in _asset_paths(manifest.get("assets")):
+            if asset.startswith(("http://", "https://")):
+                continue
+            if not (source_dir / asset).is_file():
+                missing.append(asset)
+        if missing:
+            sample = ", ".join(missing[:5])
+            raise FileNotFoundError(
+                f"required product {product} references {len(missing)} missing assets: {sample}"
+            )
+        checked_assets += len(list(_asset_paths(manifest.get("assets"))))
+        products[product] = {
+            "manifest": str(manifest_path),
+            "schema_version": manifest.get("schema_version"),
+            "asset_count": len(list(_asset_paths(manifest.get("assets")))),
+        }
+    return {
+        "ok": True,
+        "source_dir": str(source_dir),
+        "required_products": list(required_products),
+        "checked_asset_count": checked_assets,
+        "products": products,
+    }
+
+
+def _asset_paths(value: object):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for nested in value.values():
+            yield from _asset_paths(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            yield from _asset_paths(nested)
+
+
 def sync_command(
     plan_path: Path,
     *,

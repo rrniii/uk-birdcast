@@ -307,10 +307,10 @@ def extract_grid_features(
         raise ValueError("at least one ERA5 dataset is required")
     single = datasets[0] if single_levels is not None and single_levels.exists() else None
     pressure = datasets[-1] if pressure_levels is not None and pressure_levels.exists() else None
-    radars = [radar for radar in load_radars(radars_path) if radar.latitude is not None and radar.longitude is not None]
+    radars = _validated_coverage_radars(load_radars(radars_path))
     ranges = _training_feature_ranges(training_table)
     training_window = _training_window(training_table)
-    boundary = _load_boundary_polygons(boundary_path) if boundary_path else None
+    coverage_radars = radars
     rows: list[dict[str, object]] = []
     try:
         reference = single or pressure
@@ -325,7 +325,7 @@ def extract_grid_features(
             (latitude, longitude, *_project_grid_point(longitude, latitude))
             for latitude in latitudes
             for longitude in longitudes
-            if boundary is None or _point_in_boundary(longitude, latitude, boundary)
+            if _point_in_radar_coverage(longitude, latitude, coverage_radars)
         ]
         for time_value, point in _time_points(reference, time_name):
             timestamp = str(time_value) if time_value is not None else ""
@@ -362,9 +362,12 @@ def extract_grid_features(
         "row_count": len(rows),
         "grid_resolution": "ERA5 native 0.25 degree",
         "grid_cell_count": len(grid_points),
-        "boundary": str(boundary_path) if boundary_path else None,
-        "boundary_policy": "Great Britain land cells only" if boundary_path else "unmasked request domain",
-        "support_definition": "radar proximity multiplied by covariate-range support",
+        "boundary": None,
+        "boundary_policy": "union of physical radar ranges; land and water treated identically",
+        "domain_policy": "union_of_radar_ranges",
+        "coverage_bounds": radar_coverage_area(coverage_radars),
+        "radar_ranges_m": {radar.slug: radar.max_range_m for radar in coverage_radars},
+        "support_definition": "within-range radar proximity multiplied by covariate-range support",
         "training_table": str(training_table) if training_table else None,
         "training_window": [value.isoformat() for value in training_window] if training_window else None,
     }
@@ -522,6 +525,12 @@ def build_period(
     period_dir.mkdir(parents=True, exist_ok=True)
     feature_dir.mkdir(parents=True, exist_ok=True)
     period_stamp = f"{start:%Y%m%d}_{end:%Y%m%d}"
+    if radars_path is None and not download:
+        # Keep request generation usable as a dependency/status probe. Actual
+        # downloads and extraction require the published radar-range metadata.
+        request_area = UK_ERA5_AREA
+    else:
+        request_area = radar_coverage_area(_validated_coverage_radars(load_radars(radars_path)))
     requests: dict[str, str] = {}
     downloads: list[dict[str, object]] = []
     period_files: dict[str, Path] = {}
@@ -529,7 +538,7 @@ def build_period(
         stem = kind.replace("-", "_")
         output = period_dir / f"era5_{stem}_{period_stamp}_uk.nc"
         request_json = period_dir / f"era5_{stem}_{period_stamp}_request.json"
-        write_period_request(start_day, end_day, kind, output, request_json)
+        write_period_request(start_day, end_day, kind, output, request_json, area=request_area)
         requests[kind] = str(request_json)
         period_files[kind] = output
         if download:
@@ -674,8 +683,12 @@ def build_day(
     single_file = raw_dir / f"era5_single_levels_{day.replace('-', '')}_uk.nc"
     pressure_request = raw_dir / f"era5_pressure_levels_{day.replace('-', '')}_request.json"
     single_request = raw_dir / f"era5_single_levels_{day.replace('-', '')}_request.json"
-    write_request(day, "pressure-levels", pressure_file, pressure_request)
-    write_request(day, "single-levels", single_file, single_request)
+    if radars_path is None and not download:
+        request_area = UK_ERA5_AREA
+    else:
+        request_area = radar_coverage_area(_validated_coverage_radars(load_radars(radars_path)))
+    write_request(day, "pressure-levels", pressure_file, pressure_request, area=request_area)
+    write_request(day, "single-levels", single_file, single_request, area=request_area)
     downloads = []
     if download:
         for request_path in (pressure_request, single_request):
@@ -914,11 +927,19 @@ def _support_score(
     radars: list[BirdcastRadar],
     ranges: dict[str, tuple[float, float]],
 ) -> float:
-    if radars:
-        distance_km = min(_great_circle_km(latitude, longitude, float(radar.latitude), float(radar.longitude)) for radar in radars)
-        radar_support = math.exp(-((distance_km / 250.0) ** 2))
-    else:
-        radar_support = 0.0
+    radar_support = 0.0
+    for radar in radars:
+        if radar.latitude is None or radar.longitude is None or radar.max_range_m is None:
+            continue
+        distance_km = _great_circle_km(
+            latitude,
+            longitude,
+            radar.latitude,
+            radar.longitude,
+        )
+        range_km = radar.max_range_m / 1000.0
+        if distance_km <= range_km:
+            radar_support = max(radar_support, math.exp(-((distance_km / range_km) ** 2)))
     covariate_support = 1.0
     for name, (lower, upper) in ranges.items():
         value = _as_float(row.get(name))
@@ -938,6 +959,71 @@ def _great_circle_km(latitude_a: float, longitude_a: float, latitude_b: float, l
     lat_a, lon_a, lat_b, lon_b = latitude_a * radians, longitude_a * radians, latitude_b * radians, longitude_b * radians
     haversine = math.sin((lat_b - lat_a) / 2) ** 2 + math.cos(lat_a) * math.cos(lat_b) * math.sin((lon_b - lon_a) / 2) ** 2
     return 6371.0 * 2 * math.asin(math.sqrt(haversine))
+
+
+def _validated_coverage_radars(radars: list[BirdcastRadar]) -> list[BirdcastRadar]:
+    missing = [
+        radar.slug
+        for radar in radars
+        if radar.latitude is None
+        or radar.longitude is None
+        or radar.max_range_m is None
+        or radar.max_range_m <= 0
+    ]
+    if missing:
+        raise ValueError(
+            "radar coverage metadata requires latitude, longitude, and positive "
+            f"max_range_m for: {', '.join(sorted(missing))}"
+        )
+    if not radars:
+        raise ValueError("radar coverage metadata is empty")
+    return radars
+
+
+def _point_in_radar_coverage(
+    longitude: float,
+    latitude: float,
+    radars: list[BirdcastRadar],
+) -> bool:
+    return any(
+        _great_circle_km(latitude, longitude, float(radar.latitude), float(radar.longitude))
+        <= float(radar.max_range_m) / 1000.0
+        for radar in radars
+    )
+
+
+def radar_coverage_area(
+    radars: list[BirdcastRadar],
+    *,
+    grid_degrees: float = 0.25,
+    margin_cells: int = 1,
+) -> dict[str, float]:
+    """Return an ERA5-aligned box enclosing every physical radar range."""
+
+    coverage_radars = _validated_coverage_radars(radars)
+    north = -90.0
+    south = 90.0
+    west = 180.0
+    east = -180.0
+    for radar in coverage_radars:
+        range_km = float(radar.max_range_m) / 1000.0
+        latitude = float(radar.latitude)
+        longitude = float(radar.longitude)
+        latitude_delta = range_km / 111.195
+        longitude_delta = range_km / (
+            111.195 * max(math.cos(math.radians(latitude)), 0.01)
+        )
+        north = max(north, latitude + latitude_delta)
+        south = min(south, latitude - latitude_delta)
+        west = min(west, longitude - longitude_delta)
+        east = max(east, longitude + longitude_delta)
+    margin = grid_degrees * margin_cells
+    return {
+        "north": math.ceil(north / grid_degrees) * grid_degrees + margin,
+        "west": math.floor(west / grid_degrees) * grid_degrees - margin,
+        "south": math.floor(south / grid_degrees) * grid_degrees - margin,
+        "east": math.ceil(east / grid_degrees) * grid_degrees + margin,
+    }
 
 
 def _write_feature_rows(output: Path, rows: list[dict[str, object]]) -> None:

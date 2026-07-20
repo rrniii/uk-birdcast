@@ -16,6 +16,7 @@ from typing import Any, Iterable
 from urllib.request import urlopen
 
 from .radars import load_radars
+from .scales import linear_colour_scale, log_colour_scale
 from .static_artifacts import utc_now
 
 
@@ -446,7 +447,7 @@ def build_historical_products(
     ]
     generated_at = utc_now()
     manifest = {
-        "schema_version": "birdcast-uk-historical-1.0",
+        "schema_version": "live-uk-bird-maps-historical-1.1",
         "data_available": True,
         "generated_at_utc": generated_at,
         "first_date": min_date,
@@ -476,6 +477,35 @@ def build_historical_products(
         },
         "radars": radars,
         "radar_coverage": radar_coverage,
+        "colour_scales": {
+            "vid": log_colour_scale(
+                (
+                    float(row["vid"])
+                    for rows in daily_by_year.values()
+                    for row in rows
+                    if row.get("vid") is not None
+                ),
+                units="birds km-2",
+            ),
+            "height_m": linear_colour_scale(
+                (
+                    float(row["height_m"])
+                    for rows in daily_by_year.values()
+                    for row in rows
+                    if row.get("height_m") is not None
+                ),
+                units="m",
+            ),
+            "speed_ms": linear_colour_scale(
+                (
+                    float(row["speed_ms"])
+                    for rows in daily_by_year.values()
+                    for row in rows
+                    if row.get("speed_ms") is not None
+                ),
+                units="m s-1",
+            ),
+        },
         "assets": {
             "daily_by_year": daily_assets,
             "annual": "historical/annual.json",

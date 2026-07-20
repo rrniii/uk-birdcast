@@ -1,5 +1,5 @@
 [Unit]
-Description=Build UK BirdCast static research-preview artifacts
+Description=Build Live UK Bird Maps static artifacts
 After=network-online.target
 Wants=network-online.target
 

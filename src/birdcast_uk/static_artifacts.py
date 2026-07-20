@@ -145,7 +145,7 @@ def build_static_artifacts(
     write_placeholder_json(
         latest_dir / "historical.json",
         {
-            "schema_version": "birdcast-uk-historical-1.0",
+            "schema_version": "live-uk-bird-maps-historical-1.1",
             "data_available": False,
             "generated_at_utc": generated_at,
             "first_date": None,
@@ -157,7 +157,7 @@ def build_static_artifacts(
     write_placeholder_json(
         latest_dir / "gam-era5.json",
         {
-            "schema_version": "birdcast-uk-gam-era5-1.0",
+            "schema_version": "live-uk-bird-maps-gam-era5-1.1",
             "data_available": False,
             "generated_at_utc": generated_at,
             "model_family": None,
@@ -181,7 +181,13 @@ def build_static_artifacts(
 
     static_root = resources.files("birdcast_uk").joinpath("static")
     web_dir.mkdir(parents=True, exist_ok=True)
-    for name in ("index.html", "app.js", "styles.css"):
+    for name in (
+        "index.html",
+        "app.js",
+        "styles.css",
+        "live-uk-bird-maps-icon.svg",
+        "radar-marker.svg",
+    ):
         source = static_root.joinpath(name)
         shutil.copyfile(source, web_dir / name)
     write_json(
@@ -212,7 +218,13 @@ def install_static_site(
     """Install the web shell with a same-origin data endpoint."""
 
     web_root = artifact_root / "web"
-    required_files = ("index.html", "app.js", "styles.css")
+    required_files = (
+        "index.html",
+        "app.js",
+        "styles.css",
+        "live-uk-bird-maps-icon.svg",
+        "radar-marker.svg",
+    )
     missing = [name for name in required_files if not (web_root / name).is_file()]
     if missing:
         raise FileNotFoundError(f"Static web artifacts are missing: {', '.join(missing)}")

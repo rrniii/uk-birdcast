@@ -4,7 +4,43 @@ import json
 from pathlib import Path
 import subprocess
 
-from birdcast_uk.publication import write_sync_commands
+import pytest
+
+from birdcast_uk.publication import validate_release, write_sync_commands
+
+
+def test_release_validation_requires_data_and_assets(tmp_path: Path) -> None:
+    source = tmp_path / "artifacts"
+    (source / "latest").mkdir(parents=True)
+    (source / "archive").mkdir()
+    (source / "archive" / "frame.json").write_text("{}\n", encoding="utf-8")
+    (source / "latest" / "historical.json").write_text(
+        json.dumps(
+            {
+                "data_available": True,
+                "schema_version": "live-uk-bird-maps-historical-1.1",
+                "assets": {"daily": "archive/frame.json"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = validate_release(source, required_products=("historical",))
+
+    assert result["ok"] is True
+    assert result["checked_asset_count"] == 1
+
+
+def test_release_validation_rejects_placeholder(tmp_path: Path) -> None:
+    source = tmp_path / "artifacts"
+    (source / "latest").mkdir(parents=True)
+    (source / "latest" / "historical.json").write_text(
+        json.dumps({"data_available": False, "assets": {}}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="not data-bearing"):
+        validate_release(source, required_products=("historical",))
 
 
 def test_sync_script_publishes_archive_before_latest(tmp_path: Path) -> None:

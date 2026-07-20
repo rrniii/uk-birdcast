@@ -1,4 +1,5 @@
-const BOUNDS = {west: -12.5, east: 3.5, south: 48.5, north: 61.5};
+const FALLBACK_BOUNDS = {west: -11.5, east: 4.5, south: 46.5, north: 61.5};
+const PALETTE = ["#000000", "#07134f", "#2d23a8", "#7e1fa2", "#cf3e71", "#f0793b", "#f6d84a", "#fffef0"];
 
 const state = {
   base: "../",
@@ -8,6 +9,7 @@ const state = {
   yearPayload: null,
   modelDayPayload: null,
   view: "observed",
+  dates: {observed: null, modelled: null},
   date: null,
   hour: 0,
   pulse: "lp",
@@ -16,6 +18,7 @@ const state = {
   showArrows: true,
   showUncertainty: false,
   visibleRows: [],
+  statusRows: [],
   modelFrame: null,
   points: [],
   animation: null,
@@ -32,19 +35,25 @@ const state = {
   state.model = model && model.data_available ? model : null;
   if (!state.historical && !state.model) {
     showUnavailable();
+    configureControls();
+    setViewAvailability();
     return;
   }
-  if (!state.historical && state.model) state.view = "modelled";
+  if (!state.historical) state.view = "modelled";
   const boundaryPath = (state.historical && state.historical.assets && state.historical.assets.boundary)
     || (state.model && state.model.assets && state.model.assets.boundary);
   state.boundary = await fetchJson(assetUrl(boundaryPath), null);
   state.pulse = (state.historical && state.historical.default_pulse) || "lp";
+  configureControls();
+  setViewAvailability();
   setRangeForView();
   await loadCurrentData();
-  configureControls();
   render();
   window.addEventListener("resize", drawMap);
-  document.getElementById("mapCanvas").addEventListener("click", selectRadarAtPoint);
+  const canvas = document.getElementById("mapCanvas");
+  canvas.addEventListener("pointermove", showRadarTooltip);
+  canvas.addEventListener("pointerleave", hideRadarTooltip);
+  canvas.addEventListener("click", selectRadarAtPoint);
 })();
 
 async function fetchJson(url, fallback) {
@@ -67,18 +76,27 @@ function activeManifest() {
   return state.view === "modelled" ? state.model : state.historical;
 }
 
+function setViewAvailability() {
+  document.querySelectorAll(".view-tabs button").forEach((button) => {
+    const available = button.dataset.view === "modelled" ? Boolean(state.model) : Boolean(state.historical);
+    button.disabled = !available;
+    button.title = available ? "" : `${button.textContent.trim()} are not published`;
+    button.setAttribute("aria-disabled", String(!available));
+  });
+}
+
 function setRangeForView() {
   const manifest = activeManifest();
   if (!manifest) return;
   const first = state.view === "modelled" ? manifest.first_time_utc.slice(0, 10) : manifest.first_date;
   const latest = state.view === "modelled" ? manifest.latest_time_utc.slice(0, 10) : manifest.latest_date;
-  state.date = latest;
+  const saved = state.dates[state.view];
+  state.date = saved && first <= saved && saved <= latest ? saved : latest;
+  state.dates[state.view] = state.date;
   const input = document.getElementById("dateInput");
-  if (input) {
-    input.min = first;
-    input.max = latest;
-    input.value = latest;
-  }
+  input.min = first;
+  input.max = latest;
+  input.value = state.date;
 }
 
 async function loadYear(year) {
@@ -90,21 +108,29 @@ async function loadModelDay() {
   const assets = state.model && state.model.assets && state.model.assets[state.pulse];
   const path = assets && assets[state.date];
   state.modelDayPayload = path ? await fetchJson(assetUrl(path), {frames: []}) : {frames: []};
-  const frames = state.modelDayPayload.frames || [];
-  const available = frames.map((frame) => new Date(frame.time_utc).getUTCHours());
+  const available = (state.modelDayPayload.frames || []).map((frame) => new Date(frame.time_utc).getUTCHours());
   state.hour = available.includes(state.hour) ? state.hour : (available[0] ?? 0);
 }
 
 async function loadCurrentData() {
-  if (state.view === "modelled") return loadModelDay();
-  return loadYear(Number(state.date.slice(0, 4)));
+  if (state.view === "modelled") {
+    await loadModelDay();
+    if (state.historical && state.historical.first_date <= state.date && state.date <= state.historical.latest_date) {
+      await loadYear(Number(state.date.slice(0, 4)));
+    } else {
+      state.yearPayload = {rows: []};
+    }
+    return;
+  }
+  await loadYear(Number(state.date.slice(0, 4)));
 }
 
 function configureControls() {
   document.querySelectorAll(".view-tabs button").forEach((button) => {
     button.addEventListener("click", async () => {
       const next = button.dataset.view;
-      if (next === state.view || (next === "modelled" && !state.model) || (next === "observed" && !state.historical)) return;
+      if (next === state.view || button.disabled) return;
+      state.dates[state.view] = state.date;
       state.view = next;
       stopAnimation();
       setRangeForView();
@@ -116,23 +142,40 @@ function configureControls() {
   dateInput.addEventListener("change", async () => {
     if (!dateInput.value) return;
     state.date = dateInput.value;
+    state.dates[state.view] = state.date;
     await loadCurrentData();
     render();
   });
-  bindSegment("pulseControl", "pulse", async () => { if (state.view === "modelled") await loadModelDay(); });
+  bindSegment("pulseControl", "pulse", async () => { await loadCurrentData(); });
   bindSegment("modelMetricControl", "modelMetric");
-  const metric = document.getElementById("metricSelect");
-  metric.addEventListener("change", () => { state.metric = metric.value; render(); });
-  const hour = document.getElementById("hourInput");
-  hour.addEventListener("input", () => { state.hour = Number(hour.value); render(); });
-  document.getElementById("arrowsToggle").addEventListener("change", (event) => { state.showArrows = event.target.checked; drawMap(); });
-  document.getElementById("uncertaintyToggle").addEventListener("change", (event) => { state.showUncertainty = event.target.checked; drawMap(); });
+  document.getElementById("metricSelect").addEventListener("change", (event) => {
+    state.metric = event.target.value;
+    render();
+  });
+  document.getElementById("hourInput").addEventListener("input", (event) => {
+    state.hour = Number(event.target.value);
+    render();
+  });
+  document.getElementById("arrowsToggle").addEventListener("change", (event) => {
+    state.showArrows = event.target.checked;
+    drawMap();
+  });
+  document.getElementById("uncertaintyToggle").addEventListener("change", (event) => {
+    state.showUncertainty = event.target.checked;
+    drawMap();
+  });
   document.getElementById("playButton").addEventListener("click", toggleAnimation);
+  document.getElementById("previousButton").addEventListener("click", () => stepHour(-1));
+  document.getElementById("nextButton").addEventListener("click", () => stepHour(1));
+  document.getElementById("resetButton").addEventListener("click", () => {
+    const hours = availableHours();
+    state.hour = hours[0] ?? 0;
+    render();
+  });
 }
 
 function bindSegment(id, key, beforeRender) {
-  const root = document.getElementById(id);
-  root.querySelectorAll("button").forEach((button) => {
+  document.getElementById(id).querySelectorAll("button").forEach((button) => {
     button.addEventListener("click", async () => {
       state[key] = button.dataset.value;
       if (beforeRender) await beforeRender();
@@ -157,33 +200,28 @@ function render() {
 function renderObserved() {
   const rows = state.yearPayload && state.yearPayload.rows || [];
   state.visibleRows = aggregateObservedRows(rows.filter((row) => row.date === state.date && row.pulse === state.pulse));
+  state.statusRows = state.visibleRows;
   state.modelFrame = null;
   const metric = observedMetric();
   const values = state.visibleRows.map((row) => Number(row[state.metric])).filter(Number.isFinite);
   const mean = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
-  document.getElementById("mapTitle").textContent = "Daily radar reanalysis";
-  document.getElementById("mapSubtitle").textContent = `${formatDate(state.date)} · ${state.pulse.toUpperCase()} · all available hours · ${state.visibleRows.length} radars`;
-  document.getElementById("legendUnit").textContent = metric.label;
+  document.getElementById("mapTitle").textContent = "Radar observations";
+  document.getElementById("mapSubtitle").textContent = `${state.pulse.toUpperCase()} · all available hours · ${state.visibleRows.length} reporting radars`;
+  document.getElementById("mapTimestamp").textContent = `${formatDate(state.date)} · UTC`;
   document.getElementById("networkValue").textContent = mean === null ? "No observations" : metric.format(mean);
-  document.getElementById("networkUnit").textContent = mean === null ? "Choose another date or product" : `${metric.meanLabel} across reporting radars`;
+  document.getElementById("networkUnit").textContent = mean === null ? "Choose another date or pulse" : `${metric.meanLabel} across reporting radars`;
   document.getElementById("radarHeading").textContent = "Reporting radars";
   renderStatus();
   renderRadarList(metric);
   renderPlots((state.historical.assets && state.historical.assets.plots) || []);
+  setLegend(activeScale(values), metric);
   drawMap();
 }
 
 function aggregateObservedRows(rows) {
   const byRadar = new Map();
   for (const row of rows) {
-    const current = byRadar.get(row.radar) || {
-      ...row,
-      profiles: 0,
-      vid: 0,
-      _heightTotal: 0,
-      _speedTotal: 0,
-      _weightedProfiles: 0,
-    };
+    const current = byRadar.get(row.radar) || {...row, profiles: 0, vid: 0, _heightTotal: 0, _speedTotal: 0, _weightedProfiles: 0};
     const profiles = Number(row.profiles) || 0;
     const vid = Number(row.vid);
     if (Number.isFinite(vid)) current.vid += vid;
@@ -205,46 +243,79 @@ function aggregateObservedRows(rows) {
 function renderModelled() {
   const frames = state.modelDayPayload && state.modelDayPayload.frames || [];
   state.modelFrame = frames.find((frame) => new Date(frame.time_utc).getUTCHours() === state.hour) || null;
+  const historicalRows = state.yearPayload && state.yearPayload.rows || [];
+  state.statusRows = aggregateObservedRows(historicalRows.filter((row) => row.date === state.date && row.pulse === state.pulse));
   state.visibleRows = [];
   const metric = modelMetric();
   const cells = state.modelFrame && state.modelFrame.cells || [];
   const values = cells.map((cell) => Number(cell[state.modelMetric])).filter(Number.isFinite);
   const mean = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
-  document.getElementById("mapTitle").textContent = "Modelled UK bird flow";
+  document.getElementById("mapTitle").textContent = "Modelled migration";
   document.getElementById("mapSubtitle").textContent = state.modelFrame
-    ? `${formatDate(state.date)} · ${String(state.hour).padStart(2, "0")}:00 UTC · ${state.pulse.toUpperCase()} · ${state.model.model_family.toUpperCase()}`
-    : `${formatDate(state.date)} · no modelled frame published for ${String(state.hour).padStart(2, "0")}:00 UTC`;
-  document.getElementById("legendUnit").textContent = metric.label;
+    ? `Historical ERA5 reanalysis · ${state.pulse.toUpperCase()} · ${state.model.model_family.toUpperCase()}`
+    : `No historical frame published for ${String(state.hour).padStart(2, "0")}:00 UTC`;
+  document.getElementById("mapTimestamp").textContent = `${formatDate(state.date)} · ${String(state.hour).padStart(2, "0")} UTC`;
   document.getElementById("networkValue").textContent = mean === null ? "No modelled frame" : metric.format(mean);
-  document.getElementById("networkUnit").textContent = "Spatial mean across supported ERA5 grid cells";
-  document.getElementById("radarHeading").textContent = "Model status";
-  document.getElementById("radarList").innerHTML = `<p>${escapeHtml(state.model.interpretation || "Historical modelled reanalysis.")}</p>`;
+  document.getElementById("networkUnit").textContent = "Spatial mean across in-range ERA5 cells";
+  document.getElementById("radarHeading").textContent = "Radar status";
   renderStatus();
+  renderRadarListForStatus();
+  setLegend(activeScale(values), metric);
   drawMap();
 }
 
 function observedMetric() {
   return {
-    vid: {label: "VID passage index (birds km-2)", meanLabel: "Mean VID", format: (value) => `${value.toFixed(1)} birds km⁻²`},
-    height_m: {label: "Mean flight height (m)", meanLabel: "Mean flight height", format: (value) => `${Math.round(value)} m`},
-    speed_ms: {label: "Mean ground speed (m s-1)", meanLabel: "Mean ground speed", format: (value) => `${value.toFixed(1)} m s⁻¹`},
+    vid: {title: "Vertically integrated density", label: "VID passage index", units: "birds km⁻²", meanLabel: "Mean VID", format: (value) => `${value.toFixed(1)} birds km⁻²`},
+    height_m: {title: "Mean flight height", label: "Mean flight height", units: "m", meanLabel: "Mean flight height", format: (value) => `${Math.round(value)} m`},
+    speed_ms: {title: "Mean ground speed", label: "Mean ground speed", units: "m s⁻¹", meanLabel: "Mean ground speed", format: (value) => `${value.toFixed(1)} m s⁻¹`},
   }[state.metric];
 }
 
 function modelMetric() {
   return {
-    mtr_birds_km_h: {label: "Migration traffic rate (birds km-1 h-1)", format: (value) => `${value.toFixed(1)} birds km⁻¹ h⁻¹`},
-    vid_birds_per_km2: {label: "Vertically integrated density (birds km-2)", format: (value) => `${value.toFixed(1)} birds km⁻²`},
+    mtr_birds_km_h: {title: "Migration traffic rate", label: "Migration traffic rate", units: "birds km⁻¹ h⁻¹", format: (value) => `${value.toFixed(1)} birds km⁻¹ h⁻¹`},
+    vid_birds_per_km2: {title: "Vertically integrated density", label: "Vertically integrated density", units: "birds km⁻²", format: (value) => `${value.toFixed(1)} birds km⁻²`},
   }[state.modelMetric];
+}
+
+function activeScale(values) {
+  const manifest = activeManifest();
+  const key = state.view === "modelled" ? state.modelMetric : state.metric;
+  const published = manifest && manifest.colour_scales && manifest.colour_scales[key];
+  return published || fallbackScale(values, ["vid", "mtr_birds_km_h", "vid_birds_per_km2"].includes(key) ? "log10" : "linear");
+}
+
+function fallbackScale(values, transform) {
+  const finite = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
+  if (transform === "log10") {
+    const positive = finite.filter((value) => value > 0);
+    const minimum = positive[Math.floor(positive.length * .01)] || 1;
+    const maximum = positive[Math.min(positive.length - 1, Math.floor(positive.length * .99))] || 10;
+    return {transform, minimum, maximum: Math.max(maximum, minimum * 10), ticks: logTicks(minimum, Math.max(maximum, minimum * 10)), palette: PALETTE};
+  }
+  const minimum = finite[Math.floor(finite.length * .05)] || 0;
+  const maximum = finite[Math.min(finite.length - 1, Math.floor(finite.length * .95))] || minimum + 1;
+  return {transform, minimum, maximum, ticks: [minimum, (minimum + maximum) / 2, maximum], palette: PALETTE};
+}
+
+function setLegend(scale, metric) {
+  document.getElementById("legendTitle").textContent = metric.title;
+  document.getElementById("legendUnit").textContent = `${metric.units} · ${scale.transform === "log10" ? "log scale" : "linear scale"}`;
+  const ticks = (scale.ticks || [scale.minimum, scale.maximum]).filter((value) => Number(value) >= Number(scale.minimum) && Number(value) <= Number(scale.maximum));
+  document.getElementById("legendTicks").innerHTML = ticks.map((value) => {
+    const position = scalePosition(Number(value), scale) * 100;
+    return `<span style="bottom:${position.toFixed(3)}%">${escapeHtml(formatTick(Number(value)))}</span>`;
+  }).join("");
 }
 
 function renderStatus() {
   const badge = document.getElementById("statusBadge");
   const manifest = activeManifest();
-  badge.textContent = state.view === "modelled" ? "Modelled reanalysis" : "Historical archive";
+  badge.textContent = state.view === "modelled" ? "Historical ERA5 reanalysis" : "Historical radar archive";
   badge.className = "badge ok";
   const rows = state.view === "modelled"
-    ? [["Coverage", `${formatDate(manifest.first_time_utc.slice(0, 10))} to ${formatDate(manifest.latest_time_utc.slice(0, 10))}`], ["Model", manifest.model_family.toUpperCase()], ["Cadence", "Hourly UTC"], ["Time terms", "None"], ["Grid", "ERA5 native 0.25°"], ["Support", "Toggle uncertainty to inspect"]]
+    ? [["Coverage", `${formatDate(manifest.first_time_utc.slice(0, 10))} to ${formatDate(manifest.latest_time_utc.slice(0, 10))}`], ["Model", manifest.model_family.toUpperCase()], ["Cadence", "Hourly UTC"], ["Grid", manifest.grid.resolution || "ERA5 native 0.25°"], ["Domain", "Physical radar range; land and water"]]
     : [["Coverage", `${formatDate(manifest.first_date)} to ${formatDate(manifest.latest_date)}`], ["Radars", manifest.radars.length], ["VPTS files", formatInteger(manifest.source.files_seen)], ["Profiles", formatInteger(manifest.source.profiles_seen)], ["Altitude", `${manifest.metric.altitude_min_m}–${manifest.metric.altitude_max_m} m`]];
   document.getElementById("statusList").innerHTML = rows.map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd>`).join("");
 }
@@ -252,11 +323,24 @@ function renderStatus() {
 function renderRadarList(metric) {
   const bySlug = new Map(state.visibleRows.map((row) => [row.radar, row]));
   document.getElementById("radarList").innerHTML = state.historical.radars.map((radar) => {
-    const row = bySlug.get(radar.slug); const value = row && Number(row[state.metric]);
-    return `<button type="button" data-radar="${escapeHtml(radar.slug)}"><span>${escapeHtml(radar.label)}</span><strong>${Number.isFinite(value) ? escapeHtml(metric.format(value)) : "No data"}</strong></button>`;
+    const row = bySlug.get(radar.slug);
+    const value = row && Number(row[state.metric]);
+    return `<button type="button" data-radar="${escapeHtml(radar.slug)}"><span>${escapeHtml(radar.label)}</span><strong>${Number.isFinite(value) ? escapeHtml(metric.format(value)) : "Unavailable"}</strong></button>`;
   }).join("");
+  bindRadarList();
+}
+
+function renderRadarListForStatus() {
+  const bySlug = new Map(state.statusRows.map((row) => [row.radar, row]));
+  const radars = (state.historical && state.historical.radars) || [];
+  document.getElementById("radarList").innerHTML = radars.map((radar) => `<button type="button" data-radar="${escapeHtml(radar.slug)}"><span>${escapeHtml(radar.label)}</span><strong>${bySlug.has(radar.slug) ? "Available" : "Unavailable"}</strong></button>`).join("");
+  bindRadarList();
+}
+
+function bindRadarList() {
   document.querySelectorAll("#radarList button").forEach((button) => button.addEventListener("click", () => {
-    const point = state.points.find((item) => item.radar.slug === button.dataset.radar); if (point) highlightRadar(point);
+    const point = state.points.find((item) => item.radar.slug === button.dataset.radar);
+    if (point) highlightRadar(point);
   }));
 }
 
@@ -266,83 +350,311 @@ function renderPlots(paths) {
 }
 
 function drawMap() {
-  const canvas = document.getElementById("mapCanvas"); const rect = canvas.getBoundingClientRect(); if (!rect.width || !rect.height) return;
-  const ratio = Math.min(3, window.devicePixelRatio || 1); canvas.width = Math.round(rect.width * ratio); canvas.height = Math.round(rect.height * ratio);
-  const ctx = canvas.getContext("2d"); ctx.setTransform(ratio, 0, 0, ratio, 0, 0); const {width, height} = rect;
-  ctx.fillStyle = "#dce9e7"; ctx.fillRect(0, 0, width, height); drawGraticule(ctx, width, height); drawBoundary(ctx, width, height, true);
-  if (state.view === "modelled") {
-    ctx.save(); clipToUK(ctx, width, height); drawModelledField(ctx, width, height); ctx.restore();
-  } else drawRadarValues(ctx, width, height);
-  drawBoundary(ctx, width, height, false);
+  const canvas = document.getElementById("mapCanvas");
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const ratio = Math.min(3, window.devicePixelRatio || 1);
+  canvas.width = Math.round(rect.width * ratio);
+  canvas.height = Math.round(rect.height * ratio);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, rect.width, rect.height);
+  drawGraticule(ctx, rect.width, rect.height);
+  drawBoundary(ctx, rect.width, rect.height, true);
+  if (state.view === "modelled") drawModelledField(ctx, rect.width, rect.height);
+  else drawRadarValues(ctx, rect.width, rect.height);
+  drawBoundary(ctx, rect.width, rect.height, false);
+  drawRadarMarkers(ctx, rect.width, rect.height);
+}
+
+function currentBounds() {
+  const bounds = state.model && state.model.grid && state.model.grid.bounds;
+  if (bounds && ["west", "east", "south", "north"].every((key) => Number.isFinite(Number(bounds[key])))) {
+    return Object.fromEntries(Object.entries(bounds).map(([key, value]) => [key, Number(value)]));
+  }
+  const radars = state.historical && state.historical.radars || [];
+  if (radars.length && radars.every((radar) => Number.isFinite(Number(radar.max_range_m)))) {
+    let west = 180, east = -180, south = 90, north = -90;
+    for (const radar of radars) {
+      const rangeKm = Number(radar.max_range_m) / 1000;
+      const latDelta = rangeKm / 111.195;
+      const lonDelta = rangeKm / (111.195 * Math.max(Math.cos(Number(radar.latitude) * Math.PI / 180), .01));
+      west = Math.min(west, Number(radar.longitude) - lonDelta);
+      east = Math.max(east, Number(radar.longitude) + lonDelta);
+      south = Math.min(south, Number(radar.latitude) - latDelta);
+      north = Math.max(north, Number(radar.latitude) + latDelta);
+    }
+    return {west: west - .25, east: east + .25, south: south - .25, north: north + .25};
+  }
+  return FALLBACK_BOUNDS;
 }
 
 function drawGraticule(ctx, width, height) {
-  ctx.strokeStyle = "rgba(66, 101, 91, .14)"; ctx.lineWidth = 1;
-  for (let lon = -12; lon <= 3; lon += 3) { const top = project(lon, BOUNDS.north, width, height); const bottom = project(lon, BOUNDS.south, width, height); ctx.beginPath(); ctx.moveTo(top.x, top.y); ctx.lineTo(bottom.x, bottom.y); ctx.stroke(); }
-  for (let lat = 50; lat <= 60; lat += 2) { const left = project(BOUNDS.west, lat, width, height); const right = project(BOUNDS.east, lat, width, height); ctx.beginPath(); ctx.moveTo(left.x, left.y); ctx.lineTo(right.x, right.y); ctx.stroke(); }
+  const bounds = currentBounds();
+  ctx.strokeStyle = "rgba(210, 225, 217, .13)";
+  ctx.lineWidth = 1;
+  for (let lon = Math.ceil(bounds.west / 2) * 2; lon <= bounds.east; lon += 2) {
+    const top = project(lon, bounds.north, width, height);
+    const bottom = project(lon, bounds.south, width, height);
+    ctx.beginPath(); ctx.moveTo(top.x, top.y); ctx.lineTo(bottom.x, bottom.y); ctx.stroke();
+  }
+  for (let lat = Math.ceil(bounds.south / 2) * 2; lat <= bounds.north; lat += 2) {
+    const left = project(bounds.west, lat, width, height);
+    const right = project(bounds.east, lat, width, height);
+    ctx.beginPath(); ctx.moveTo(left.x, left.y); ctx.lineTo(right.x, right.y); ctx.stroke();
+  }
 }
 
 function drawBoundary(ctx, width, height, fill) {
   if (!state.boundary) return;
   for (const feature of state.boundary.features || []) {
     traceGeometry(ctx, feature.geometry, width, height);
-    if (fill) { ctx.fillStyle = feature.properties.ADM0_A3 === "GBR" ? "#f7f8f5" : "#eef2ed"; ctx.fill("evenodd"); }
-    else { ctx.strokeStyle = feature.properties.ADM0_A3 === "GBR" ? "#253a32" : "#849188"; ctx.lineWidth = feature.properties.ADM0_A3 === "GBR" ? 1.25 : 0.8; ctx.stroke(); }
+    if (fill) {
+      ctx.fillStyle = feature.properties.ADM0_A3 === "GBR" ? "#101512" : "#090c0b";
+      ctx.fill("evenodd");
+    } else {
+      ctx.strokeStyle = feature.properties.ADM0_A3 === "GBR" ? "#f2f5f3" : "#87928c";
+      ctx.lineWidth = feature.properties.ADM0_A3 === "GBR" ? 1.3 : .75;
+      ctx.stroke();
+    }
   }
 }
 
 function traceGeometry(ctx, geometry, width, height) {
-  const polygons = geometry.type === "MultiPolygon" ? geometry.coordinates : [geometry.coordinates]; ctx.beginPath();
-  for (const polygon of polygons) for (const ring of polygon) { ring.forEach(([lon, lat], index) => { const point = project(lon, lat, width, height); if (index === 0) ctx.moveTo(point.x, point.y); else ctx.lineTo(point.x, point.y); }); ctx.closePath(); }
-}
-
-function clipToUK(ctx, width, height) {
-  const uk = (state.boundary && state.boundary.features || []).find((feature) => feature.properties && feature.properties.ADM0_A3 === "GBR");
-  if (!uk) return;
-  traceGeometry(ctx, uk.geometry, width, height);
-  ctx.clip("evenodd");
+  const polygons = geometry.type === "MultiPolygon" ? geometry.coordinates : [geometry.coordinates];
+  ctx.beginPath();
+  for (const polygon of polygons) for (const ring of polygon) {
+    ring.forEach(([lon, lat], index) => {
+      const point = project(lon, lat, width, height);
+      if (index === 0) ctx.moveTo(point.x, point.y); else ctx.lineTo(point.x, point.y);
+    });
+    ctx.closePath();
+  }
 }
 
 function drawModelledField(ctx, width, height) {
-  const cells = state.modelFrame && state.modelFrame.cells || []; if (!cells.length) return;
-  const values = cells.map((cell) => Number(cell[state.modelMetric])).filter(Number.isFinite).sort((a, b) => a - b);
-  const high = values[Math.min(values.length - 1, Math.floor(values.length * .9))] || 1;
-  const grid = state.modelDayPayload && state.modelDayPayload.grid || {}; const lonStep = Number(grid.longitude_step || .25); const latStep = Number(grid.latitude_step || .25);
+  const cells = state.modelFrame && state.modelFrame.cells || [];
+  if (!cells.length) return;
+  const scale = activeScale(cells.map((cell) => Number(cell[state.modelMetric])));
+  const grid = state.modelDayPayload && state.modelDayPayload.grid || {};
+  const lonStep = Number(grid.longitude_step || .25);
+  const latStep = Number(grid.latitude_step || .25);
   for (const cell of cells) {
-    const value = Number(cell[state.modelMetric]); if (!Number.isFinite(value)) continue;
-    const northWest = project(Number(cell.longitude) - lonStep / 2, Number(cell.latitude) + latStep / 2, width, height); const southEast = project(Number(cell.longitude) + lonStep / 2, Number(cell.latitude) - latStep / 2, width, height);
-    const support = Number(cell.support); const alpha = state.showUncertainty && Number.isFinite(support) ? .18 + .82 * Math.max(0, Math.min(1, support)) : .82;
-    ctx.globalAlpha = alpha; ctx.fillStyle = densityColor(value / high); ctx.fillRect(northWest.x, northWest.y, southEast.x - northWest.x + 1, southEast.y - northWest.y + 1);
-    if (state.showUncertainty && Number.isFinite(support) && support < .5) { ctx.globalAlpha = .34; ctx.strokeStyle = "#253a32"; ctx.lineWidth = .5; ctx.beginPath(); ctx.moveTo(northWest.x, southEast.y); ctx.lineTo(southEast.x, northWest.y); ctx.stroke(); }
+    const value = Number(cell[state.modelMetric]);
+    if (!Number.isFinite(value)) continue;
+    const northWest = project(Number(cell.longitude) - lonStep / 2, Number(cell.latitude) + latStep / 2, width, height);
+    const southEast = project(Number(cell.longitude) + lonStep / 2, Number(cell.latitude) - latStep / 2, width, height);
+    const support = Number(cell.support);
+    ctx.globalAlpha = state.showUncertainty && Number.isFinite(support) ? .2 + .8 * Math.max(0, Math.min(1, support)) : .94;
+    ctx.fillStyle = quantitativeColor(value, scale);
+    ctx.fillRect(northWest.x, northWest.y, southEast.x - northWest.x + 1, southEast.y - northWest.y + 1);
+    if (state.showUncertainty && Number.isFinite(support) && support < .5) {
+      ctx.globalAlpha = .42;
+      ctx.strokeStyle = "#dce4df";
+      ctx.lineWidth = .45;
+      ctx.beginPath(); ctx.moveTo(northWest.x, southEast.y); ctx.lineTo(southEast.x, northWest.y); ctx.stroke();
+    }
   }
   ctx.globalAlpha = 1;
-  if (state.showArrows) drawVectors(ctx, width, height, cells, lonStep, latStep, high);
+  if (state.showArrows) drawVectors(ctx, width, height, cells, scale);
 }
 
-function drawVectors(ctx, width, height, cells, lonStep, latStep, high) {
-  ctx.strokeStyle = "rgba(20, 37, 31, .72)"; ctx.fillStyle = "rgba(20, 37, 31, .72)"; ctx.lineWidth = 1.2;
+function drawVectors(ctx, width, height, cells, scale) {
+  ctx.strokeStyle = "#f2b632";
+  ctx.fillStyle = "#f2b632";
+  ctx.lineWidth = 1.8;
   cells.forEach((cell, index) => {
-    if (index % 3) return; const u = Number(cell.bird_u_ms), v = Number(cell.bird_v_ms), intensity = Number(cell.mtr_birds_km_h); if (!Number.isFinite(u) || !Number.isFinite(v) || !Number.isFinite(intensity) || intensity <= high * .03) return;
-    const start = project(Number(cell.longitude), Number(cell.latitude), width, height); const scale = Math.min(18, Math.hypot(u, v) * 1.2); const end = {x: start.x + u * scale / Math.max(1, Math.hypot(u, v)), y: start.y - v * scale / Math.max(1, Math.hypot(u, v))};
-    ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke(); const angle = Math.atan2(end.y - start.y, end.x - start.x); ctx.beginPath(); ctx.moveTo(end.x, end.y); ctx.lineTo(end.x - 4 * Math.cos(angle - .5), end.y - 4 * Math.sin(angle - .5)); ctx.lineTo(end.x - 4 * Math.cos(angle + .5), end.y - 4 * Math.sin(angle + .5)); ctx.closePath(); ctx.fill();
+    if (index % 4) return;
+    const u = Number(cell.bird_u_ms), v = Number(cell.bird_v_ms), intensity = Number(cell.mtr_birds_km_h);
+    if (!Number.isFinite(u) || !Number.isFinite(v) || !Number.isFinite(intensity) || scalePosition(intensity, scale) < .08) return;
+    const start = project(Number(cell.longitude), Number(cell.latitude), width, height);
+    const magnitude = Math.hypot(u, v);
+    const length = Math.min(22, 7 + magnitude * .8);
+    const end = {x: start.x + u * length / Math.max(1, magnitude), y: start.y - v * length / Math.max(1, magnitude)};
+    ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
+    const angle = Math.atan2(end.y - start.y, end.x - start.x);
+    ctx.beginPath(); ctx.moveTo(end.x, end.y); ctx.lineTo(end.x - 5 * Math.cos(angle - .5), end.y - 5 * Math.sin(angle - .5)); ctx.lineTo(end.x - 5 * Math.cos(angle + .5), end.y - 5 * Math.sin(angle + .5)); ctx.closePath(); ctx.fill();
   });
 }
 
 function drawRadarValues(ctx, width, height) {
-  const radarRows = new Map(state.visibleRows.map((row) => [row.radar, row])); const values = state.visibleRows.map((row) => Number(row[state.metric])).filter(Number.isFinite).sort((a, b) => a - b); const high = values[Math.min(values.length - 1, Math.floor(values.length * .9))] || 1; state.points = [];
-  for (const radar of state.historical.radars) {
-    const point = project(radar.longitude, radar.latitude, width, height); const row = radarRows.get(radar.slug); const value = row && Number(row[state.metric]); state.points.push({radar, row, value, x: point.x, y: point.y}); ctx.fillStyle = Number.isFinite(value) ? densityColor(value / high) : "#ffffff"; ctx.strokeStyle = Number.isFinite(value) ? "#ffffff" : "#89958e"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(point.x, point.y, Number.isFinite(value) ? 9 : 4.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  const rows = new Map(state.visibleRows.map((row) => [row.radar, row]));
+  const scale = activeScale(state.visibleRows.map((row) => Number(row[state.metric])));
+  const radars = state.historical && state.historical.radars || [];
+  for (const radar of radars) {
+    const row = rows.get(radar.slug);
+    const value = row && Number(row[state.metric]);
+    if (!Number.isFinite(value)) continue;
+    const point = project(radar.longitude, radar.latitude, width, height);
+    const glow = ctx.createRadialGradient(point.x, point.y, 2, point.x, point.y, 28);
+    const colour = quantitativeColor(value, scale);
+    glow.addColorStop(0, colour);
+    glow.addColorStop(.35, colour);
+    glow.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(point.x, point.y, 28, 0, Math.PI * 2); ctx.fill();
   }
 }
 
-function project(lon, lat, width, height) { const padding = Math.max(16, Math.min(width, height) * .045); return {x: padding + ((lon - BOUNDS.west) / (BOUNDS.east - BOUNDS.west)) * (width - padding * 2), y: padding + ((BOUNDS.north - lat) / (BOUNDS.north - BOUNDS.south)) * (height - padding * 2)}; }
-function selectRadarAtPoint(event) { if (state.view !== "observed") return; const rect = event.currentTarget.getBoundingClientRect(); const nearest = state.points.map((point) => ({point, distance: Math.hypot(point.x - event.clientX + rect.left, point.y - event.clientY + rect.top)})).sort((a, b) => a.distance - b.distance)[0]; if (nearest && nearest.distance < 28) highlightRadar(nearest.point); }
-function highlightRadar(point) { const metric = observedMetric(); document.querySelectorAll("#radarList button").forEach((button) => button.classList.toggle("selected", button.dataset.radar === point.radar.slug)); document.getElementById("networkValue").textContent = Number.isFinite(point.value) ? metric.format(point.value) : "No observation"; document.getElementById("networkUnit").textContent = point.radar.label; }
-function toggleAnimation() { if (state.animation) return stopAnimation(); const button = document.getElementById("playButton"); button.textContent = "❚❚"; button.classList.add("active"); state.animation = window.setInterval(() => { const available = (state.modelDayPayload.frames || []).map((frame) => new Date(frame.time_utc).getUTCHours()); const index = Math.max(0, available.indexOf(state.hour)); state.hour = available[(index + 1) % available.length]; render(); }, 900); }
-function stopAnimation() { if (state.animation) window.clearInterval(state.animation); state.animation = null; const button = document.getElementById("playButton"); if (button) { button.textContent = "▶"; button.classList.remove("active"); } }
-function densityColor(value) { const bounded = Math.max(0, Math.min(1, value)); const stops = [[66, 139, 116], [224, 185, 75], [198, 66, 53]]; const scaled = bounded * (stops.length - 1); const index = Math.min(stops.length - 2, Math.floor(scaled)); const fraction = scaled - index; const rgb = stops[index].map((channel, offset) => Math.round(channel + (stops[index + 1][offset] - channel) * fraction)); return `rgb(${rgb.join(",")})`; }
-function showUnavailable() { const badge = document.getElementById("statusBadge"); badge.textContent = "Historical data unavailable"; badge.className = "badge waiting"; document.getElementById("mapSubtitle").textContent = "Historical artifacts have not been published."; }
-function formatDate(value) { if (!value) return "Unknown"; return new Date(`${value}T12:00:00Z`).toLocaleDateString([], {day: "numeric", month: "short", year: "numeric"}); }
-function formatPeriod(value) { return value.replace("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()); }
+function drawRadarMarkers(ctx, width, height) {
+  const radars = (state.historical && state.historical.radars) || [];
+  const available = new Set(state.statusRows.map((row) => row.radar));
+  state.points = [];
+  for (const radar of radars) {
+    const point = project(radar.longitude, radar.latitude, width, height);
+    const isAvailable = available.has(radar.slug);
+    drawRadarIcon(ctx, point.x, point.y, isAvailable ? "#22ed5a" : "#f14640");
+    state.points.push({radar, row: state.statusRows.find((row) => row.radar === radar.slug), x: point.x, y: point.y, available: isAvailable});
+  }
+}
+
+function drawRadarIcon(ctx, x, y, colour) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = colour;
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 1.1;
+  ctx.beginPath(); ctx.arc(0, -1, 6, 0, Math.PI); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = 1.8;
+  ctx.beginPath(); ctx.moveTo(0, 4); ctx.lineTo(0, 9); ctx.moveTo(-5, 9); ctx.lineTo(5, 9); ctx.moveTo(0, -1); ctx.lineTo(7, -8); ctx.stroke();
+  ctx.beginPath(); ctx.arc(1, -2, 9, -Math.PI / 3, 0); ctx.stroke();
+  ctx.restore();
+}
+
+function project(lon, lat, width, height) {
+  const bounds = currentBounds();
+  const padding = Math.max(14, Math.min(width, height) * .025);
+  return {
+    x: padding + ((lon - bounds.west) / (bounds.east - bounds.west)) * (width - padding * 2),
+    y: padding + ((bounds.north - lat) / (bounds.north - bounds.south)) * (height - padding * 2),
+  };
+}
+
+function scalePosition(value, scale) {
+  const minimum = Number(scale.minimum);
+  const maximum = Number(scale.maximum);
+  if (!Number.isFinite(value) || maximum <= minimum) return 0;
+  if (value <= 0 && scale.transform === "log10") return 0;
+  const raw = scale.transform === "log10"
+    ? (Math.log10(Math.max(value, minimum)) - Math.log10(minimum)) / (Math.log10(maximum) - Math.log10(minimum))
+    : (value - minimum) / (maximum - minimum);
+  return Math.max(0, Math.min(1, raw));
+}
+
+function quantitativeColor(value, scale) {
+  if (!Number.isFinite(value)) return "rgba(0,0,0,0)";
+  if (value <= 0 && scale.transform === "log10") return scale.zero_colour || "#000";
+  const palette = scale.palette || PALETTE;
+  const scaled = scalePosition(value, scale) * (palette.length - 1);
+  const index = Math.min(palette.length - 2, Math.floor(scaled));
+  const fraction = scaled - index;
+  const start = hexToRgb(palette[index]);
+  const end = hexToRgb(palette[index + 1]);
+  return `rgb(${start.map((channel, offset) => Math.round(channel + (end[offset] - channel) * fraction)).join(",")})`;
+}
+
+function hexToRgb(value) {
+  const text = value.replace("#", "");
+  const expanded = text.length === 3 ? text.split("").map((part) => part + part).join("") : text;
+  return [0, 2, 4].map((offset) => parseInt(expanded.slice(offset, offset + 2), 16));
+}
+
+function logTicks(minimum, maximum) {
+  const ticks = [];
+  for (let exponent = Math.floor(Math.log10(minimum)); exponent <= Math.ceil(Math.log10(maximum)); exponent += 1) {
+    for (const factor of [1, 2, 5]) {
+      const value = factor * 10 ** exponent;
+      if (minimum <= value && value <= maximum) ticks.push(value);
+    }
+  }
+  return ticks;
+}
+
+function availableHours() {
+  return (state.modelDayPayload && state.modelDayPayload.frames || []).map((frame) => new Date(frame.time_utc).getUTCHours());
+}
+
+function stepHour(direction) {
+  const hours = availableHours();
+  if (!hours.length) return;
+  const index = Math.max(0, hours.indexOf(state.hour));
+  state.hour = hours[(index + direction + hours.length) % hours.length];
+  render();
+}
+
+function toggleAnimation() {
+  if (state.animation) return stopAnimation();
+  const button = document.getElementById("playButton");
+  button.textContent = "❚❚";
+  button.classList.add("active");
+  state.animation = window.setInterval(() => stepHour(1), 900);
+}
+
+function stopAnimation() {
+  if (state.animation) window.clearInterval(state.animation);
+  state.animation = null;
+  const button = document.getElementById("playButton");
+  if (button) { button.textContent = "▶"; button.classList.remove("active"); }
+}
+
+function nearestRadar(event) {
+  const rect = event.currentTarget.getBoundingClientRect();
+  return state.points.map((point) => ({
+    point,
+    distance: Math.hypot(point.x - (event.clientX - rect.left), point.y - (event.clientY - rect.top)),
+  })).sort((a, b) => a.distance - b.distance)[0];
+}
+
+function showRadarTooltip(event) {
+  const nearest = nearestRadar(event);
+  const tooltip = document.getElementById("mapTooltip");
+  if (!nearest || nearest.distance > 22) return hideRadarTooltip();
+  const row = nearest.point.row;
+  const valueKey = state.view === "observed" ? state.metric : null;
+  const value = valueKey && row ? Number(row[valueKey]) : null;
+  const formatted = Number.isFinite(value) ? observedMetric().format(value) : nearest.point.available ? "Observation available" : "No observation for selected date";
+  tooltip.innerHTML = `<strong>${escapeHtml(nearest.point.radar.label)}</strong>${escapeHtml(formatted)}<br>${escapeHtml(state.pulse.toUpperCase())} · ${escapeHtml(state.date)}`;
+  tooltip.hidden = false;
+  const rect = event.currentTarget.getBoundingClientRect();
+  tooltip.style.left = `${Math.min(rect.width - 220, event.clientX - rect.left + 12)}px`;
+  tooltip.style.top = `${Math.max(8, event.clientY - rect.top - 48)}px`;
+}
+
+function hideRadarTooltip() {
+  document.getElementById("mapTooltip").hidden = true;
+}
+
+function selectRadarAtPoint(event) {
+  const nearest = nearestRadar(event);
+  if (nearest && nearest.distance < 26) highlightRadar(nearest.point);
+}
+
+function highlightRadar(point) {
+  document.querySelectorAll("#radarList button").forEach((button) => button.classList.toggle("selected", button.dataset.radar === point.radar.slug));
+  if (state.view === "observed") {
+    const value = point.row && Number(point.row[state.metric]);
+    document.getElementById("networkValue").textContent = Number.isFinite(value) ? observedMetric().format(value) : "No observation";
+    document.getElementById("networkUnit").textContent = point.radar.label;
+  }
+}
+
+function showUnavailable() {
+  const badge = document.getElementById("statusBadge");
+  badge.textContent = "Historical data unavailable";
+  badge.className = "badge waiting";
+  document.getElementById("mapSubtitle").textContent = "Historical artifacts have not been published.";
+}
+
+function formatDate(value) {
+  if (!value) return "Unknown";
+  return new Date(`${value}T12:00:00Z`).toLocaleDateString([], {day: "numeric", month: "short", year: "numeric"});
+}
 function formatInteger(value) { return Number.isFinite(Number(value)) ? Number(value).toLocaleString() : "Unknown"; }
+function formatTick(value) {
+  if (Math.abs(value) >= 1000) return `${Number((value / 1000).toPrecision(3))}k`;
+  if (Math.abs(value) >= 1) return String(Number(value.toPrecision(4)));
+  return String(Number(value.toPrecision(2)));
+}
 function escapeHtml(value) { return String(value).replace(/[&<>"']/g, (char) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[char])); }

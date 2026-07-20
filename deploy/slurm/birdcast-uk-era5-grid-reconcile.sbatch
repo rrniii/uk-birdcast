@@ -20,10 +20,8 @@ set -u
 : "${BIRDCAST_UK_ERA5_GRID_DIR:?Set the daily national grid directory}"
 : "${BIRDCAST_UK_REANALYSIS_TRAINING_TABLE:?Set the prepared model table}"
 : "${BIRDCAST_UK_RADARS_FILE:?Set radar metadata}"
-: "${BIRDCAST_UK_BOUNDARY:?Set the high-resolution UK boundary path}"
 
 module load jaspy/3.12/v20250704
-"$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli historical boundary --output "$BIRDCAST_UK_BOUNDARY"
 end_date="$("$BIRDCAST_UK_PYTHON" -c 'import json,sys; print(json.load(open(sys.argv[1]))["window"]["end_date"])' "$BIRDCAST_UK_VPTS_ARCHIVE_INVENTORY")"
 mkdir -p "$BIRDCAST_UK_ERA5_GRID_DIR"
 
@@ -46,7 +44,6 @@ for offset in $(seq 0 364); do
     --pressure-levels "$pressure" \
     --radars "$BIRDCAST_UK_RADARS_FILE" \
     --training-table "$BIRDCAST_UK_REANALYSIS_TRAINING_TABLE" \
-    --boundary "$BIRDCAST_UK_BOUNDARY" \
     --output "$temporary"
   test "$(wc -l < "$temporary")" -eq 12841
   mv "$temporary" "$output"

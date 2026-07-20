@@ -1,8 +1,9 @@
-# UK BirdCast
+# Live UK Bird Maps
 
-UK BirdCast publishes historical bird-passage reanalyses from the production UK
-bioRad VPTS archive. It is a standalone consumer of immutable objects and does
-not run or modify the underlying radar-data production pipeline.
+Live UK Bird Maps publishes historical bird-passage observations and
+reanalyses from the production UK bioRad VPTS archive. It is a standalone
+consumer of immutable objects and does not run or modify the underlying
+radar-data production pipeline.
 
 The public product is intentionally historical. Radar delivery is delayed, so
 forecast generation and ECMWF Open Data retrieval are dormant. ERA5 is retained
@@ -16,12 +17,14 @@ as an independent historical weather flow for attribution and model analysis.
    as separate products.
 3. Stage the compact aggregate package for the cloud web host.
 4. Build yearly radar-day JSON, archive summaries, scientific SVG plots, and a
-   Natural Earth 1:10m UK boundary.
+   Natural Earth 1:10m coastline reference.
 5. Publish immutable historical assets before atomically updating
    `birdcast-uk/latest/historical.json`.
 6. Join historical radar summaries to the standalone Earthkit/ERA5 flow.
 7. Fit an all-hour, pulse-separated ERA5 GAMM and an identical-predictor XGBoost benchmark on JASMIN batch compute.
-8. Select one model family using held-out-radar performance, publish hourly native-ERA5 UK flow frames, and compare aggregate activity with licensed BTO products.
+8. Select one model family using held-out-radar performance, publish hourly
+   native-ERA5 flow frames across the union of physical radar ranges on land
+   and water, and compare aggregate activity with licensed BTO products.
 
 The first modelled release covers the latest complete 365-day overlap between
 the VPTS archive and ERA5. Published manifests record the exact input-file,
@@ -42,7 +45,7 @@ estimate. LP is the default product; LP and SP are never added together.
 
 ## Modelled flow reanalysis
 
-The Modelled Flow tab is historical only. It uses the latest complete 365-day
+The Modelled migration tab is historical only. It uses the latest complete 365-day
 overlap between VPTS and ERA5, at hourly UTC cadence. The training contract
 contains no timestamp, hour-of-day, season, daylight, twilight, sunrise or
 sunset predictor. It fits separate LP/SP models for MTR, VID and bird ground
@@ -54,8 +57,10 @@ least 10%, improves top-decile event detection, and does not worsen vectors.
 The JASMIN entrypoint is `deploy/slurm/submit-historical-reanalysis.sh`. It
 runs GAMM and XGBoost as independent Slurm jobs before model selection so the
 one-CPU standard QoS does not serialize the candidate fits. The national ERA5
-grid input must carry a support score for every cell; unsupported
-extrapolation is faded in the web map rather than hidden or presented equally.
+grid input must carry a support score for every cell within at least one
+radar's validated physical range. Land boundaries are never used to mask,
+clip, or score the product. Unsupported extrapolation is faded in the web map
+rather than hidden or presented equally.
 Training rows must be complete for all nine ERA5 predictors. The annual
 Earthkit backfill uses at most two concurrent calendar-month requests, splits
 their responses into atomic daily files, and is followed by an exact 365-day
@@ -84,3 +89,7 @@ birdcast-uk historical build \
 The source directory must contain `analysis_summary.json`, `daily_totals.csv`,
 `network_annual_seasonal_totals.csv`, `phenology.csv`, and `coverage.csv`.
 Deployment files for the JASMIN Cloud host are under `deploy/`.
+
+The canonical web route is `/live-uk-bird-maps/`; `/birdcast-uk/` is retained
+as a permanent compatibility redirect. The Object Store prefix remains
+`birdcast-uk/`.

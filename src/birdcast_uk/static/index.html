@@ -3,112 +3,136 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>UK BirdCast historical reanalysis</title>
+    <meta name="theme-color" content="#070a0b">
+    <title>Live UK Bird Maps | Historical radar reanalysis</title>
+    <link rel="icon" href="live-uk-bird-maps-icon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
-    <header>
-      <div>
-        <p class="eyebrow">Research preview</p>
-        <h1>UK BirdCast</h1>
+    <header class="brand-bar">
+      <div class="brand">
+        <img src="live-uk-bird-maps-icon.svg" alt="">
+        <div>
+          <h1>Live UK Bird Maps</h1>
+          <p>Historical UK weather-radar and ERA5 reanalysis</p>
+        </div>
       </div>
       <div id="statusBadge" class="badge">Loading archive</div>
     </header>
 
     <main>
       <section class="explorer" aria-labelledby="mapTitle">
-        <nav class="view-tabs" aria-label="BirdCast view">
-          <button type="button" class="active" data-view="observed">Radar observations</button>
-          <button type="button" data-view="modelled">Modelled flow</button>
-        </nav>
-        <div class="control-bar">
-          <label class="date-control">
-            <span>Date</span>
-            <input id="dateInput" type="date">
-          </label>
-          <label class="time-control model-control" hidden>
-            <span>UTC hour</span>
-            <div class="hour-control"><input id="hourInput" type="range" min="0" max="23" value="0"><output id="hourValue">00:00</output></div>
-          </label>
-          <button id="playButton" class="icon-button model-control" type="button" title="Play hourly animation" hidden aria-label="Play hourly animation">▶</button>
-          <fieldset class="pulse-field">
-            <legend>Radar pulse</legend>
-            <div class="segmented" id="pulseControl">
-              <button type="button" class="active" data-value="lp">LP</button>
-              <button type="button" data-value="sp">SP</button>
-            </div>
-          </fieldset>
-          <label class="metric-field observed-control">
-            <span>Map variable</span>
-            <select id="metricSelect">
-              <option value="vid">VID passage</option>
-              <option value="height_m">Flight height</option>
-              <option value="speed_ms">Ground speed</option>
-            </select>
-          </label>
-          <fieldset class="metric-field model-control" hidden>
-            <legend>Map variable</legend>
-            <div class="segmented" id="modelMetricControl">
-              <button type="button" class="active" data-value="mtr_birds_km_h">MTR</button>
-              <button type="button" data-value="vid_birds_per_km2">VID</button>
-            </div>
-          </fieldset>
-          <label class="check-control vectors-control model-control" hidden><input id="arrowsToggle" type="checkbox" checked><span>Bird vectors</span></label>
-          <label class="check-control uncertainty-control model-control" hidden><input id="uncertaintyToggle" type="checkbox"><span>Uncertainty</span></label>
+        <div class="toolbar">
+          <nav class="view-tabs" aria-label="Bird map view">
+            <button type="button" class="active" data-view="observed">Radar observations</button>
+            <button type="button" data-view="modelled">Modelled migration</button>
+          </nav>
+          <div class="control-bar">
+            <label>
+              <span>Date</span>
+              <input id="dateInput" type="date">
+            </label>
+            <fieldset>
+              <legend>Radar pulse</legend>
+              <div class="segmented" id="pulseControl">
+                <button type="button" class="active" data-value="lp">LP</button>
+                <button type="button" data-value="sp">SP</button>
+              </div>
+            </fieldset>
+            <label class="observed-control">
+              <span>Map variable</span>
+              <select id="metricSelect">
+                <option value="vid">VID passage</option>
+                <option value="height_m">Flight height</option>
+                <option value="speed_ms">Ground speed</option>
+              </select>
+            </label>
+            <fieldset class="model-control" hidden>
+              <legend>Map variable</legend>
+              <div class="segmented" id="modelMetricControl">
+                <button type="button" class="active" data-value="mtr_birds_km_h">MTR</button>
+                <button type="button" data-value="vid_birds_per_km2">VID</button>
+              </div>
+            </fieldset>
+            <label class="toggle model-control" hidden><input id="arrowsToggle" type="checkbox" checked><span>Bird vectors</span></label>
+            <label class="toggle model-control" hidden><input id="uncertaintyToggle" type="checkbox"><span>Uncertainty</span></label>
+          </div>
         </div>
 
-        <div class="map-layout">
-          <div class="map-panel">
-            <div class="map-heading">
-              <div>
-                <h2 id="mapTitle">Daily radar reanalysis</h2>
-                <p id="mapSubtitle">Loading historical observations</p>
-              </div>
-              <p class="map-resolution">1:10m coastline</p>
+        <div class="map-stage">
+          <div class="map-heading">
+            <div>
+              <p class="eyebrow">Historical reanalysis</p>
+              <h2 id="mapTitle">Radar observations</h2>
+              <p id="mapSubtitle">Loading historical observations</p>
             </div>
-            <canvas id="mapCanvas" aria-label="High-resolution map of UK radar bird passage"></canvas>
-            <div class="legend">
-              <span>Low</span><i></i><span>High</span>
-              <strong id="legendUnit">VID passage index</strong>
-            </div>
+            <p class="map-resolution">ERA5 0.25° · UTC</p>
+          </div>
+          <canvas id="mapCanvas" aria-label="Historical UK radar bird migration map"></canvas>
+
+          <div class="radar-key" aria-label="Radar status legend">
+            <span><i class="radar-symbol active"></i>Available</span>
+            <span><i class="radar-symbol inactive"></i>Unavailable</span>
           </div>
 
-          <aside>
-            <section class="summary-panel">
-              <p class="section-label">Selected day</p>
-              <strong id="networkValue">--</strong>
-              <span id="networkUnit">Mean VID across reporting radars</span>
-            </section>
-            <section>
-              <h2>Archive status</h2>
-              <dl id="statusList"></dl>
-            </section>
-            <section>
-              <h2 id="radarHeading">Reporting radars</h2>
-              <div id="radarList" class="radar-list"></div>
-            </section>
-            <section>
-              <h2>Interpretation</h2>
-              <p id="interpretationText">VID is a passage index, not an absolute bird count or population estimate.</p>
-            </section>
-          </aside>
+          <div class="map-readout">
+            <strong id="mapTimestamp">--</strong>
+            <p><b id="networkValue">--</b> <span id="networkUnit">Mean across reporting radars</span></p>
+          </div>
+
+          <div class="colour-legend" aria-label="Quantitative colour scale">
+            <strong id="legendTitle">Migration traffic rate</strong>
+            <div class="legend-scale">
+              <i></i>
+              <div id="legendTicks" class="legend-ticks"></div>
+            </div>
+            <span id="legendUnit">birds km⁻¹ h⁻¹ · log scale</span>
+          </div>
+          <div id="mapTooltip" class="map-tooltip" hidden></div>
+        </div>
+
+        <div class="timeline model-control" hidden>
+          <button id="resetButton" class="icon-button" type="button" title="Reset to start" aria-label="Reset to start">↺</button>
+          <button id="previousButton" class="icon-button" type="button" title="Previous hour" aria-label="Previous hour">‹</button>
+          <button id="playButton" class="play-button" type="button" title="Play hourly animation" aria-label="Play hourly animation">▶</button>
+          <button id="nextButton" class="icon-button" type="button" title="Next hour" aria-label="Next hour">›</button>
+          <label class="hour-control">
+            <span>UTC hour</span>
+            <input id="hourInput" type="range" min="0" max="23" value="0">
+            <output id="hourValue">00:00</output>
+          </label>
+        </div>
+
+        <div class="details">
+          <section>
+            <h2>Archive status</h2>
+            <dl id="statusList"></dl>
+          </section>
+          <section>
+            <h2 id="radarHeading">Reporting radars</h2>
+            <div id="radarList" class="radar-list"></div>
+          </section>
+          <section>
+            <h2>Interpretation</h2>
+            <p id="interpretationText">These are historical radar-derived migration products, not a forecast or a real-time operational feed.</p>
+          </section>
         </div>
       </section>
 
       <section id="plotsSection" class="plots" aria-labelledby="plotsTitle">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Archive-scale summaries</p>
+            <p class="eyebrow">Archive summaries</p>
             <h2 id="plotsTitle">Bird passage plots</h2>
           </div>
-          <p>LP and SP are not combined. These first-release plots use LP only and exclude partial 2026 from trends.</p>
+          <p>LP and SP remain separate products.</p>
         </div>
         <div id="plotGrid" class="plot-grid"></div>
       </section>
     </main>
 
     <footer>
-      Radar source: UK weather-radar bioRad VPTS current_ci_le4. Map boundary: Natural Earth 1:10m public-domain data. BTO products will provide independent aggregate ecological validation.
+      Historical research product using UK weather-radar bioRad VPTS and ERA5. Coastlines are visual context only and do not constrain the analysis.
     </footer>
     <script src="app.js"></script>
   </body>

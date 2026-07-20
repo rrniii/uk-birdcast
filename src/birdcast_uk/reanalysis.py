@@ -15,15 +15,17 @@ import json
 import math
 import os
 from pathlib import Path
+import random
 import shutil
 from tempfile import mkdtemp
 from typing import Any
 
 from .config import PROCESSING_VERSION
+from .scales import log_colour_scale
 from .static_artifacts import utc_now, write_json
 
 
-REANALYSIS_SCHEMA_VERSION = "birdcast-uk-gam-era5-1.0"
+REANALYSIS_SCHEMA_VERSION = "live-uk-bird-maps-gam-era5-1.1"
 MODEL_FAMILIES = ("gamm", "xgboost")
 PULSES = ("lp", "sp")
 INTENSITY_TARGETS = ("mtr_birds_km_h", "vid_birds_per_km2")
@@ -39,6 +41,49 @@ ERA5_FEATURES = (
     "boundary_layer_height_m",
     "hourly_precipitation_m",
 )
+
+
+class _ReservoirSampler:
+    """Deterministic bounded sample for archive-scale percentile estimates."""
+
+    def __init__(self, *, limit: int, seed: int) -> None:
+        self.limit = limit
+        self.values: list[float] = []
+        self.seen = 0
+        self.random = random.Random(seed)
+
+    def add(self, value: float) -> None:
+        if not math.isfinite(value):
+            return
+        self.seen += 1
+        if len(self.values) < self.limit:
+            self.values.append(value)
+            return
+        replacement = self.random.randrange(self.seen)
+        if replacement < self.limit:
+            self.values[replacement] = value
+
+
+def _model_colour_scales(frames: list[dict[str, Any]]) -> dict[str, object]:
+    values = {target: [] for target in INTENSITY_TARGETS}
+    for frame in frames:
+        for cell in frame.get("cells") or []:
+            if not isinstance(cell, dict):
+                continue
+            for target in INTENSITY_TARGETS:
+                value = _number(cell.get(target))
+                if value is not None:
+                    values[target].append(value)
+    return {
+        "mtr_birds_km_h": log_colour_scale(
+            values["mtr_birds_km_h"],
+            units="birds km-1 h-1",
+        ),
+        "vid_birds_per_km2": log_colour_scale(
+            values["vid_birds_per_km2"],
+            units="birds km-2",
+        ),
+    }
 
 
 def prepare_training_table(
@@ -253,6 +298,7 @@ def publish_reanalysis(
         "first_time_utc": times[0],
         "latest_time_utc": times[-1],
         "grid": grid,
+        "colour_scales": _model_colour_scales(frame_rows),
         "pulses": list(PULSES),
         "variables": ["mtr_birds_km_h", "vid_birds_per_km2", "bird_u_ms", "bird_v_ms", "uncertainty", "support"],
         "assets": {
@@ -293,8 +339,9 @@ def publish_wide_reanalysis(
         grids = []
         first_times = []
         last_times = []
+        scale_samples: dict[str, list[float]] = {target: [] for target in INTENSITY_TARGETS}
         for pulse, source in (("lp", lp_csv), ("sp", sp_csv)):
-            pulse_assets, grid, first_time, last_time = _stream_wide_daily_assets(
+            pulse_assets, grid, first_time, last_time, pulse_samples = _stream_wide_daily_assets(
                 source,
                 staging,
                 pulse=pulse,
@@ -307,6 +354,8 @@ def publish_wide_reanalysis(
             grids.append(grid)
             first_times.append(first_time)
             last_times.append(last_time)
+            for target in INTENSITY_TARGETS:
+                scale_samples[target].extend(pulse_samples[target])
         if grids[0] != grids[1]:
             raise ValueError("LP and SP prediction grids differ")
         write_json(staging / "validation.json", selection)
@@ -337,6 +386,16 @@ def publish_wide_reanalysis(
         "first_time_utc": min(first_times),
         "latest_time_utc": max(last_times),
         "grid": grids[0],
+        "colour_scales": {
+            "mtr_birds_km_h": log_colour_scale(
+                scale_samples["mtr_birds_km_h"],
+                units="birds km-1 h-1",
+            ),
+            "vid_birds_per_km2": log_colour_scale(
+                scale_samples["vid_birds_per_km2"],
+                units="birds km-2",
+            ),
+        },
         "pulses": list(PULSES),
         "variables": ["mtr_birds_km_h", "vid_birds_per_km2", "bird_u_ms", "bird_v_ms", "uncertainty", "support"],
         "assets": {
@@ -357,7 +416,7 @@ def _stream_wide_daily_assets(
     *,
     pulse: str,
     model_family: str,
-) -> tuple[dict[str, str], dict[str, object], str, str]:
+) -> tuple[dict[str, str], dict[str, object], str, str, dict[str, list[float]]]:
     required = {
         "time_utc",
         "longitude",
@@ -372,6 +431,10 @@ def _stream_wide_daily_assets(
     last_time: str | None = None
     current_day: str | None = None
     frames: dict[str, list[dict[str, object]]] = {}
+    samplers = {
+        target: _ReservoirSampler(limit=100_000, seed=index)
+        for index, target in enumerate(INTENSITY_TARGETS)
+    }
 
     def flush(day: str) -> None:
         nonlocal grid
@@ -395,7 +458,14 @@ def _stream_wide_daily_assets(
                 "longitude_count": len(longitudes),
                 "latitude_count": len(latitudes),
                 "cell_count": len(first_cells),
-                "resolution": "ERA5 native 0.25 degree grid masked to Great Britain",
+                "bounds": {
+                    "west": min(longitudes) - _grid_step(longitudes) / 2,
+                    "east": max(longitudes) + _grid_step(longitudes) / 2,
+                    "south": min(latitudes) - _grid_step(latitudes) / 2,
+                    "north": max(latitudes) + _grid_step(latitudes) / 2,
+                },
+                "domain_policy": "union_of_radar_ranges",
+                "resolution": "ERA5 native 0.25 degree grid within physical radar range over land and water",
             }
         relative = Path("daily") / pulse / f"{day.replace('-', '')}.json"
         write_json(
@@ -436,12 +506,16 @@ def _stream_wide_daily_assets(
                 "uncertainty": uncertainty,
                 **{target: float(row[target]) for target in (*INTENSITY_TARGETS, *VECTOR_TARGETS)},
             }
+            for target in INTENSITY_TARGETS:
+                samplers[target].add(float(row[target]))
             frames.setdefault(timestamp, []).append(cell)
     if current_day is None or first_time is None or last_time is None:
         raise ValueError(f"wide prediction CSV is empty: {source}")
     flush(current_day)
     assert grid is not None
-    return assets, grid, first_time, last_time
+    return assets, grid, first_time, last_time, {
+        target: sampler.values for target, sampler in samplers.items()
+    }
 
 
 def build_prediction_frames(*, predictions_csv: Path, output: Path, model_family: str) -> dict[str, object]:
