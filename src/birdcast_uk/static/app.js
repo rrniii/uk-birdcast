@@ -6,7 +6,7 @@ const COLOUR_SCHEMES = {
   night: {label: "Night-flight", palette: ["#070917", "#151d41", "#294f7a", "#4b82a8", "#76aec6", "#b7d6d4", "#edf0ce"], positions: [0, .16, .34, .52, .70, .86, 1]},
   atlantic: {label: "Atlantic blue", palette: ["#061824", "#0a3856", "#11658a", "#1e91ad", "#50b9c6", "#9bd9d5", "#e4f2df"], positions: [0, .16, .34, .52, .70, .86, 1]},
   thermal: {label: "Thermal migration", palette: ["#1a1110", "#593126", "#9d4830", "#d46d3b", "#eea851", "#f4d98a", "#fff6d4"], positions: [0, .16, .34, .52, .70, .86, 1]},
-  scientific: {label: "Perceptually uniform scientific", palette: ["#440154", "#482878", "#3e4989", "#31688e", "#26828e", "#1f9e89", "#35b779", "#6ece58", "#b5de2b", "#fde725"], positions: [0, .11, .22, .33, .44, .56, .67, .78, .89, 1]},
+  scientific: {label: "Viridis", palette: ["#440154", "#482878", "#3e4989", "#31688e", "#26828e", "#1f9e89", "#35b779", "#6ece58", "#b5de2b", "#fde725"], positions: [0, .11, .22, .33, .44, .56, .67, .78, .89, 1]},
 };
 
 const state = {
@@ -536,32 +536,45 @@ function drawRadarIcon(ctx, x, y, colour) {
   ctx.translate(x, y);
   ctx.strokeStyle = colour;
   ctx.fillStyle = colour;
-  ctx.lineWidth = 1.2;
+  ctx.lineWidth = 1.05;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
-  // Small transmitting radar: dish, feed, mast, and two restrained broadcasts.
+  // Compact parabolic dish, feed, mast, and base.
+  ctx.rotate(-.55);
   ctx.beginPath();
-  ctx.moveTo(-3.7, -2.9);
-  ctx.quadraticCurveTo(-4.3, 2.1, .8, 3.1);
+  ctx.ellipse(-1.2, -.5, 4.4, 1.75, 0, .2, Math.PI * 1.8);
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(-3.7, -2.9); ctx.lineTo(.5, -.8); ctx.lineTo(2.9, -4.3);
-  ctx.moveTo(-.1, 2.9); ctx.lineTo(-.8, 5.5);
-  ctx.moveTo(-3.3, 5.5); ctx.lineTo(2.1, 5.5);
+  ctx.moveTo(1.2, -1); ctx.lineTo(3.5, -3.7);
+  ctx.moveTo(2.3, 1.1); ctx.lineTo(3.9, 4.6);
   ctx.stroke();
-  ctx.beginPath(); ctx.arc(3.2, -4.6, 1, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(3.2, -4.6, 3.2, -1.05, .1); ctx.stroke();
-  ctx.beginPath(); ctx.arc(3.2, -4.6, 5.1, -1.04, .08); ctx.stroke();
+  ctx.beginPath(); ctx.arc(3.7, -3.9, 1.1, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(1.8, 5); ctx.lineTo(6, 5); ctx.lineTo(4.6, 3.9); ctx.closePath(); ctx.fill();
   ctx.restore();
 }
 
 function project(lon, lat, width, height) {
   const bounds = currentBounds();
-  const padding = Math.max(14, Math.min(width, height) * .025);
+  const plot = mapPlotBounds(width, height);
   return {
-    x: padding + ((lon - bounds.west) / (bounds.east - bounds.west)) * (width - padding * 2),
-    y: padding + ((bounds.north - lat) / (bounds.north - bounds.south)) * (height - padding * 2),
+    x: plot.left + ((lon - bounds.west) / (bounds.east - bounds.west)) * (plot.right - plot.left),
+    y: plot.top + ((bounds.north - lat) / (bounds.north - bounds.south)) * (plot.bottom - plot.top),
+  };
+}
+
+function mapPlotBounds(width, height) {
+  const compact = width <= 850;
+  const left = compact ? 10 : Math.max(20, width * .035);
+  const rightRail = compact ? 122 : Math.max(180, width * .18);
+  const topRail = compact ? 108 : 112;
+  const bottomRail = compact ? 106 : 142;
+  const top = Math.min(height - 120, topRail);
+  return {
+    left,
+    right: Math.max(left + 120, width - rightRail),
+    top,
+    bottom: Math.max(top + 160, height - bottomRail),
   };
 }
 
