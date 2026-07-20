@@ -536,21 +536,21 @@ function drawRadarIcon(ctx, x, y, colour) {
   ctx.translate(x, y);
   ctx.strokeStyle = colour;
   ctx.fillStyle = colour;
-  ctx.lineWidth = 1.05;
+  ctx.lineWidth = 1.5;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
-  // Compact parabolic dish, feed, mast, and base.
+  // Compact dish profile: tilted rim, feed, mast, and a solid base.
   ctx.rotate(-.55);
   ctx.beginPath();
-  ctx.ellipse(-1.2, -.5, 4.4, 1.75, 0, .2, Math.PI * 1.8);
+  ctx.ellipse(-1, 0, 4.8, 2, 0, 0, Math.PI * 2);
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(1.2, -1); ctx.lineTo(3.5, -3.7);
-  ctx.moveTo(2.3, 1.1); ctx.lineTo(3.9, 4.6);
+  ctx.moveTo(1.4, -1); ctx.lineTo(4.2, -4.5);
+  ctx.moveTo(1.9, 1.2); ctx.lineTo(4.2, 5);
   ctx.stroke();
-  ctx.beginPath(); ctx.arc(3.7, -3.9, 1.1, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(1.8, 5); ctx.lineTo(6, 5); ctx.lineTo(4.6, 3.9); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.arc(4.2, -4.5, 1.45, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(1.8, 5.8); ctx.lineTo(7, 5.8); ctx.lineTo(4.4, 3.6); ctx.closePath(); ctx.fill();
   ctx.restore();
 }
 
