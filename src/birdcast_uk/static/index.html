@@ -47,6 +47,16 @@
                 <option value="speed_ms">Ground speed</option>
               </select>
             </label>
+            <label class="colour-control">
+              <span>Colour scheme</span>
+              <select id="colourSchemeSelect">
+                <option value="robin">Robin passage</option>
+                <option value="night">Night-flight</option>
+                <option value="atlantic">Atlantic blue</option>
+                <option value="thermal">Thermal migration</option>
+                <option value="scientific">Perceptually uniform scientific</option>
+              </select>
+            </label>
             <fieldset class="model-control" hidden>
               <legend>Map variable</legend>
               <div class="segmented" id="modelMetricControl">
@@ -83,7 +93,7 @@
           <div class="colour-legend" aria-label="Quantitative colour scale">
             <strong id="legendTitle">Migration traffic rate</strong>
             <div class="legend-scale">
-              <i></i>
+              <i id="legendRamp"></i>
               <div id="legendTicks" class="legend-ticks"></div>
             </div>
             <span id="legendUnit">birds km⁻¹ h⁻¹ · log scale</span>

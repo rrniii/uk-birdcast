@@ -187,3 +187,5 @@ def test_static_ui_is_historical_not_forecast() -> None:
     assert 'ctx.clip("evenodd")' not in javascript
     assert "max_range_m" in javascript
     assert "drawRadarMarker" in javascript
+    assert "COLOUR_SCHEMES" in javascript
+    assert "colourSchemeSelect" in html

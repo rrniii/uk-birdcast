@@ -1,6 +1,13 @@
 const FALLBACK_BOUNDS = {west: -11.5, east: 4.5, south: 46.5, north: 61.5};
 const PALETTE = ["#101817", "#16484a", "#43887a", "#9fc57a", "#e5d17c", "#f2b863", "#e47b52", "#b94135"];
 const PALETTE_POSITIONS = [0, .18, .38, .58, .75, .90, .95, 1];
+const COLOUR_SCHEMES = {
+  robin: {label: "Robin passage", palette: PALETTE, positions: PALETTE_POSITIONS},
+  night: {label: "Night-flight", palette: ["#070917", "#151d41", "#294f7a", "#4b82a8", "#76aec6", "#b7d6d4", "#edf0ce"], positions: [0, .16, .34, .52, .70, .86, 1]},
+  atlantic: {label: "Atlantic blue", palette: ["#061824", "#0a3856", "#11658a", "#1e91ad", "#50b9c6", "#9bd9d5", "#e4f2df"], positions: [0, .16, .34, .52, .70, .86, 1]},
+  thermal: {label: "Thermal migration", palette: ["#1a1110", "#593126", "#9d4830", "#d46d3b", "#eea851", "#f4d98a", "#fff6d4"], positions: [0, .16, .34, .52, .70, .86, 1]},
+  scientific: {label: "Perceptually uniform scientific", palette: ["#440154", "#482878", "#3e4989", "#31688e", "#26828e", "#1f9e89", "#35b779", "#6ece58", "#b5de2b", "#fde725"], positions: [0, .11, .22, .33, .44, .56, .67, .78, .89, 1]},
+};
 
 const state = {
   base: "../",
@@ -16,6 +23,7 @@ const state = {
   pulse: "lp",
   metric: "vid",
   modelMetric: "mtr_birds_km_h",
+  colourScheme: "robin",
   showArrows: true,
   showUncertainty: false,
   visibleRows: [],
@@ -153,6 +161,10 @@ function configureControls() {
     state.metric = event.target.value;
     render();
   });
+  document.getElementById("colourSchemeSelect").addEventListener("change", (event) => {
+    state.colourScheme = event.target.value;
+    render();
+  });
   document.getElementById("hourInput").addEventListener("input", (event) => {
     state.hour = Number(event.target.value);
     render();
@@ -191,6 +203,7 @@ function render() {
   document.querySelectorAll(".observed-control").forEach((element) => { element.hidden = state.view === "modelled"; });
   document.querySelectorAll("#pulseControl button").forEach((button) => button.classList.toggle("active", button.dataset.value === state.pulse));
   document.querySelectorAll("#modelMetricControl button").forEach((button) => button.classList.toggle("active", button.dataset.value === state.modelMetric));
+  document.getElementById("colourSchemeSelect").value = state.colourScheme;
   document.getElementById("dateInput").value = state.date;
   document.getElementById("hourInput").value = state.hour;
   document.getElementById("hourValue").textContent = `${String(state.hour).padStart(2, "0")}:00`;
@@ -284,7 +297,12 @@ function activeScale(values) {
   const manifest = activeManifest();
   const key = state.view === "modelled" ? state.modelMetric : state.metric;
   const published = manifest && manifest.colour_scales && manifest.colour_scales[key];
-  return published || fallbackScale(values, ["vid", "mtr_birds_km_h", "vid_birds_per_km2"].includes(key) ? "log10" : "linear");
+  return applyColourScheme(published || fallbackScale(values, ["vid", "mtr_birds_km_h", "vid_birds_per_km2"].includes(key) ? "log10" : "linear"));
+}
+
+function applyColourScheme(scale) {
+  const scheme = COLOUR_SCHEMES[state.colourScheme] || COLOUR_SCHEMES.robin;
+  return {...scale, palette: [...scheme.palette], palette_positions: [...scheme.positions], zero_colour: scheme.palette[0]};
 }
 
 function fallbackScale(values, transform) {
@@ -303,6 +321,9 @@ function fallbackScale(values, transform) {
 function setLegend(scale, metric) {
   document.getElementById("legendTitle").textContent = metric.title;
   document.getElementById("legendUnit").textContent = `${metric.units} · ${scale.transform === "log10" ? "log scale" : "linear scale"}`;
+  const palette = scale.palette || PALETTE;
+  const positions = scale.palette_positions || PALETTE_POSITIONS;
+  document.getElementById("legendRamp").style.background = `linear-gradient(to top, ${palette.map((colour, index) => `${colour} ${(Number(positions[index]) * 100).toFixed(1)}%`).join(", ")})`;
   const ticks = (scale.ticks || [scale.minimum, scale.maximum]).filter((value) => Number(value) >= Number(scale.minimum) && Number(value) <= Number(scale.maximum));
   document.getElementById("legendTicks").innerHTML = ticks.map((value) => {
     const position = scalePosition(Number(value), scale) * 100;
