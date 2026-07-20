@@ -1,13 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
-  <title id="title">European robin and weather radar</title>
+  <title id="title">European robin in flight over weather-radar circles</title>
   <circle cx="64" cy="64" r="57" fill="#070a0b" stroke="#eef4ef" stroke-width="4"/>
   <circle cx="64" cy="64" r="42" fill="none" stroke="#64736c" stroke-width="2"/>
   <circle cx="64" cy="64" r="27" fill="none" stroke="#64736c" stroke-width="2"/>
-  <path d="M64 64 103 34A50 50 0 0 1 111 48Z" fill="#f2b632" opacity=".9"/>
-  <path d="M30 88c8-8 14-20 16-32 2-15 12-26 26-26 12 0 21 7 24 18 3 12-4 23-14 29-8 5-14 12-18 21H39Z" fill="#edf3ee"/>
-  <path d="M52 53c3-10 10-16 20-16 9 0 15 5 18 13-12-3-25-2-38 3Z" fill="#d85032"/>
-  <circle cx="79" cy="43" r="3" fill="#070a0b"/>
-  <path d="m91 48 17 5-17 5Z" fill="#edf3ee"/>
-  <path d="M49 96h31M58 94l-7 13M68 94l6 13" fill="none" stroke="#edf3ee" stroke-width="4" stroke-linecap="round"/>
-  <path d="M19 105h90" stroke="#f2b632" stroke-width="4" stroke-linecap="round"/>
+  <path d="M64 64 102 35" fill="none" stroke="#64736c" stroke-width="2"/>
+
+  <path d="m47 73-24 11 26 3c7-3 12-8 16-15Z" fill="#8d9691"/>
+  <path d="M49 72c2-19 12-32 27-32 13 0 23 8 25 20 3 13-6 23-19 28-12 5-19 13-25 25l-23-7c4-14 10-24 15-34Z" fill="#edf3ee"/>
+  <path d="M57 61C46 54 35 42 29 22c9 6 17 13 24 22-5-12-7-23-5-32 8 10 13 21 16 34-1-13 2-25 8-34 3 13 3 26-2 39 8-11 17-19 28-23-8 15-18 25-31 31Z" fill="#aab2ad"/>
+  <path d="M57 61c-8-8-15-19-20-32M63 56C57 42 55 29 56 18M69 53c4-12 10-21 18-27" fill="none" stroke="#747d78" stroke-width="2" stroke-linecap="round"/>
+  <path d="M69 43c14-2 25 5 28 15-5 10-15 17-27 20-7-6-10-15-9-24 1-5 4-9 8-11Z" fill="#c94f3c"/>
+  <path d="M67 68c8 4 16 4 24 0-5 7-13 11-23 13-5-2-8-6-10-10Z" fill="#dce3de"/>
+  <circle cx="82" cy="47" r="3.2" fill="#070a0b"/>
+  <circle cx="83" cy="46" r=".9" fill="#eef4ef"/>
+  <path d="m94 51 16 3-16 3Z" fill="#b9c2bc"/>
+  <path d="m61 82-5 14m10-12 3 12m-14 0-6 4m19-4 6 3" fill="none" stroke="#c4ccc6" stroke-width="2" stroke-linecap="round"/>
 </svg>
