@@ -536,22 +536,27 @@ function drawRadarIcon(ctx, x, y, colour) {
   ctx.translate(x, y);
   ctx.strokeStyle = colour;
   ctx.fillStyle = colour;
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 1.15;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
-  // Compact dish profile: tilted rim, feed, mast, and a solid base.
+  // Satellite-dish silhouette: a heavy lower bowl, light rim, feed, and flat base.
   ctx.rotate(-.55);
   ctx.beginPath();
   ctx.ellipse(-1, 0, 4.8, 2, 0, 0, Math.PI * 2);
   ctx.stroke();
+  ctx.lineWidth = 3.3;
+  ctx.beginPath();
+  ctx.ellipse(-1, 0, 4.8, 2, 0, Math.PI * .62, Math.PI * 1.4);
+  ctx.stroke();
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(1.4, -1); ctx.lineTo(4.2, -4.5);
-  ctx.moveTo(1.9, 1.2); ctx.lineTo(4.2, 5);
+  ctx.moveTo(1.9, 1.2); ctx.lineTo(4.2, 4.7);
   ctx.stroke();
   ctx.beginPath(); ctx.arc(4.2, -4.5, 1.45, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(1.8, 5.8); ctx.lineTo(7, 5.8); ctx.lineTo(4.4, 3.6); ctx.closePath(); ctx.fill();
   ctx.restore();
+  ctx.beginPath(); ctx.moveTo(x + 1.7, y + 5.6); ctx.lineTo(x + 8.3, y + 5.6); ctx.lineTo(x + 5, y + 2.1); ctx.closePath(); ctx.fill();
 }
 
 function project(lon, lat, width, height) {
