@@ -1,0 +1,30 @@
+{
+  "selection_id": "uk-gamm-vertical-wind-925-vector-experiment",
+  "selection_policy": "Leave-one-UK-radar-out GAMM experiment over 14 July 2025 to 13 July 2026. It retains the selected GAMM response treatment, adds all archived vertical ERA5 winds to the table, and limits directional targets to the empirically strongest 925 hPa wind level. No hard-coded season, solar, or time-of-day exclusion is applied.",
+  "gamm_options": {
+    "spatial_k": 10,
+    "meteorology_interactions": [],
+    "temporal_smooths": ["day_of_year", "utc_hour"],
+    "temporal_interactions": ["seasonal_diurnal"],
+    "target_overrides": {
+      "mtr_birds_km_h": {
+        "intensity_transform": "sqrt",
+        "intensity_weights": "mtr_power",
+        "intensity_weight_power": 0.2
+      },
+      "vid_birds_per_km2": {
+        "intensity_transform": "cube_root",
+        "intensity_weights": "profile_count",
+        "include_radar_random_effect": false
+      },
+      "bird_u_ms": {
+        "vector_weights": "uniform",
+        "exclude_predictors": ["u_850_ms", "v_850_ms", "u_700_ms", "v_700_ms"]
+      },
+      "bird_v_ms": {
+        "vector_weights": "uniform",
+        "exclude_predictors": ["u_850_ms", "v_850_ms", "u_700_ms", "v_700_ms"]
+      }
+    }
+  }
+}
