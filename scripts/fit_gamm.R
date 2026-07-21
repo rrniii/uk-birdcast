@@ -43,6 +43,8 @@ if (!is.null(requested_targets)) {
 
 metric_rows <- list()
 row_id <- 0
+fold_metric_rows <- list()
+fold_row_id <- 0
 prediction_grid <- NULL
 if (!is.null(grid_path) && file.exists(grid_path)) {
   prediction_grid <- utils::read.csv(grid_path, check.names = FALSE)
@@ -158,6 +160,14 @@ for (pulse in spec$pulses) {
       predicted <- as.numeric(stats::predict(model, newdata = prediction_test, exclude = "s(radar)"))
       if (is_intensity) predicted <- inverse_intensity(predicted)
       held_out[[length(held_out) + 1]] <- data.frame(observed = test[[target]], predicted = predicted)
+      fold_row_id <- fold_row_id + 1
+      fold_metric_rows[[fold_row_id]] <- c(
+        list(
+          pulse = pulse, target = target, validation = "leave_one_radar_out",
+          held_out_radar = as.character(held_radar), row_count = nrow(test)
+        ),
+        score(test[[target]], predicted)
+      )
     }
     if (!length(held_out)) next
     validated <- do.call(rbind, held_out)
@@ -219,6 +229,7 @@ for (pulse in spec$pulses) {
 
 jsonlite::write_json(list(
   model_family = "gamm", metrics = metric_rows, model_time_terms = "none",
+  fold_metrics = fold_metric_rows,
   predictors = predictors,
   gamm_options = list(
     intensity_transform = intensity_transform, intensity_weights = intensity_weights,
