@@ -180,6 +180,8 @@ def test_static_ui_is_historical_not_forecast() -> None:
     assert "Historical UK weather-radar and ERA5 reanalysis" in html
     assert "uk_boundary.geojson" not in javascript
     assert "devicePixelRatio" in javascript
+    assert "const longitudeFactor = Math.cos(centreLat * Math.PI / 180)" in javascript
+    assert "const scale = Math.min(" in javascript
     assert "periodControl" not in html
     assert "row.period" not in javascript
     assert "aggregateObservedRows" in javascript

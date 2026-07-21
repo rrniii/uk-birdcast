@@ -573,9 +573,20 @@ function drawRadarIcon(ctx, x, y, colour) {
 function project(lon, lat, width, height) {
   const bounds = currentBounds();
   const plot = mapPlotBounds(width, height);
+  const centreLon = (bounds.west + bounds.east) / 2;
+  const centreLat = (bounds.south + bounds.north) / 2;
+  const longitudeFactor = Math.cos(centreLat * Math.PI / 180);
+  const projectedWidth = (bounds.east - bounds.west) * longitudeFactor;
+  const projectedHeight = bounds.north - bounds.south;
+  const scale = Math.min(
+    (plot.right - plot.left) / projectedWidth,
+    (plot.bottom - plot.top) / projectedHeight,
+  );
+  const centreX = (plot.left + plot.right) / 2;
+  const centreY = (plot.top + plot.bottom) / 2;
   return {
-    x: plot.left + ((lon - bounds.west) / (bounds.east - bounds.west)) * (plot.right - plot.left),
-    y: plot.top + ((bounds.north - lat) / (bounds.north - bounds.south)) * (plot.bottom - plot.top),
+    x: centreX + (lon - centreLon) * longitudeFactor * scale,
+    y: centreY - (lat - centreLat) * scale,
   };
 }
 
@@ -583,8 +594,8 @@ function mapPlotBounds(width, height) {
   const compact = width <= 850;
   const left = compact ? 10 : Math.max(20, width * .035);
   const rightRail = compact ? 122 : Math.max(180, width * .18);
-  const topRail = compact ? 108 : 112;
-  const bottomRail = compact ? 106 : 142;
+  const topRail = compact ? 108 : 84;
+  const bottomRail = compact ? 106 : 48;
   const top = Math.min(height - 120, topRail);
   return {
     left,
