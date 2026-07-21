@@ -1,0 +1,998 @@
+{
+  "schema_version": "birdcast-uk-aloft-external-evaluation-1.0",
+  "period": [
+    "2025-07-14",
+    "2026-07-13"
+  ],
+  "expected_vpts_file_count": 2329,
+  "available_vpts_file_count": 2316,
+  "unavailable_vpts_file_count": 13,
+  "evaluations": {
+    "lp": {
+      "sites": {
+        "frabb": {
+          "schema_version": "birdcast-uk-external-vpts-validation-1.0",
+          "generated_at_utc": "2026-07-21T19:37:20Z",
+          "validation_class": "external_spatial_transfer",
+          "site": {
+            "radar": "frabb",
+            "source": "Aloft BALTRAD",
+            "name": "Abbeville",
+            "latitude": 50.136,
+            "longitude": 1.8347,
+            "grid": [
+              50.25,
+              1.75
+            ],
+            "grid_distance_km": 14.0
+          },
+          "model": {
+            "family": "gamm",
+            "pulse": "lp",
+            "radar_random_effect_excluded": true
+          },
+          "altitude_band_m": [
+            200.0,
+            4000.0
+          ],
+          "matched_hour_count": 1509,
+          "metrics": {
+            "mtr_birds_km_h": {
+              "count": 1509,
+              "observed_mean": 5.302467890562364,
+              "modelled_mean": 5.2074423150253155,
+              "bias": -0.09502557553704867,
+              "mae": 8.966384912118116,
+              "rmse": 22.726907845888242
+            },
+            "vid_birds_per_km2": {
+              "count": 1509,
+              "observed_mean": 0.13228582047627138,
+              "modelled_mean": 0.26866632123182954,
+              "bias": 0.13638050075555816,
+              "mae": 0.32925717230514784,
+              "rmse": 0.5841924696362634
+            },
+            "bird_u_ms": {
+              "count": 1509,
+              "observed_mean": 0.6191864782023403,
+              "modelled_mean": 2.7233326837098235,
+              "bias": 2.104146205507483,
+              "mae": 3.6751640239120595,
+              "rmse": 4.469079829024273
+            },
+            "bird_v_ms": {
+              "count": 1509,
+              "observed_mean": 0.7098448634094177,
+              "modelled_mean": 1.371748983584554,
+              "bias": 0.6619041201751363,
+              "mae": 2.9360620230188967,
+              "rmse": 3.582585460192989
+            }
+          },
+          "source_policy": "Aloft VPTS are read only. This report does not create VP, VPTS, or PVOL products.",
+          "interpretation": "This is an external radar spatial-transfer evaluation. It is not a same-radar comparison and does not establish absolute accuracy without a multi-day, multi-site sample.",
+          "source_file_count": 356,
+          "valid_hour_count_before_prediction_match": 2126
+        },
+        "bejab": {
+          "schema_version": "birdcast-uk-external-vpts-validation-1.0",
+          "generated_at_utc": "2026-07-21T19:37:55Z",
+          "validation_class": "external_spatial_transfer",
+          "site": {
+            "radar": "bejab",
+            "source": "Aloft BALTRAD",
+            "name": "Jabbeke",
+            "latitude": 51.1919,
+            "longitude": 3.0641,
+            "grid": [
+              51.25,
+              3.0
+            ],
+            "grid_distance_km": 7.8
+          },
+          "model": {
+            "family": "gamm",
+            "pulse": "lp",
+            "radar_random_effect_excluded": true
+          },
+          "altitude_band_m": [
+            200.0,
+            4000.0
+          ],
+          "matched_hour_count": 6876,
+          "metrics": {
+            "mtr_birds_km_h": {
+              "count": 6876,
+              "observed_mean": 219.01779171866903,
+              "modelled_mean": 7.386520643117137,
+              "bias": -211.6312710755519,
+              "mae": 211.96101536966594,
+              "rmse": 472.0926168722464
+            },
+            "vid_birds_per_km2": {
+              "count": 6876,
+              "observed_mean": 7.656268307359012,
+              "modelled_mean": 0.7308632208619541,
+              "bias": -6.925405086497058,
+              "mae": 6.972570110341275,
+              "rmse": 10.268897964382905
+            },
+            "bird_u_ms": {
+              "count": 6876,
+              "observed_mean": 1.692733184389172,
+              "modelled_mean": 1.9374006038651468,
+              "bias": 0.24466741947597462,
+              "mae": 2.856594488753563,
+              "rmse": 3.8217269333799364
+            },
+            "bird_v_ms": {
+              "count": 6876,
+              "observed_mean": 0.905114061297845,
+              "modelled_mean": 0.7986403565834218,
+              "bias": -0.10647370471442312,
+              "mae": 2.278823013057481,
+              "rmse": 2.9325210578723655
+            }
+          },
+          "source_policy": "Aloft VPTS are read only. This report does not create VP, VPTS, or PVOL products.",
+          "interpretation": "This is an external radar spatial-transfer evaluation. It is not a same-radar comparison and does not establish absolute accuracy without a multi-day, multi-site sample.",
+          "source_file_count": 350,
+          "valid_hour_count_before_prediction_match": 8081
+        },
+        "frpla": {
+          "schema_version": "birdcast-uk-external-vpts-validation-1.0",
+          "generated_at_utc": "2026-07-21T19:37:55Z",
+          "validation_class": "external_spatial_transfer",
+          "site": {
+            "radar": "frpla",
+            "source": "Aloft BALTRAD",
+            "name": "Plabennec",
+            "latitude": 48.4609,
+            "longitude": -4.4298,
+            "grid": [
+              48.5,
+              -4.5
+            ],
+            "grid_distance_km": 6.7
+          },
+          "model": {
+            "family": "gamm",
+            "pulse": "lp",
+            "radar_random_effect_excluded": true
+          },
+          "altitude_band_m": [
+            200.0,
+            4000.0
+          ],
+          "matched_hour_count": 2237,
+          "metrics": {
+            "mtr_birds_km_h": {
+              "count": 2237,
+              "observed_mean": 3.433433677802285,
+              "modelled_mean": 1.1667761071592835,
+              "bias": -2.266657570643001,
+              "mae": 4.174418693366806,
+              "rmse": 24.336049620213355
+            },
+            "vid_birds_per_km2": {
+              "count": 2237,
+              "observed_mean": 0.07874790983242107,
+              "modelled_mean": 0.08082378404476226,
+              "bias": 0.0020758742123411955,
+              "mae": 0.13367231067765845,
+              "rmse": 0.4193212592310056
+            },
+            "bird_u_ms": {
+              "count": 2237,
+              "observed_mean": 0.08218272430491065,
+              "modelled_mean": 2.1548358260064404,
+              "bias": 2.0726531017015297,
+              "mae": 3.642807374111214,
+              "rmse": 4.350963267004751
+            },
+            "bird_v_ms": {
+              "count": 2237,
+              "observed_mean": 0.5097616871304961,
+              "modelled_mean": 0.9509508631625391,
+              "bias": 0.441189176032043,
+              "mae": 3.1540158948991923,
+              "rmse": 3.86540537242268
+            }
+          },
+          "source_policy": "Aloft VPTS are read only. This report does not create VP, VPTS, or PVOL products.",
+          "interpretation": "This is an external radar spatial-transfer evaluation. It is not a same-radar comparison and does not establish absolute accuracy without a multi-day, multi-site sample.",
+          "source_file_count": 349,
+          "valid_hour_count_before_prediction_match": 3129
+        },
+        "frtre": {
+          "schema_version": "birdcast-uk-external-vpts-validation-1.0",
+          "generated_at_utc": "2026-07-21T19:38:22Z",
+          "validation_class": "external_spatial_transfer",
+          "site": {
+            "radar": "frtre",
+            "source": "Aloft BALTRAD",
+            "name": "Treillieres",
+            "latitude": 47.3374,
+            "longitude": -1.6563,
+            "grid": [
+              47.25,
+              -1.75
+            ],
+            "grid_distance_km": 12.0
+          },
+          "model": {
+            "family": "gamm",
+            "pulse": "lp",
+            "radar_random_effect_excluded": true
+          },
+          "altitude_band_m": [
+            200.0,
+            4000.0
+          ],
+          "matched_hour_count": 2565,
+          "metrics": {
+            "mtr_birds_km_h": {
+              "count": 2565,
+              "observed_mean": 2.4981174303806433,
+              "modelled_mean": 2.5228856243669004,
+              "bias": 0.0247681939862572,
+              "mae": 4.5015394347064,
+              "rmse": 13.532165711309585
+            },
+            "vid_birds_per_km2": {
+              "count": 2565,
+              "observed_mean": 0.06072333910626549,
+              "modelled_mean": 0.25392075297271643,
+              "bias": 0.19319741386645095,
+              "mae": 0.2752677698792799,
+              "rmse": 0.3972049891412452
+            },
+            "bird_u_ms": {
+              "count": 2565,
+              "observed_mean": 0.08682591779862678,
+              "modelled_mean": 1.9079344570757104,
+              "bias": 1.8211085392770836,
+              "mae": 3.543669296836747,
+              "rmse": 4.280937070906216
+            },
+            "bird_v_ms": {
+              "count": 2565,
+              "observed_mean": 0.5056440995160361,
+              "modelled_mean": 0.9545438316672177,
+              "bias": 0.44889973215118156,
+              "mae": 2.846811544105436,
+              "rmse": 3.4651106102375775
+            }
+          },
+          "source_policy": "Aloft VPTS are read only. This report does not create VP, VPTS, or PVOL products.",
+          "interpretation": "This is an external radar spatial-transfer evaluation. It is not a same-radar comparison and does not establish absolute accuracy without a multi-day, multi-site sample.",
+          "source_file_count": 356,
+          "valid_hour_count_before_prediction_match": 3331
+        },
+        "frcae": {
+          "schema_version": "birdcast-uk-external-vpts-validation-1.0",
+          "generated_at_utc": "2026-07-21T19:38:22Z",
+          "validation_class": "external_spatial_transfer",
+          "site": {
+            "radar": "frcae",
+            "source": "Aloft BALTRAD",
+            "name": "Falaise",
+            "latitude": 48.9272,
+            "longitude": -0.1496,
+            "grid": [
+              49.0,
+              -0.25
+            ],
+            "grid_distance_km": 10.9
+          },
+          "model": {
+            "family": "gamm",
+            "pulse": "lp",
+            "radar_random_effect_excluded": true
+          },
+          "altitude_band_m": [
+            200.0,
+            4000.0
+          ],
+          "matched_hour_count": 2122,
+          "metrics": {
+            "mtr_birds_km_h": {
+              "count": 2122,
+              "observed_mean": 5.451292545193171,
+              "modelled_mean": 5.360129764143129,
+              "bias": -0.09116278105004263,
+              "mae": 8.828978570663587,
+              "rmse": 29.61849708747786
+            },
+            "vid_birds_per_km2": {
+              "count": 2122,
+              "observed_mean": 0.11546552808275912,
+              "modelled_mean": 0.0687052741144804,
+              "bias": -0.04676025396827874,
+              "mae": 0.14907521604702945,
+              "rmse": 0.46143467218521733
+            },
+            "bird_u_ms": {
+              "count": 2122,
+              "observed_mean": 0.6103777312820401,
+              "modelled_mean": 2.4949299827315174,
+              "bias": 1.8845522514494777,
+              "mae": 3.5680758895838345,
+              "rmse": 4.317725303740032
+            },
+            "bird_v_ms": {
+              "count": 2122,
+              "observed_mean": 0.8611296153441872,
+              "modelled_mean": 1.0408015201806047,
+              "bias": 0.17967190483641757,
+              "mae": 3.1114796431298224,
+              "rmse": 4.043702846224702
+            }
+          },
+          "source_policy": "Aloft VPTS are read only. This report does not create VP, VPTS, or PVOL products.",
+          "interpretation": "This is an external radar spatial-transfer evaluation. It is not a same-radar comparison and does not establish absolute accuracy without a multi-day, multi-site sample.",
+          "source_file_count": 353,
+          "valid_hour_count_before_prediction_match": 2965
+        },
+        "iesha": {
+          "schema_version": "birdcast-uk-external-vpts-validation-1.0",
+          "generated_at_utc": "2026-07-21T19:38:46Z",
+          "validation_class": "external_spatial_transfer",
+          "site": {
+            "radar": "iesha",
+            "source": "Aloft BALTRAD",
+            "name": "Shannon",
+            "latitude": 52.6928,
+            "longitude": -8.9201,
+            "grid": [
+              52.75,
+              -8.75
+            ],
+            "grid_distance_km": 13.1
+          },
+          "model": {
+            "family": "gamm",
+            "pulse": "lp",
+            "radar_random_effect_excluded": true
+          },
+          "altitude_band_m": [
+            200.0,
+            4000.0
+          ],
+          "matched_hour_count": 2032,
+          "metrics": {
+            "mtr_birds_km_h": {
+              "count": 2032,
+              "observed_mean": 14.290045490672759,
+              "modelled_mean": 0.10721357286863027,
+              "bias": -14.182831917804128,
+              "mae": 14.308876483492417,
+              "rmse": 38.04277450962585
+            },
+            "vid_birds_per_km2": {
+              "count": 2032,
+              "observed_mean": 0.19457984302679454,
+              "modelled_mean": 0.004671093897761398,
+              "bias": -0.18990874912903316,
+              "mae": 0.19611179631432318,
+              "rmse": 0.49880499502307535
+            },
+            "bird_u_ms": {
+              "count": 2032,
+              "observed_mean": 3.2123311350012256,
+              "modelled_mean": 2.386287350747546,
+              "bias": -0.8260437842536796,
+              "mae": 4.517450392265037,
+              "rmse": 6.235754258808691
+            },
+            "bird_v_ms": {
+              "count": 2032,
+              "observed_mean": 2.1301630659812023,
+              "modelled_mean": 2.3607589700133325,
+              "bias": 0.23059590403213046,
+              "mae": 4.27825090754414,
+              "rmse": 5.95893659699684
+            }
+          },
+          "source_policy": "Aloft VPTS are read only. This report does not create VP, VPTS, or PVOL products.",
+          "interpretation": "This is an external radar spatial-transfer evaluation. It is not a same-radar comparison and does not establish absolute accuracy without a multi-day, multi-site sample.",
+          "source_file_count": 214,
+          "valid_hour_count_before_prediction_match": 2645
+        },
+        "frave": {
+          "schema_version": "birdcast-uk-external-vpts-validation-1.0",
+          "generated_at_utc": "2026-07-21T19:38:46Z",
+          "validation_class": "external_spatial_transfer",
+          "site": {
+            "radar": "frave",
+            "source": "Aloft BALTRAD",
+            "name": "Avesnes",
+            "latitude": 50.1283,
+            "longitude": 3.8118,
+            "grid": [
+              50.25,
+              3.75
+            ],
+            "grid_distance_km": 14.2
+          },
+          "model": {
+            "family": "gamm",
+            "pulse": "lp",
+            "radar_random_effect_excluded": true
+          },
+          "altitude_band_m": [
+            200.0,
+            4000.0
+          ],
+          "matched_hour_count": 1187,
+          "metrics": {
+            "mtr_birds_km_h": {
+              "count": 1187,
+              "observed_mean": 7.175645238073024,
+              "modelled_mean": 10.466794570043506,
+              "bias": 3.2911493319704825,
+              "mae": 15.804424040372504,
+              "rmse": 44.69480404052524
+            },
+            "vid_birds_per_km2": {
+              "count": 1187,
+              "observed_mean": 0.12734169926294547,
+              "modelled_mean": 0.12455006284304307,
+              "bias": -0.002791636419902425,
+              "mae": 0.22549184217032256,
+              "rmse": 0.6619735852655521
+            },
+            "bird_u_ms": {
+              "count": 1187,
+              "observed_mean": 0.8895882740830318,
+              "modelled_mean": 3.2131825193692767,
+              "bias": 2.323594245286245,
+              "mae": 3.667326116359791,
+              "rmse": 4.515822044123039
+            },
+            "bird_v_ms": {
+              "count": 1187,
+              "observed_mean": 0.8060591943272455,
+              "modelled_mean": 1.023924770973206,
+              "bias": 0.21786557664596037,
+              "mae": 2.8730623405669955,
+              "rmse": 3.666317471044531
+            }
+          },
+          "source_policy": "Aloft VPTS are read only. This report does not create VP, VPTS, or PVOL products.",
+          "interpretation": "This is an external radar spatial-transfer evaluation. It is not a same-radar comparison and does not establish absolute accuracy without a multi-day, multi-site sample.",
+          "source_file_count": 338,
+          "valid_hour_count_before_prediction_match": 1824
+        }
+      },
+      "pooled_metrics": {
+        "mtr_birds_km_h": {
+          "count": 18528,
+          "observed_mean": 85.12405701457992,
+          "modelled_mean": 4.951703619812472,
+          "bias": -80.17235339476744,
+          "mae": 84.11212330843153,
+          "rmse": 288.50789348666876
+        },
+        "vid_birds_per_km2": {
+          "count": 18528,
+          "observed_mean": 2.9127587064037743,
+          "modelled_mean": 0.35438621010009974,
+          "bias": -2.558372496303675,
+          "mae": 2.7217089559402,
+          "rmse": 6.2677493390098284
+        },
+        "bird_u_ms": {
+          "count": 18528,
+          "observed_mean": 1.1797688200739627,
+          "modelled_mean": 2.2184002681151282,
+          "bias": 1.038631448041166,
+          "mae": 3.428879015216125,
+          "rmse": 4.424464803117598
+        },
+        "bird_v_ms": {
+          "count": 18528,
+          "observed_mean": 0.909144799829391,
+          "modelled_mean": 1.0987772060261898,
+          "bias": 0.1896324061967989,
+          "mae": 2.8693653088915636,
+          "rmse": 3.7856583831678683
+        }
+      }
+    },
+    "sp": {
+      "sites": {
+        "frabb": {
+          "schema_version": "birdcast-uk-external-vpts-validation-1.0",
+          "generated_at_utc": "2026-07-21T19:40:19Z",
+          "validation_class": "external_spatial_transfer",
+          "site": {
+            "radar": "frabb",
+            "source": "Aloft BALTRAD",
+            "name": "Abbeville",
+            "latitude": 50.136,
+            "longitude": 1.8347,
+            "grid": [
+              50.25,
+              1.75
+            ],
+            "grid_distance_km": 14.0
+          },
+          "model": {
+            "family": "gamm",
+            "pulse": "sp",
+            "radar_random_effect_excluded": true
+          },
+          "altitude_band_m": [
+            200.0,
+            4000.0
+          ],
+          "matched_hour_count": 1509,
+          "metrics": {
+            "mtr_birds_km_h": {
+              "count": 1509,
+              "observed_mean": 5.302467890562364,
+              "modelled_mean": 24.447694286426675,
+              "bias": 19.145226395864313,
+              "mae": 24.974897635256525,
+              "rmse": 31.034822340286166
+            },
+            "vid_birds_per_km2": {
+              "count": 1509,
+              "observed_mean": 0.13228582047627138,
+              "modelled_mean": 0.619992137229536,
+              "bias": 0.48770631675326453,
+              "mae": 0.633413549556003,
+              "rmse": 0.7624149086439914
+            },
+            "bird_u_ms": {
+              "count": 1509,
+              "observed_mean": 0.6191864782023403,
+              "modelled_mean": 6.263184538563707,
+              "bias": 5.643998060361367,
+              "mae": 7.695262600054016,
+              "rmse": 9.819052681036247
+            },
+            "bird_v_ms": {
+              "count": 1509,
+              "observed_mean": 0.7098448634094177,
+              "modelled_mean": 2.464027522461195,
+              "bias": 1.754182659051777,
+              "mae": 5.522508707022738,
+              "rmse": 6.744904982403818
+            }
+          },
+          "source_policy": "Aloft VPTS are read only. This report does not create VP, VPTS, or PVOL products.",
+          "interpretation": "This is an external radar spatial-transfer evaluation. It is not a same-radar comparison and does not establish absolute accuracy without a multi-day, multi-site sample.",
+          "source_file_count": 356,
+          "valid_hour_count_before_prediction_match": 2126
+        },
+        "frpla": {
+          "schema_version": "birdcast-uk-external-vpts-validation-1.0",
+          "generated_at_utc": "2026-07-21T19:39:14Z",
+          "validation_class": "external_spatial_transfer",
+          "site": {
+            "radar": "frpla",
+            "source": "Aloft BALTRAD",
+            "name": "Plabennec",
+            "latitude": 48.4609,
+            "longitude": -4.4298,
+            "grid": [
+              48.5,
+              -4.5
+            ],
+            "grid_distance_km": 6.7
+          },
+          "model": {
+            "family": "gamm",
+            "pulse": "sp",
+            "radar_random_effect_excluded": true
+          },
+          "altitude_band_m": [
+            200.0,
+            4000.0
+          ],
+          "matched_hour_count": 2237,
+          "metrics": {
+            "mtr_birds_km_h": {
+              "count": 2237,
+              "observed_mean": 3.433433677802285,
+              "modelled_mean": 9.944439669619445,
+              "bias": 6.51100599181716,
+              "mae": 11.403182503052195,
+              "rmse": 25.316564156440894
+            },
+            "vid_birds_per_km2": {
+              "count": 2237,
+              "observed_mean": 0.07874790983242107,
+              "modelled_mean": 0.023842264377254254,
+              "bias": -0.05490564545516681,
+              "mae": 0.09523033494961536,
+              "rmse": 0.4231337886205268
+            },
+            "bird_u_ms": {
+              "count": 2237,
+              "observed_mean": 0.08218272430491065,
+              "modelled_mean": 3.8269595641978515,
+              "bias": 3.744776839892941,
+              "mae": 7.307533852155659,
+              "rmse": 8.91095495319387
+            },
+            "bird_v_ms": {
+              "count": 2237,
+              "observed_mean": 0.5097616871304961,
+              "modelled_mean": 3.1230288819595624,
+              "bias": 2.613267194829066,
+              "mae": 6.427376960154793,
+              "rmse": 7.743406833676958
+            }
+          },
+          "source_policy": "Aloft VPTS are read only. This report does not create VP, VPTS, or PVOL products.",
+          "interpretation": "This is an external radar spatial-transfer evaluation. It is not a same-radar comparison and does not establish absolute accuracy without a multi-day, multi-site sample.",
+          "source_file_count": 349,
+          "valid_hour_count_before_prediction_match": 3129
+        },
+        "bejab": {
+          "schema_version": "birdcast-uk-external-vpts-validation-1.0",
+          "generated_at_utc": "2026-07-21T19:39:14Z",
+          "validation_class": "external_spatial_transfer",
+          "site": {
+            "radar": "bejab",
+            "source": "Aloft BALTRAD",
+            "name": "Jabbeke",
+            "latitude": 51.1919,
+            "longitude": 3.0641,
+            "grid": [
+              51.25,
+              3.0
+            ],
+            "grid_distance_km": 7.8
+          },
+          "model": {
+            "family": "gamm",
+            "pulse": "sp",
+            "radar_random_effect_excluded": true
+          },
+          "altitude_band_m": [
+            200.0,
+            4000.0
+          ],
+          "matched_hour_count": 6876,
+          "metrics": {
+            "mtr_birds_km_h": {
+              "count": 6876,
+              "observed_mean": 219.01779171866903,
+              "modelled_mean": 26.120705755496186,
+              "bias": -192.89708596317286,
+              "mae": 196.27911645658003,
+              "rmse": 463.8095371158565
+            },
+            "vid_birds_per_km2": {
+              "count": 6876,
+              "observed_mean": 7.656268307359012,
+              "modelled_mean": 3.630078398014084,
+              "bias": -4.026189909344928,
+              "mae": 4.725475513289777,
+              "rmse": 8.578244326276588
+            },
+            "bird_u_ms": {
+              "count": 6876,
+              "observed_mean": 1.692733184389172,
+              "modelled_mean": 5.338850889689315,
+              "bias": 3.6461177053001435,
+              "mae": 5.397446354116951,
+              "rmse": 6.980611968702314
+            },
+            "bird_v_ms": {
+              "count": 6876,
+              "observed_mean": 0.905114061297845,
+              "modelled_mean": -0.17417237386522635,
+              "bias": -1.0792864351630713,
+              "mae": 4.2912042218594575,
+              "rmse": 5.401708058487384
+            }
+          },
+          "source_policy": "Aloft VPTS are read only. This report does not create VP, VPTS, or PVOL products.",
+          "interpretation": "This is an external radar spatial-transfer evaluation. It is not a same-radar comparison and does not establish absolute accuracy without a multi-day, multi-site sample.",
+          "source_file_count": 350,
+          "valid_hour_count_before_prediction_match": 8081
+        },
+        "frcae": {
+          "schema_version": "birdcast-uk-external-vpts-validation-1.0",
+          "generated_at_utc": "2026-07-21T19:39:42Z",
+          "validation_class": "external_spatial_transfer",
+          "site": {
+            "radar": "frcae",
+            "source": "Aloft BALTRAD",
+            "name": "Falaise",
+            "latitude": 48.9272,
+            "longitude": -0.1496,
+            "grid": [
+              49.0,
+              -0.25
+            ],
+            "grid_distance_km": 10.9
+          },
+          "model": {
+            "family": "gamm",
+            "pulse": "sp",
+            "radar_random_effect_excluded": true
+          },
+          "altitude_band_m": [
+            200.0,
+            4000.0
+          ],
+          "matched_hour_count": 2122,
+          "metrics": {
+            "mtr_birds_km_h": {
+              "count": 2122,
+              "observed_mean": 5.451292545193171,
+              "modelled_mean": 26.27775227031895,
+              "bias": 20.826459725125776,
+              "mae": 25.972971218682606,
+              "rmse": 36.52206493385356
+            },
+            "vid_birds_per_km2": {
+              "count": 2122,
+              "observed_mean": 0.11546552808275912,
+              "modelled_mean": 1.693579694217129e-05,
+              "bias": -0.11544859228581696,
+              "mae": 0.11547408820734756,
+              "rmse": 0.47298715554060966
+            },
+            "bird_u_ms": {
+              "count": 2122,
+              "observed_mean": 0.6103777312820401,
+              "modelled_mean": 5.0292804994125735,
+              "bias": 4.4189027681305335,
+              "mae": 7.0252045341132145,
+              "rmse": 8.712569009616043
+            },
+            "bird_v_ms": {
+              "count": 2122,
+              "observed_mean": 0.8611296153441872,
+              "modelled_mean": 3.262396761443624,
+              "bias": 2.401267146099437,
+              "mae": 5.617197352650081,
+              "rmse": 6.812134706232775
+            }
+          },
+          "source_policy": "Aloft VPTS are read only. This report does not create VP, VPTS, or PVOL products.",
+          "interpretation": "This is an external radar spatial-transfer evaluation. It is not a same-radar comparison and does not establish absolute accuracy without a multi-day, multi-site sample.",
+          "source_file_count": 353,
+          "valid_hour_count_before_prediction_match": 2965
+        },
+        "frtre": {
+          "schema_version": "birdcast-uk-external-vpts-validation-1.0",
+          "generated_at_utc": "2026-07-21T19:39:42Z",
+          "validation_class": "external_spatial_transfer",
+          "site": {
+            "radar": "frtre",
+            "source": "Aloft BALTRAD",
+            "name": "Treillieres",
+            "latitude": 47.3374,
+            "longitude": -1.6563,
+            "grid": [
+              47.25,
+              -1.75
+            ],
+            "grid_distance_km": 12.0
+          },
+          "model": {
+            "family": "gamm",
+            "pulse": "sp",
+            "radar_random_effect_excluded": true
+          },
+          "altitude_band_m": [
+            200.0,
+            4000.0
+          ],
+          "matched_hour_count": 2565,
+          "metrics": {
+            "mtr_birds_km_h": {
+              "count": 2565,
+              "observed_mean": 2.4981174303806433,
+              "modelled_mean": 14.285699777914507,
+              "bias": 11.787582347533863,
+              "mae": 14.59632608640794,
+              "rmse": 18.524359291310514
+            },
+            "vid_birds_per_km2": {
+              "count": 2565,
+              "observed_mean": 0.06072333910626549,
+              "modelled_mean": 0.08784349561315336,
+              "bias": 0.027120156506887864,
+              "mae": 0.13180690595992575,
+              "rmse": 0.30994836592014907
+            },
+            "bird_u_ms": {
+              "count": 2565,
+              "observed_mean": 0.08682591779862678,
+              "modelled_mean": 3.8320984978137482,
+              "bias": 3.7452725800151216,
+              "mae": 7.032816899026898,
+              "rmse": 8.733888011801506
+            },
+            "bird_v_ms": {
+              "count": 2565,
+              "observed_mean": 0.5056440995160361,
+              "modelled_mean": 3.7085130993190427,
+              "bias": 3.202868999803006,
+              "mae": 6.08248470342284,
+              "rmse": 7.349690686615277
+            }
+          },
+          "source_policy": "Aloft VPTS are read only. This report does not create VP, VPTS, or PVOL products.",
+          "interpretation": "This is an external radar spatial-transfer evaluation. It is not a same-radar comparison and does not establish absolute accuracy without a multi-day, multi-site sample.",
+          "source_file_count": 356,
+          "valid_hour_count_before_prediction_match": 3331
+        },
+        "frave": {
+          "schema_version": "birdcast-uk-external-vpts-validation-1.0",
+          "generated_at_utc": "2026-07-21T19:40:08Z",
+          "validation_class": "external_spatial_transfer",
+          "site": {
+            "radar": "frave",
+            "source": "Aloft BALTRAD",
+            "name": "Avesnes",
+            "latitude": 50.1283,
+            "longitude": 3.8118,
+            "grid": [
+              50.25,
+              3.75
+            ],
+            "grid_distance_km": 14.2
+          },
+          "model": {
+            "family": "gamm",
+            "pulse": "sp",
+            "radar_random_effect_excluded": true
+          },
+          "altitude_band_m": [
+            200.0,
+            4000.0
+          ],
+          "matched_hour_count": 1187,
+          "metrics": {
+            "mtr_birds_km_h": {
+              "count": 1187,
+              "observed_mean": 7.175645238073024,
+              "modelled_mean": 41.31802457776013,
+              "bias": 34.1423793396871,
+              "mae": 42.39931720726308,
+              "rmse": 56.36110632008311
+            },
+            "vid_birds_per_km2": {
+              "count": 1187,
+              "observed_mean": 0.12734169926294547,
+              "modelled_mean": 0.0002452806997377273,
+              "bias": -0.12709641856320775,
+              "mae": 0.12750280257821428,
+              "rmse": 0.6584926906800753
+            },
+            "bird_u_ms": {
+              "count": 1187,
+              "observed_mean": 0.8895882740830318,
+              "modelled_mean": 6.721743616694284,
+              "bias": 5.8321553426112525,
+              "mae": 7.568176589075871,
+              "rmse": 9.682479801079435
+            },
+            "bird_v_ms": {
+              "count": 1187,
+              "observed_mean": 0.8060591943272455,
+              "modelled_mean": 2.4846254750762737,
+              "bias": 1.678566280749028,
+              "mae": 5.21559014733004,
+              "rmse": 6.455834530275109
+            }
+          },
+          "source_policy": "Aloft VPTS are read only. This report does not create VP, VPTS, or PVOL products.",
+          "interpretation": "This is an external radar spatial-transfer evaluation. It is not a same-radar comparison and does not establish absolute accuracy without a multi-day, multi-site sample.",
+          "source_file_count": 338,
+          "valid_hour_count_before_prediction_match": 1824
+        },
+        "iesha": {
+          "schema_version": "birdcast-uk-external-vpts-validation-1.0",
+          "generated_at_utc": "2026-07-21T19:40:08Z",
+          "validation_class": "external_spatial_transfer",
+          "site": {
+            "radar": "iesha",
+            "source": "Aloft BALTRAD",
+            "name": "Shannon",
+            "latitude": 52.6928,
+            "longitude": -8.9201,
+            "grid": [
+              52.75,
+              -8.75
+            ],
+            "grid_distance_km": 13.1
+          },
+          "model": {
+            "family": "gamm",
+            "pulse": "sp",
+            "radar_random_effect_excluded": true
+          },
+          "altitude_band_m": [
+            200.0,
+            4000.0
+          ],
+          "matched_hour_count": 2032,
+          "metrics": {
+            "mtr_birds_km_h": {
+              "count": 2032,
+              "observed_mean": 14.290045490672759,
+              "modelled_mean": 5.605132905990626,
+              "bias": -8.684912584682133,
+              "mae": 14.956801982915685,
+              "rmse": 36.04724679667313
+            },
+            "vid_birds_per_km2": {
+              "count": 2032,
+              "observed_mean": 0.19457984302679454,
+              "modelled_mean": 0.3352916579074801,
+              "bias": 0.14071181488068557,
+              "mae": 0.37238254999618847,
+              "rmse": 0.5225183572724524
+            },
+            "bird_u_ms": {
+              "count": 2032,
+              "observed_mean": 3.2123311350012256,
+              "modelled_mean": 5.134464883954992,
+              "bias": 1.9221337489537669,
+              "mae": 7.089378419696306,
+              "rmse": 8.89179894797126
+            },
+            "bird_v_ms": {
+              "count": 2032,
+              "observed_mean": 2.1301630659812023,
+              "modelled_mean": 4.475913065486634,
+              "bias": 2.3457499995054314,
+              "mae": 6.602989077945289,
+              "rmse": 8.3045091593356
+            }
+          },
+          "source_policy": "Aloft VPTS are read only. This report does not create VP, VPTS, or PVOL products.",
+          "interpretation": "This is an external radar spatial-transfer evaluation. It is not a same-radar comparison and does not establish absolute accuracy without a multi-day, multi-site sample.",
+          "source_file_count": 214,
+          "valid_hour_count_before_prediction_match": 2645
+        }
+      },
+      "pooled_metrics": {
+        "mtr_birds_km_h": {
+          "count": 18528,
+          "observed_mean": 85.12405701457992,
+          "modelled_mean": 21.1345849784483,
+          "bias": -63.98947203613161,
+          "mae": 85.60479690405661,
+          "rmse": 283.7884629845218
+        },
+        "vid_birds_per_km2": {
+          "count": 18528,
+          "observed_mean": 2.9127587064037743,
+          "modelled_mean": 1.4494970124300284,
+          "bias": -1.463261693973746,
+          "mae": 1.8972565215975066,
+          "rmse": 5.241612279960265
+        },
+        "bird_u_ms": {
+          "count": 18528,
+          "observed_mean": 1.1797688200739627,
+          "modelled_mean": 5.053724142657889,
+          "bias": 3.8739553225839263,
+          "mae": 6.552658006752486,
+          "rmse": 8.333948711433464
+        },
+        "bird_v_ms": {
+          "count": 18528,
+          "observed_mean": 0.909144799829391,
+          "modelled_mean": 2.050208965520363,
+          "bias": 1.1410641656909717,
+          "mae": 5.362007420452173,
+          "rmse": 6.693255984659506
+        }
+      }
+    }
+  }
+}
