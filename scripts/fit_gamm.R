@@ -12,6 +12,9 @@ grid_path <- if (length(args) >= 3) args[[3]] else NULL
 for (pkg in c("mgcv", "jsonlite")) {
   if (!requireNamespace(pkg, quietly = TRUE)) stop(sprintf("required package missing: %s", pkg))
 }
+# The JASMIN mgcv build resolves its Tweedie helpers through the attached
+# package environment, rather than solely through namespace-qualified calls.
+library(mgcv)
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 spec <- jsonlite::fromJSON(spec_path, simplifyVector = TRUE)
 data <- utils::read.csv(spec$training_csv, check.names = FALSE)
@@ -264,6 +267,10 @@ for (pulse in spec$pulses) {
     subset <- pulse_data[stats::complete.cases(pulse_data[, required, drop = FALSE]), , drop = FALSE]
     if (nrow(subset) < 30 || length(unique(subset$radar)) < 2) next
     is_intensity <- target %in% spec$intensity_targets
+    # This JASMIN mgcv build cannot resolve the Tweedie likelihood when bam's
+    # discretized fitter is selected. The ordinary bam path preserves the
+    # same GAMM and likelihood while avoiding that implementation limitation.
+    use_discrete <- !(is_intensity && intensity_family == "tweedie")
     subset$response <- if (is_intensity && intensity_family == "tweedie") pmax(subset[[target]], 0) else if (is_intensity) transform_intensity(subset[[target]]) else subset[[target]] - wind_component(subset, target, vector_wind_offset)
     weights <- if (is_intensity) intensity_weight(subset) else vector_weight(subset)
     formula <- fit_formula(target, setdiff(smooth_features, excluded_predictors))
@@ -274,7 +281,7 @@ for (pulse in spec$pulses) {
       if (nrow(train) < 30 || !nrow(test)) next
       model <- mgcv::bam(
         formula, data = train, weights = weights[subset$radar != held_radar],
-        method = "fREML", discrete = TRUE, nthreads = threads,
+        method = "fREML", discrete = use_discrete, nthreads = threads,
         knots = temporal_knots, family = fit_family(is_intensity)
       )
       # The radar random effect is excluded for spatial transfer. Give mgcv a
@@ -306,7 +313,7 @@ for (pulse in spec$pulses) {
       time_model <- mgcv::bam(
         formula, data = blocked$train,
         weights = if (is_intensity) intensity_weight(blocked$train) else vector_weight(blocked$train),
-        method = "fREML", discrete = TRUE, nthreads = threads,
+        method = "fREML", discrete = use_discrete, nthreads = threads,
         knots = temporal_knots, family = fit_family(is_intensity)
       )
       time_predicted <- predict_response(time_model, blocked$test, is_intensity) + wind_component(blocked$test, target, vector_wind_offset)
@@ -319,7 +326,7 @@ for (pulse in spec$pulses) {
     }
     final_model <- mgcv::bam(
       formula, data = subset, weights = weights,
-      method = "fREML", discrete = TRUE, nthreads = threads,
+      method = "fREML", discrete = use_discrete, nthreads = threads,
       knots = temporal_knots, family = fit_family(is_intensity)
     )
     saveRDS(final_model, file.path(output_dir, sprintf("gamm_%s_%s.rds", pulse, target)))
