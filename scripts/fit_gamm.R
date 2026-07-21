@@ -17,6 +17,17 @@ spec <- jsonlite::fromJSON(spec_path, simplifyVector = TRUE)
 data <- utils::read.csv(spec$training_csv, check.names = FALSE)
 data$radar <- factor(data$radar)
 threads <- max(1L, as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", "1")))
+options <- spec$gamm_options
+if (is.null(options)) options <- list()
+intensity_transform <- if (!is.null(options$intensity_transform)) options$intensity_transform else "cube_root"
+intensity_weights <- if (!is.null(options$intensity_weights)) options$intensity_weights else "profile_count"
+spatial_k <- if (!is.null(options$spatial_k)) as.integer(options$spatial_k) else 10L
+covariate_k <- if (!is.null(options$covariate_k)) as.integer(options$covariate_k) else NULL
+interactions <- if (!is.null(options$meteorology_interactions)) unlist(options$meteorology_interactions) else character()
+requested_targets <- if (!is.null(options$targets)) unlist(options$targets) else NULL
+if (!(intensity_transform %in% c("cube_root", "sqrt", "log1p"))) stop("unsupported intensity_transform")
+if (!(intensity_weights %in% c("profile_count", "uniform", "mtr"))) stop("unsupported intensity_weights")
+if (spatial_k < 3) stop("spatial_k must be at least 3")
 predictors <- spec$predictors
 missing_predictors <- setdiff(predictors, names(data))
 if (length(missing_predictors)) {
@@ -25,6 +36,10 @@ if (length(missing_predictors)) {
 if (!all(c("easting_m", "northing_m") %in% predictors)) stop("projected spatial predictors are required")
 smooth_features <- setdiff(predictors, c("easting_m", "northing_m"))
 targets <- c(spec$intensity_targets, spec$vector_targets)
+if (!is.null(requested_targets)) {
+  if (!all(requested_targets %in% targets)) stop("gamm_options targets must be declared model targets")
+  targets <- requested_targets
+}
 
 metric_rows <- list()
 row_id <- 0
@@ -52,12 +67,50 @@ score <- function(observed, predicted) {
 }
 
 fit_formula <- function(target, variables) {
+  smooth_terms <- if (is.null(covariate_k)) {
+    sprintf("s(%s, bs='tp')", variables)
+  } else {
+    sprintf("s(%s, bs='tp', k=%d)", variables, covariate_k)
+  }
   terms <- c(
-    "s(easting_m, northing_m, bs='tp', k=10)",
-    sprintf("s(%s, bs='tp')", variables),
+    sprintf("s(easting_m, northing_m, bs='tp', k=%d)", spatial_k),
+    smooth_terms,
     "s(radar, bs='re')"
   )
+  valid_interactions <- c(
+    wind_850 = "ti(u_850_ms, v_850_ms, bs=c('tp','tp'), k=c(6,6))",
+    thermal_moisture_850 = "ti(temperature_850_k, relative_humidity_850_percent, bs=c('tp','tp'), k=c(6,6))"
+  )
+  unknown_interactions <- setdiff(interactions, names(valid_interactions))
+  if (length(unknown_interactions)) stop(sprintf("unsupported meteorology interaction: %s", paste(unknown_interactions, collapse=", ")))
+  terms <- c(terms, unname(valid_interactions[interactions]))
   stats::as.formula(sprintf("response ~ %s", paste(terms, collapse = " + ")))
+}
+
+transform_intensity <- function(values) {
+  values <- pmax(values, 0)
+  switch(intensity_transform,
+    cube_root = values^(1 / 3),
+    sqrt = sqrt(values),
+    log1p = log1p(values)
+  )
+}
+
+inverse_intensity <- function(values) {
+  values <- pmax(values, 0)
+  switch(intensity_transform,
+    cube_root = values^3,
+    sqrt = values^2,
+    log1p = expm1(values)
+  )
+}
+
+intensity_weight <- function(frame) {
+  switch(intensity_weights,
+    profile_count = pmax(frame$profile_count, 1),
+    uniform = rep(1, nrow(frame)),
+    mtr = pmax(frame$mtr_birds_km_h, 0.01)
+  )
 }
 
 blocked_time_split <- function(data) {
@@ -82,8 +135,8 @@ for (pulse in spec$pulses) {
     subset <- pulse_data[stats::complete.cases(pulse_data[, required, drop = FALSE]), , drop = FALSE]
     if (nrow(subset) < 30 || length(unique(subset$radar)) < 2) next
     is_intensity <- target %in% spec$intensity_targets
-    subset$response <- if (is_intensity) pmax(subset[[target]], 0)^(1 / 3) else subset[[target]]
-    weights <- if (is_intensity) pmax(subset$profile_count, 1) else pmax(subset$mtr_birds_km_h, 0.01)
+    subset$response <- if (is_intensity) transform_intensity(subset[[target]]) else subset[[target]]
+    weights <- if (is_intensity) intensity_weight(subset) else pmax(subset$mtr_birds_km_h, 0.01)
     formula <- fit_formula(target, smooth_features)
     held_out <- list()
     for (held_radar in unique(subset$radar)) {
@@ -103,7 +156,7 @@ for (pulse in spec$pulses) {
         levels = levels(train$radar)
       )
       predicted <- as.numeric(stats::predict(model, newdata = prediction_test, exclude = "s(radar)"))
-      if (is_intensity) predicted <- pmax(predicted, 0)^3
+      if (is_intensity) predicted <- inverse_intensity(predicted)
       held_out[[length(held_out) + 1]] <- data.frame(observed = test[[target]], predicted = predicted)
     }
     if (!length(held_out)) next
@@ -115,11 +168,11 @@ for (pulse in spec$pulses) {
     if (!is.null(blocked)) {
       time_model <- mgcv::bam(
         formula, data = blocked$train,
-        weights = if (is_intensity) pmax(blocked$train$profile_count, 1) else pmax(blocked$train$mtr_birds_km_h, 0.01),
+        weights = if (is_intensity) intensity_weight(blocked$train) else pmax(blocked$train$mtr_birds_km_h, 0.01),
         method = "fREML", discrete = TRUE, nthreads = threads
       )
       time_predicted <- as.numeric(stats::predict(time_model, newdata = blocked$test, exclude = "s(radar)"))
-      if (is_intensity) time_predicted <- pmax(time_predicted, 0)^3
+      if (is_intensity) time_predicted <- inverse_intensity(time_predicted)
       time_metrics <- score(blocked$test[[target]], time_predicted)
       row_id <- row_id + 1
       metric_rows[[row_id]] <- c(
@@ -147,7 +200,7 @@ for (pulse in spec$pulses) {
         se.fit = TRUE
       )
       value <- as.numeric(estimate$fit)
-      if (is_intensity) value <- pmax(value, 0)^3
+      if (is_intensity) value <- inverse_intensity(value)
       pulse_prediction[[target]] <- value
       pulse_prediction[[sprintf("uncertainty_%s", target)]] <- as.numeric(estimate$se.fit)
     }
@@ -164,4 +217,12 @@ for (pulse in spec$pulses) {
   }
 }
 
-jsonlite::write_json(list(model_family = "gamm", metrics = metric_rows, model_time_terms = "none", predictors = predictors), file.path(output_dir, "metrics.json"), auto_unbox = TRUE, pretty = TRUE)
+jsonlite::write_json(list(
+  model_family = "gamm", metrics = metric_rows, model_time_terms = "none",
+  predictors = predictors,
+  gamm_options = list(
+    intensity_transform = intensity_transform, intensity_weights = intensity_weights,
+    spatial_k = spatial_k, covariate_k = covariate_k, meteorology_interactions = interactions,
+    targets = targets
+  )
+), file.path(output_dir, "metrics.json"), auto_unbox = TRUE, pretty = TRUE)
