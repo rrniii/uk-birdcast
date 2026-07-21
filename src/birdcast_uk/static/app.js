@@ -1,5 +1,4 @@
 const FALLBACK_BOUNDS = {west: -11.5, east: 4.5, south: 46.5, north: 61.5};
-const VECTOR_COLOUR = "#d7ccff";
 const PALETTE = ["#101817", "#16484a", "#43887a", "#9fc57a", "#e5d17c", "#f2b863", "#e47b52", "#b94135"];
 const PALETTE_POSITIONS = [0, .18, .38, .58, .75, .90, .95, 1];
 const COLOUR_SCHEMES = {
@@ -14,7 +13,6 @@ const state = {
   base: "../",
   historical: null,
   model: null,
-  boundary: null,
   yearPayload: null,
   modelDayPayload: null,
   view: "observed",
@@ -50,9 +48,6 @@ const state = {
     return;
   }
   if (!state.historical) state.view = "modelled";
-  const boundaryPath = (state.historical && state.historical.assets && state.historical.assets.boundary)
-    || (state.model && state.model.assets && state.model.assets.boundary);
-  state.boundary = await fetchJson(assetUrl(boundaryPath), null);
   state.pulse = (state.historical && state.historical.default_pulse) || "lp";
   configureControls();
   setViewAvailability();
@@ -386,7 +381,6 @@ function drawMap() {
   drawGraticule(ctx, rect.width, rect.height);
   if (state.view === "modelled") drawModelledField(ctx, rect.width, rect.height);
   else drawRadarValues(ctx, rect.width, rect.height);
-  drawBoundary(ctx, rect.width, rect.height);
   drawRadarMarkers(ctx, rect.width, rect.height);
 }
 
@@ -428,28 +422,6 @@ function drawGraticule(ctx, width, height) {
   }
 }
 
-function drawBoundary(ctx, width, height) {
-  if (!state.boundary) return;
-  for (const feature of state.boundary.features || []) {
-    traceGeometry(ctx, feature.geometry, width, height);
-    ctx.strokeStyle = feature.properties.ADM0_A3 === "GBR" ? "rgba(242, 245, 243, .86)" : "rgba(135, 146, 140, .72)";
-    ctx.lineWidth = feature.properties.ADM0_A3 === "GBR" ? 1.3 : .75;
-    ctx.stroke();
-  }
-}
-
-function traceGeometry(ctx, geometry, width, height) {
-  const polygons = geometry.type === "MultiPolygon" ? geometry.coordinates : [geometry.coordinates];
-  ctx.beginPath();
-  for (const polygon of polygons) for (const ring of polygon) {
-    ring.forEach(([lon, lat], index) => {
-      const point = project(lon, lat, width, height);
-      if (index === 0) ctx.moveTo(point.x, point.y); else ctx.lineTo(point.x, point.y);
-    });
-    ctx.closePath();
-  }
-}
-
 function drawModelledField(ctx, width, height) {
   const cells = state.modelFrame && state.modelFrame.cells || [];
   if (!cells.length) return;
@@ -478,8 +450,9 @@ function drawModelledField(ctx, width, height) {
 }
 
 function drawVectors(ctx, width, height, cells, scale) {
+  const stride = width <= 650 ? 12 : 8;
   cells.forEach((cell, index) => {
-    if (index % 4) return;
+    if (index % stride) return;
     const u = Number(cell.bird_u_ms), v = Number(cell.bird_v_ms), intensity = Number(cell.mtr_birds_km_h);
     if (!Number.isFinite(u) || !Number.isFinite(v) || !Number.isFinite(intensity) || scalePosition(intensity, scale) < .08) return;
     const start = project(Number(cell.longitude), Number(cell.latitude), width, height);
@@ -487,17 +460,11 @@ function drawVectors(ctx, width, height, cells, scale) {
     const length = Math.min(22, 7 + magnitude * .8);
     const end = {x: start.x + u * length / Math.max(1, magnitude), y: start.y - v * length / Math.max(1, magnitude)};
     const angle = Math.atan2(end.y - start.y, end.x - start.x);
-    // Pale lilac is not part of any quantitative palette; the dark keyline keeps it legible on bright cells.
-    ctx.strokeStyle = "rgba(7, 9, 14, .82)";
-    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = "#050806";
+    ctx.lineWidth = 1.35;
     ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
-    ctx.strokeStyle = VECTOR_COLOUR;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
-    ctx.fillStyle = "rgba(7, 9, 14, .82)";
-    ctx.beginPath(); ctx.moveTo(end.x, end.y); ctx.lineTo(end.x - 6 * Math.cos(angle - .5), end.y - 6 * Math.sin(angle - .5)); ctx.lineTo(end.x - 6 * Math.cos(angle + .5), end.y - 6 * Math.sin(angle + .5)); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = VECTOR_COLOUR;
-    ctx.beginPath(); ctx.moveTo(end.x, end.y); ctx.lineTo(end.x - 4.4 * Math.cos(angle - .5), end.y - 4.4 * Math.sin(angle - .5)); ctx.lineTo(end.x - 4.4 * Math.cos(angle + .5), end.y - 4.4 * Math.sin(angle + .5)); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#050806";
+    ctx.beginPath(); ctx.moveTo(end.x, end.y); ctx.lineTo(end.x - 4.6 * Math.cos(angle - .5), end.y - 4.6 * Math.sin(angle - .5)); ctx.lineTo(end.x - 4.6 * Math.cos(angle + .5), end.y - 4.6 * Math.sin(angle + .5)); ctx.closePath(); ctx.fill();
   });
 }
 
@@ -527,7 +494,7 @@ function drawRadarMarkers(ctx, width, height) {
   for (const radar of radars) {
     const point = project(radar.longitude, radar.latitude, width, height);
     const isAvailable = available.has(radar.slug);
-    drawRadarIcon(ctx, point.x, point.y, isAvailable ? "#22ed5a" : "#f14640");
+    if (isAvailable) drawRadarIcon(ctx, point.x, point.y, "#22ed5a");
     state.points.push({radar, row: state.statusRows.find((row) => row.radar === radar.slug), x: point.x, y: point.y, available: isAvailable});
   }
 }
@@ -537,7 +504,7 @@ function drawRadarIcon(ctx, x, y, colour) {
   ctx.translate(x, y);
   ctx.strokeStyle = colour;
   ctx.fillStyle = colour;
-  ctx.scale(.58, .58);
+  ctx.scale(.46, .46);
   ctx.translate(-16, -16);
   ctx.lineWidth = 1.55;
   ctx.lineCap = "round";

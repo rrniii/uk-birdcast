@@ -185,11 +185,12 @@ def test_static_ui_is_historical_not_forecast() -> None:
     assert "aggregateObservedRows" in javascript
     assert "clipToUK" not in javascript
     assert 'ctx.clip("evenodd")' not in javascript
-    assert "drawBoundary(ctx, rect.width, rect.height, true)" not in javascript
+    assert "drawBoundary" not in javascript
     assert "ctx.fill(\"evenodd\")" not in javascript
     assert "Physical radar range; land and water" in javascript
-    assert 'const VECTOR_COLOUR = "#d7ccff"' in javascript
-    assert 'ctx.strokeStyle = "#f2b632"' not in javascript
+    assert 'ctx.strokeStyle = "#050806"' in javascript
+    assert "const stride = width <= 650 ? 12 : 8" in javascript
+    assert 'isAvailable ? "#22ed5a" : "#f14640"' not in javascript
     assert "max_range_m" in javascript
     assert "drawRadarMarker" in javascript
     assert "COLOUR_SCHEMES" in javascript
