@@ -1,0 +1,30 @@
+{
+  "selection_id": "uk-gamm-vertical-wind-925-interaction-experiment",
+  "selection_policy": "Leave-one-UK-radar-out GAMM experiment over 14 July 2025 to 13 July 2026. It evaluates a low-rank tensor interaction of the empirically strongest lower-level ERA5 wind components while retaining the selected GAMM response treatment and all-hour temporal smooths.",
+  "gamm_options": {
+    "spatial_k": 10,
+    "meteorology_interactions": ["wind_925"],
+    "temporal_smooths": ["day_of_year", "utc_hour"],
+    "temporal_interactions": ["seasonal_diurnal"],
+    "target_overrides": {
+      "mtr_birds_km_h": {
+        "intensity_transform": "sqrt",
+        "intensity_weights": "mtr_power",
+        "intensity_weight_power": 0.2
+      },
+      "vid_birds_per_km2": {
+        "intensity_transform": "cube_root",
+        "intensity_weights": "profile_count",
+        "include_radar_random_effect": false
+      },
+      "bird_u_ms": {
+        "vector_weights": "uniform",
+        "exclude_predictors": ["u_850_ms", "v_850_ms", "u_700_ms", "v_700_ms"]
+      },
+      "bird_v_ms": {
+        "vector_weights": "uniform",
+        "exclude_predictors": ["u_850_ms", "v_850_ms", "u_700_ms", "v_700_ms"]
+      }
+    }
+  }
+}

@@ -109,6 +109,7 @@ fit_formula <- function(target, variables) {
   if (include_radar_random_effect) terms <- c(terms, "s(radar, bs='re')")
   valid_interactions <- c(
     wind_850 = "ti(u_850_ms, v_850_ms, bs=c('tp','tp'), k=c(6,6))",
+    wind_925 = "ti(u_925_ms, v_925_ms, bs=c('tp','tp'), k=c(6,6))",
     thermal_moisture_850 = "ti(temperature_850_k, relative_humidity_850_percent, bs=c('tp','tp'), k=c(6,6))"
   )
   unknown_interactions <- setdiff(interactions, names(valid_interactions))
