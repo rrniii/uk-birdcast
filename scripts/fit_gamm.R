@@ -29,6 +29,7 @@ intensity_transform <- if (!is.null(options$intensity_transform)) options$intens
 intensity_family <- if (!is.null(options$intensity_family)) options$intensity_family else "gaussian_transform"
 intensity_weights <- if (!is.null(options$intensity_weights)) options$intensity_weights else "profile_count"
 intensity_weight_power <- if (!is.null(options$intensity_weight_power)) as.numeric(options$intensity_weight_power) else NULL
+vector_weights <- if (!is.null(options$vector_weights)) options$vector_weights else "mtr"
 spatial_k <- if (!is.null(options$spatial_k)) as.integer(options$spatial_k) else 10L
 covariate_k <- if (!is.null(options$covariate_k)) as.integer(options$covariate_k) else NULL
 interactions <- if (!is.null(options$meteorology_interactions)) unlist(options$meteorology_interactions) else character()
@@ -38,6 +39,7 @@ requested_targets <- if (!is.null(options$targets)) unlist(options$targets) else
 if (!(intensity_transform %in% c("cube_root", "sqrt", "log1p"))) stop("unsupported intensity_transform")
 if (!(intensity_family %in% c("gaussian_transform", "tweedie"))) stop("unsupported intensity_family")
 if (!(intensity_weights %in% c("profile_count", "uniform", "sqrt_mtr", "mtr", "mtr_power"))) stop("unsupported intensity_weights")
+if (!(vector_weights %in% c("uniform", "mtr", "sqrt_mtr"))) stop("unsupported vector_weights")
 if (intensity_weights == "mtr_power" && (is.null(intensity_weight_power) || !is.finite(intensity_weight_power) || intensity_weight_power < 0 || intensity_weight_power > 1)) {
   stop("mtr_power intensity weighting requires intensity_weight_power in [0, 1]")
 }
@@ -159,6 +161,14 @@ intensity_weight <- function(frame) {
   )
 }
 
+vector_weight <- function(frame) {
+  switch(vector_weights,
+    uniform = rep(1, nrow(frame)),
+    sqrt_mtr = sqrt(pmax(frame$mtr_birds_km_h, 0.01)),
+    mtr = pmax(frame$mtr_birds_km_h, 0.01)
+  )
+}
+
 blocked_time_split <- function(data) {
   times <- sort(unique(as.character(data$time_utc)))
   if (length(times) < 10) return(NULL)
@@ -182,7 +192,7 @@ for (pulse in spec$pulses) {
     if (nrow(subset) < 30 || length(unique(subset$radar)) < 2) next
     is_intensity <- target %in% spec$intensity_targets
     subset$response <- if (is_intensity && intensity_family == "tweedie") pmax(subset[[target]], 0) else if (is_intensity) transform_intensity(subset[[target]]) else subset[[target]]
-    weights <- if (is_intensity) intensity_weight(subset) else pmax(subset$mtr_birds_km_h, 0.01)
+    weights <- if (is_intensity) intensity_weight(subset) else vector_weight(subset)
     formula <- fit_formula(target, smooth_features)
     held_out <- list()
     for (held_radar in unique(subset$radar)) {
@@ -222,7 +232,7 @@ for (pulse in spec$pulses) {
     if (!is.null(blocked)) {
       time_model <- mgcv::bam(
         formula, data = blocked$train,
-        weights = if (is_intensity) intensity_weight(blocked$train) else pmax(blocked$train$mtr_birds_km_h, 0.01),
+        weights = if (is_intensity) intensity_weight(blocked$train) else vector_weight(blocked$train),
         method = "fREML", discrete = TRUE, nthreads = threads,
         knots = temporal_knots, family = fit_family(is_intensity)
       )
@@ -282,6 +292,7 @@ jsonlite::write_json(list(
     intensity_transform = intensity_transform, intensity_family = intensity_family,
     intensity_weights = intensity_weights,
     intensity_weight_power = intensity_weight_power,
+    vector_weights = vector_weights,
     spatial_k = spatial_k, covariate_k = covariate_k, meteorology_interactions = interactions,
     temporal_smooths = temporal_smooths,
     temporal_interactions = temporal_interactions,
