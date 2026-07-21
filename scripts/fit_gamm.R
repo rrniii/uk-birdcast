@@ -60,15 +60,8 @@ default_intensity_weight_power <- intensity_weight_power
 default_vector_weights <- vector_weights
 default_vector_wind_offset <- vector_wind_offset
 default_include_radar_random_effect <- include_radar_random_effect
-uses_tweedie <- identical(intensity_family, "tweedie") || any(vapply(
-  target_overrides,
-  function(override) !is.null(override$intensity_family) && identical(override$intensity_family, "tweedie"),
-  logical(1)
-))
-if (uses_tweedie) {
-  if (!requireNamespace("statmod", quietly = TRUE)) {
-    stop("Tweedie GAMM responses require the statmod R package")
-  }
+statmod_available <- requireNamespace("statmod", quietly = TRUE)
+if (statmod_available) {
   # mgcv's Tweedie likelihood resolves ldTweedie from the search path.
   library(statmod)
 }
@@ -258,6 +251,7 @@ for (pulse in spec$pulses) {
     }
     if (!(intensity_transform %in% c("cube_root", "sqrt", "log1p"))) stop(sprintf("unsupported intensity_transform for %s", target))
     if (!(intensity_family %in% c("gaussian_transform", "tweedie"))) stop(sprintf("unsupported intensity_family for %s", target))
+    if (intensity_family == "tweedie" && !statmod_available) stop("Tweedie GAMM responses require the statmod R package")
     if (!(intensity_weights %in% c("profile_count", "uniform", "sqrt_mtr", "mtr", "mtr_power"))) stop(sprintf("unsupported intensity_weights for %s", target))
     if (!(vector_weights %in% c("uniform", "mtr", "sqrt_mtr"))) stop(sprintf("unsupported vector_weights for %s", target))
     if (!(vector_wind_offset %in% c("none", "era5_850"))) stop(sprintf("unsupported vector_wind_offset for %s", target))
