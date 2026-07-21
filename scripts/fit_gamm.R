@@ -30,6 +30,7 @@ intensity_family <- if (!is.null(options$intensity_family)) options$intensity_fa
 intensity_weights <- if (!is.null(options$intensity_weights)) options$intensity_weights else "profile_count"
 intensity_weight_power <- if (!is.null(options$intensity_weight_power)) as.numeric(options$intensity_weight_power) else NULL
 vector_weights <- if (!is.null(options$vector_weights)) options$vector_weights else "mtr"
+include_radar_random_effect <- if (!is.null(options$include_radar_random_effect)) isTRUE(options$include_radar_random_effect) else TRUE
 target_overrides <- if (!is.null(options$target_overrides)) options$target_overrides else list()
 spatial_k <- if (!is.null(options$spatial_k)) as.integer(options$spatial_k) else 10L
 covariate_k <- if (!is.null(options$covariate_k)) as.integer(options$covariate_k) else NULL
@@ -51,6 +52,7 @@ default_intensity_family <- intensity_family
 default_intensity_weights <- intensity_weights
 default_intensity_weight_power <- intensity_weight_power
 default_vector_weights <- vector_weights
+default_include_radar_random_effect <- include_radar_random_effect
 predictors <- spec$predictors
 missing_predictors <- setdiff(predictors, names(data))
 if (length(missing_predictors)) {
@@ -99,9 +101,9 @@ fit_formula <- function(target, variables) {
   }
   terms <- c(
     sprintf("s(easting_m, northing_m, bs='tp', k=%d)", spatial_k),
-    smooth_terms,
-    "s(radar, bs='re')"
+    smooth_terms
   )
+  if (include_radar_random_effect) terms <- c(terms, "s(radar, bs='re')")
   valid_interactions <- c(
     wind_850 = "ti(u_850_ms, v_850_ms, bs=c('tp','tp'), k=c(6,6))",
     thermal_moisture_850 = "ti(temperature_850_k, relative_humidity_850_percent, bs=c('tp','tp'), k=c(6,6))"
@@ -149,10 +151,11 @@ fit_family <- function(is_intensity) {
 }
 
 predict_response <- function(model, frame, is_intensity) {
+  radar_exclusion <- if (include_radar_random_effect) "s(radar)" else NULL
   if (is_intensity && intensity_family == "tweedie") {
-    return(as.numeric(stats::predict(model, newdata = frame, type = "response", exclude = "s(radar)")))
+    return(as.numeric(stats::predict(model, newdata = frame, type = "response", exclude = radar_exclusion)))
   }
-  predicted <- as.numeric(stats::predict(model, newdata = frame, exclude = "s(radar)"))
+  predicted <- as.numeric(stats::predict(model, newdata = frame, exclude = radar_exclusion))
   if (is_intensity) predicted <- inverse_intensity(predicted)
   predicted
 }
@@ -200,6 +203,7 @@ for (pulse in spec$pulses) {
     intensity_weights <- default_intensity_weights
     intensity_weight_power <- default_intensity_weight_power
     vector_weights <- default_vector_weights
+    include_radar_random_effect <- default_include_radar_random_effect
     override <- target_overrides[[target]]
     if (!is.null(override)) {
       if (!is.null(override$intensity_transform)) intensity_transform <- override$intensity_transform
@@ -207,6 +211,7 @@ for (pulse in spec$pulses) {
       if (!is.null(override$intensity_weights)) intensity_weights <- override$intensity_weights
       if (!is.null(override$intensity_weight_power)) intensity_weight_power <- as.numeric(override$intensity_weight_power)
       if (!is.null(override$vector_weights)) vector_weights <- override$vector_weights
+      if (!is.null(override$include_radar_random_effect)) include_radar_random_effect <- isTRUE(override$include_radar_random_effect)
     }
     if (!(intensity_transform %in% c("cube_root", "sqrt", "log1p"))) stop(sprintf("unsupported intensity_transform for %s", target))
     if (!(intensity_family %in% c("gaussian_transform", "tweedie"))) stop(sprintf("unsupported intensity_family for %s", target))
@@ -289,7 +294,7 @@ for (pulse in spec$pulses) {
       estimate <- stats::predict(
         final_model,
         newdata = prediction_data,
-        exclude = "s(radar)",
+        exclude = if (include_radar_random_effect) "s(radar)" else NULL,
         se.fit = TRUE
       )
       value <- as.numeric(estimate$fit)
@@ -321,6 +326,7 @@ jsonlite::write_json(list(
     intensity_weights = intensity_weights,
     intensity_weight_power = intensity_weight_power,
     vector_weights = vector_weights,
+    include_radar_random_effect = default_include_radar_random_effect,
     spatial_k = spatial_k, covariate_k = covariate_k, meteorology_interactions = interactions,
     temporal_smooths = temporal_smooths,
     temporal_interactions = temporal_interactions,
