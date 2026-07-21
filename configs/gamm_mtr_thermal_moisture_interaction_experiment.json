@@ -1,0 +1,18 @@
+{
+  "selection_id": "uk-gamm-mtr-thermal-moisture-interaction-experiment",
+  "selection_policy": "Leave-one-UK-radar-out MTR-only GAMM parameter experiment over 14 July 2025 to 13 July 2026. It retains the selected response, spatial, and cyclic temporal structure while adding only the existing 850-hPa temperature-humidity interaction.",
+  "gamm_options": {
+    "targets": ["mtr_birds_km_h"],
+    "spatial_k": 10,
+    "meteorology_interactions": ["thermal_moisture_850"],
+    "temporal_smooths": ["day_of_year", "utc_hour"],
+    "temporal_interactions": ["seasonal_diurnal"],
+    "target_overrides": {
+      "mtr_birds_km_h": {
+        "intensity_transform": "sqrt",
+        "intensity_weights": "mtr_power",
+        "intensity_weight_power": 0.2
+      }
+    }
+  }
+}
