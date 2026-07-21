@@ -61,6 +61,10 @@ def _joined_rows() -> list[dict[str, object]]:
                     "r_pressure_level_850": 75.0,
                     "u_pressure_level_850": 4.0,
                     "v_pressure_level_850": 2.0,
+                    "u_pressure_level_925": 3.0,
+                    "v_pressure_level_925": 1.0,
+                    "u_pressure_level_700": 6.0,
+                    "v_pressure_level_700": 3.0,
                     "sp": 101300.0,
                     "msl": 101500.0,
                     "tcc": 0.5,
@@ -122,6 +126,10 @@ def test_prepare_table_accepts_decimal_pressure_level_keys(tmp_path: Path) -> No
         "r_pressure_level_850": "r_pressure_level_850.0",
         "u_pressure_level_850": "u_pressure_level_850.0",
         "v_pressure_level_850": "v_pressure_level_850.0",
+        "u_pressure_level_925": "u_pressure_level_925.0",
+        "v_pressure_level_925": "v_pressure_level_925.0",
+        "u_pressure_level_700": "u_pressure_level_700.0",
+        "v_pressure_level_700": "v_pressure_level_700.0",
     }
     for row in rows:
         for old, new in replacements.items():

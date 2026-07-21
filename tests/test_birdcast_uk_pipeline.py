@@ -413,6 +413,10 @@ def test_era5_day_validation_requires_both_feature_datasets(tmp_path: Path) -> N
                 "r_pressure_level_850.0": 75.0,
                 "u_pressure_level_850.0": 4.0,
                 "v_pressure_level_850.0": 2.0,
+                "u_pressure_level_925.0": 3.0,
+                "v_pressure_level_925.0": 1.0,
+                "u_pressure_level_700.0": 6.0,
+                "v_pressure_level_700.0": 3.0,
             }
         )
     feature_output.write_text(json.dumps({"rows": rows}), encoding="utf-8")

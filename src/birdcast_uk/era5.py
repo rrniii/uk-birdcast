@@ -408,6 +408,10 @@ def validate_day(
         "r_pressure_level_850.0",
         "u_pressure_level_850.0",
         "v_pressure_level_850.0",
+        "u_pressure_level_925.0",
+        "v_pressure_level_925.0",
+        "u_pressure_level_700.0",
+        "v_pressure_level_700.0",
     }
     grouped: dict[tuple[str, str], set[str]] = {}
     for row in rows:
@@ -850,6 +854,14 @@ def _grid_weather_values(
         value = _point_variable(pressure, candidates, point, pressure_level=850)
         if value is not None:
             values[target] = value
+    for level in (925, 700):
+        for component, candidates in {
+            "u": ("u", "u_component_of_wind"),
+            "v": ("v", "v_component_of_wind"),
+        }.items():
+            value = _point_variable(pressure, candidates, point, pressure_level=level)
+            if value is not None:
+                values[f"{component}_{level}_ms"] = value
     return values
 
 
