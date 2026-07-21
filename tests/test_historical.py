@@ -176,7 +176,8 @@ def test_static_ui_is_historical_not_forecast() -> None:
     javascript = (static_root / "app.js").read_text(encoding="utf-8")
 
     assert "96-hour forecast" not in html
-    assert "Live UK Bird Maps" in html
+    assert "UK Bird Maps" in html
+    assert "Live UK Bird Maps" not in html
     assert "Historical UK weather-radar and ERA5 reanalysis" in html
     assert "uk_boundary.geojson" not in javascript
     assert "devicePixelRatio" in javascript
