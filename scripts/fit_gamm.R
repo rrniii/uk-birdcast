@@ -60,6 +60,18 @@ default_intensity_weight_power <- intensity_weight_power
 default_vector_weights <- vector_weights
 default_vector_wind_offset <- vector_wind_offset
 default_include_radar_random_effect <- include_radar_random_effect
+uses_tweedie <- identical(intensity_family, "tweedie") || any(vapply(
+  target_overrides,
+  function(override) !is.null(override$intensity_family) && identical(override$intensity_family, "tweedie"),
+  logical(1)
+))
+if (uses_tweedie) {
+  if (!requireNamespace("statmod", quietly = TRUE)) {
+    stop("Tweedie GAMM responses require the statmod R package")
+  }
+  # mgcv's Tweedie likelihood resolves ldTweedie from the search path.
+  library(statmod)
+}
 predictors <- spec$predictors
 missing_predictors <- setdiff(predictors, names(data))
 if (length(missing_predictors)) {
