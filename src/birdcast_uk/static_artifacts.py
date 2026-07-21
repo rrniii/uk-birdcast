@@ -185,6 +185,7 @@ def build_static_artifacts(
         "index.html",
         "app.js",
         "styles.css",
+        "live-uk-bird-maps-logo.jpg",
         "live-uk-bird-maps-icon.svg",
         "radar-marker.svg",
     ):
@@ -222,6 +223,7 @@ def install_static_site(
         "index.html",
         "app.js",
         "styles.css",
+        "live-uk-bird-maps-logo.jpg",
         "live-uk-bird-maps-icon.svg",
         "radar-marker.svg",
     )

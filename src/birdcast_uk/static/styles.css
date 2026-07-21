@@ -21,7 +21,7 @@ button { cursor: pointer; }
   background: #0b0f10;
 }
 .brand { display: flex; align-items: center; min-width: 0; }
-.brand img { width: 56px; height: 56px; margin-right: 13px; }
+.brand img { width: 56px; height: 56px; margin-right: 13px; border-radius: 50%; object-fit: cover; }
 .brand h1 { margin: 0; font-size: clamp(22px, 3vw, 34px); letter-spacing: 0; }
 .brand p { margin: 2px 0 0; color: #98a59e; font-size: 12px; }
 .badge { flex: 0 0 auto; padding: 7px 10px; border: 1px solid #46514b; color: #c8d1cc; font-size: 12px; }
