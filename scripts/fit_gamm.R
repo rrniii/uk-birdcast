@@ -16,6 +16,10 @@ dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 spec <- jsonlite::fromJSON(spec_path, simplifyVector = TRUE)
 data <- utils::read.csv(spec$training_csv, check.names = FALSE)
 data$radar <- factor(data$radar)
+timestamps <- as.POSIXct(data$time_utc, tz = "UTC")
+if (any(is.na(timestamps))) stop("training table contains invalid UTC timestamps")
+data$day_of_year <- as.numeric(format(timestamps, "%j"))
+data$utc_hour <- as.numeric(format(timestamps, "%H"))
 threads <- max(1L, as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", "1")))
 options <- spec$gamm_options
 if (is.null(options)) options <- list()
@@ -24,10 +28,12 @@ intensity_weights <- if (!is.null(options$intensity_weights)) options$intensity_
 spatial_k <- if (!is.null(options$spatial_k)) as.integer(options$spatial_k) else 10L
 covariate_k <- if (!is.null(options$covariate_k)) as.integer(options$covariate_k) else NULL
 interactions <- if (!is.null(options$meteorology_interactions)) unlist(options$meteorology_interactions) else character()
+temporal_smooths <- if (!is.null(options$temporal_smooths)) unlist(options$temporal_smooths) else character()
 requested_targets <- if (!is.null(options$targets)) unlist(options$targets) else NULL
 if (!(intensity_transform %in% c("cube_root", "sqrt", "log1p"))) stop("unsupported intensity_transform")
-if (!(intensity_weights %in% c("profile_count", "uniform", "mtr"))) stop("unsupported intensity_weights")
+if (!(intensity_weights %in% c("profile_count", "uniform", "sqrt_mtr", "mtr"))) stop("unsupported intensity_weights")
 if (spatial_k < 3) stop("spatial_k must be at least 3")
+temporal_knots <- if (length(temporal_smooths)) list(day_of_year = c(0.5, 366.5), utc_hour = c(-0.5, 23.5)) else NULL
 predictors <- spec$predictors
 missing_predictors <- setdiff(predictors, names(data))
 if (length(missing_predictors)) {
@@ -86,6 +92,13 @@ fit_formula <- function(target, variables) {
   unknown_interactions <- setdiff(interactions, names(valid_interactions))
   if (length(unknown_interactions)) stop(sprintf("unsupported meteorology interaction: %s", paste(unknown_interactions, collapse=", ")))
   terms <- c(terms, unname(valid_interactions[interactions]))
+  valid_temporal_smooths <- c(
+    day_of_year = "s(day_of_year, bs='cc', k=20)",
+    utc_hour = "s(utc_hour, bs='cc', k=12)"
+  )
+  unknown_temporal_smooths <- setdiff(temporal_smooths, names(valid_temporal_smooths))
+  if (length(unknown_temporal_smooths)) stop(sprintf("unsupported temporal smooth: %s", paste(unknown_temporal_smooths, collapse=", ")))
+  terms <- c(terms, unname(valid_temporal_smooths[temporal_smooths]))
   stats::as.formula(sprintf("response ~ %s", paste(terms, collapse = " + ")))
 }
 
@@ -111,6 +124,7 @@ intensity_weight <- function(frame) {
   switch(intensity_weights,
     profile_count = pmax(frame$profile_count, 1),
     uniform = rep(1, nrow(frame)),
+    sqrt_mtr = sqrt(pmax(frame$mtr_birds_km_h, 0.01)),
     mtr = pmax(frame$mtr_birds_km_h, 0.01)
   )
 }
@@ -147,7 +161,8 @@ for (pulse in spec$pulses) {
       if (nrow(train) < 30 || !nrow(test)) next
       model <- mgcv::bam(
         formula, data = train, weights = weights[subset$radar != held_radar],
-        method = "fREML", discrete = TRUE, nthreads = threads
+        method = "fREML", discrete = TRUE, nthreads = threads,
+        knots = temporal_knots
       )
       # The radar random effect is excluded for spatial transfer. Give mgcv a
       # level present in the fitted data so it does not warn about the
@@ -179,7 +194,8 @@ for (pulse in spec$pulses) {
       time_model <- mgcv::bam(
         formula, data = blocked$train,
         weights = if (is_intensity) intensity_weight(blocked$train) else pmax(blocked$train$mtr_birds_km_h, 0.01),
-        method = "fREML", discrete = TRUE, nthreads = threads
+        method = "fREML", discrete = TRUE, nthreads = threads,
+        knots = temporal_knots
       )
       time_predicted <- as.numeric(stats::predict(time_model, newdata = blocked$test, exclude = "s(radar)"))
       if (is_intensity) time_predicted <- inverse_intensity(time_predicted)
@@ -192,7 +208,8 @@ for (pulse in spec$pulses) {
     }
     final_model <- mgcv::bam(
       formula, data = subset, weights = weights,
-      method = "fREML", discrete = TRUE, nthreads = threads
+      method = "fREML", discrete = TRUE, nthreads = threads,
+      knots = temporal_knots
     )
     saveRDS(final_model, file.path(output_dir, sprintf("gamm_%s_%s.rds", pulse, target)))
     if (!is.null(prediction_grid)) {
@@ -228,12 +245,14 @@ for (pulse in spec$pulses) {
 }
 
 jsonlite::write_json(list(
-  model_family = "gamm", metrics = metric_rows, model_time_terms = "none",
+  model_family = "gamm", metrics = metric_rows,
+  model_time_terms = if (length(temporal_smooths)) temporal_smooths else "none",
   fold_metrics = fold_metric_rows,
   predictors = predictors,
   gamm_options = list(
     intensity_transform = intensity_transform, intensity_weights = intensity_weights,
     spatial_k = spatial_k, covariate_k = covariate_k, meteorology_interactions = interactions,
+    temporal_smooths = temporal_smooths,
     targets = targets
   )
 ), file.path(output_dir, "metrics.json"), auto_unbox = TRUE, pretty = TRUE)
