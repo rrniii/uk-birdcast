@@ -39,3 +39,27 @@ done
   --joined-features "$BIRDCAST_UK_EXPERIMENT_DIR/model-features.json" \
   --output "$BIRDCAST_UK_EXPERIMENT_DIR/training-table-full.json" \
   "${extra_era5_args[@]}"
+
+# Vertical predictors are optional by design. Refuse to evaluate a model if
+# their availability accidentally reduced the one-year UK training population.
+baseline_table="${BIRDCAST_UK_BASELINE_TRAINING_TABLE:-$BIRDCAST_UK_ROOT/data/reanalysis/training.json}"
+"$BIRDCAST_UK_PYTHON" - "$baseline_table" "$BIRDCAST_UK_EXPERIMENT_DIR/training-table-full.json" "${BIRDCAST_UK_EXTRA_ERA5_FEATURES:-}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+baseline = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+vertical = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+required = [item for item in sys.argv[3].split(",") if item]
+
+if vertical["row_count"] != baseline["row_count"]:
+    raise SystemExit(
+        f"vertical ERA5 table row count {vertical['row_count']} does not match "
+        f"baseline {baseline['row_count']}"
+    )
+if vertical["pulse_counts"] != baseline["pulse_counts"]:
+    raise SystemExit("vertical ERA5 table pulse counts do not match the baseline")
+missing = sorted(set(required) - set(vertical["feature_columns"]))
+if missing:
+    raise SystemExit(f"vertical ERA5 table is missing requested features: {', '.join(missing)}")
+PY
