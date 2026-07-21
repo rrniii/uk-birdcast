@@ -35,6 +35,8 @@ include_radar_random_effect <- if (!is.null(options$include_radar_random_effect)
 target_overrides <- if (!is.null(options$target_overrides)) options$target_overrides else list()
 spatial_k <- if (!is.null(options$spatial_k)) as.integer(options$spatial_k) else 10L
 covariate_k <- if (!is.null(options$covariate_k)) as.integer(options$covariate_k) else NULL
+day_of_year_k <- if (!is.null(options$day_of_year_k)) as.integer(options$day_of_year_k) else 20L
+utc_hour_k <- if (!is.null(options$utc_hour_k)) as.integer(options$utc_hour_k) else 12L
 interactions <- if (!is.null(options$meteorology_interactions)) unlist(options$meteorology_interactions) else character()
 temporal_smooths <- if (!is.null(options$temporal_smooths)) unlist(options$temporal_smooths) else character()
 temporal_interactions <- if (!is.null(options$temporal_interactions)) unlist(options$temporal_interactions) else character()
@@ -48,6 +50,8 @@ if (intensity_weights == "mtr_power" && (is.null(intensity_weight_power) || !is.
   stop("mtr_power intensity weighting requires intensity_weight_power in [0, 1]")
 }
 if (spatial_k < 3) stop("spatial_k must be at least 3")
+if (day_of_year_k < 3) stop("day_of_year_k must be at least 3")
+if (utc_hour_k < 3) stop("utc_hour_k must be at least 3")
 temporal_knots <- if (length(temporal_smooths)) list(day_of_year = c(0.5, 366.5), utc_hour = c(-0.5, 23.5)) else NULL
 default_intensity_transform <- intensity_transform
 default_intensity_family <- intensity_family
@@ -120,14 +124,14 @@ fit_formula <- function(target, variables) {
   if (length(unknown_interactions)) stop(sprintf("unsupported meteorology interaction: %s", paste(unknown_interactions, collapse=", ")))
   terms <- c(terms, unname(valid_interactions[interactions]))
   valid_temporal_smooths <- c(
-    day_of_year = "s(day_of_year, bs='cc', k=20)",
-    utc_hour = "s(utc_hour, bs='cc', k=12)"
+    day_of_year = sprintf("s(day_of_year, bs='cc', k=%d)", day_of_year_k),
+    utc_hour = sprintf("s(utc_hour, bs='cc', k=%d)", utc_hour_k)
   )
   unknown_temporal_smooths <- setdiff(temporal_smooths, names(valid_temporal_smooths))
   if (length(unknown_temporal_smooths)) stop(sprintf("unsupported temporal smooth: %s", paste(unknown_temporal_smooths, collapse=", ")))
   terms <- c(terms, unname(valid_temporal_smooths[temporal_smooths]))
   valid_temporal_interactions <- c(
-    seasonal_diurnal = "ti(day_of_year, utc_hour, bs=c('cc','cc'), k=c(20,12))"
+    seasonal_diurnal = sprintf("ti(day_of_year, utc_hour, bs=c('cc','cc'), k=c(%d,%d))", day_of_year_k, utc_hour_k)
   )
   unknown_temporal_interactions <- setdiff(temporal_interactions, names(valid_temporal_interactions))
   if (length(unknown_temporal_interactions)) stop(sprintf("unsupported temporal interaction: %s", paste(unknown_temporal_interactions, collapse=", ")))
@@ -355,7 +359,9 @@ jsonlite::write_json(list(
     vector_weights = vector_weights,
     vector_wind_offset = default_vector_wind_offset,
     include_radar_random_effect = default_include_radar_random_effect,
-    spatial_k = spatial_k, covariate_k = covariate_k, meteorology_interactions = interactions,
+    spatial_k = spatial_k, covariate_k = covariate_k,
+    day_of_year_k = day_of_year_k, utc_hour_k = utc_hour_k,
+    meteorology_interactions = interactions,
     temporal_smooths = temporal_smooths,
     temporal_interactions = temporal_interactions,
     target_overrides = target_overrides,

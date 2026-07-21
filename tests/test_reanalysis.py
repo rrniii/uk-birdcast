@@ -102,7 +102,12 @@ def test_model_spec_embeds_selected_gamm_options(tmp_path: Path) -> None:
         json.dumps(
             {
                 "selection_id": "test-selection",
-                "gamm_options": {"temporal_smooths": ["day_of_year", "utc_hour"], "spatial_k": 10},
+                "gamm_options": {
+                    "temporal_smooths": ["day_of_year", "utc_hour"],
+                    "spatial_k": 10,
+                    "day_of_year_k": 16,
+                    "utc_hour_k": 10,
+                },
             }
         ),
         encoding="utf-8",
@@ -117,6 +122,8 @@ def test_model_spec_embeds_selected_gamm_options(tmp_path: Path) -> None:
 
     assert spec["gamm_selection_id"] == "test-selection"
     assert spec["gamm_options"]["spatial_k"] == 10
+    assert spec["gamm_options"]["day_of_year_k"] == 16
+    assert spec["gamm_options"]["utc_hour_k"] == 10
     assert spec["time_predictors"] == ["day_of_year", "utc_hour"]
 
 
