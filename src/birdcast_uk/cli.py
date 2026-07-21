@@ -35,6 +35,7 @@ from .config import (
 )
 from .era5 import build_day, build_period, cds_readiness, download_request, extract_grid_features, extract_site_features, extract_zip_archive, validate_day, write_request
 from .ecmwf import archive_cycle
+from .external_validation import validate_external_vpts_csv
 from .forecast import build_forecast
 from .historical import NATURAL_EARTH_10M_COUNTRIES_URL, build_historical_products, write_boundary
 from .joined import join_observed_to_era5
@@ -460,6 +461,18 @@ def cmd_reanalysis_frames(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_reanalysis_validate_external(args: argparse.Namespace) -> int:
+    result = validate_external_vpts_csv(
+        vpts_csv=Path(args.vpts_csv),
+        predictions_csv=Path(args.predictions_csv),
+        output=Path(args.output),
+        site=json.loads(args.site_json),
+        model=json.loads(args.model_json),
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
 def cmd_publish_plan(args: argparse.Namespace) -> int:
     result = build_publication_plan(Path(args.source_dir), Path(args.output), object_prefix=args.object_prefix)
     print(json.dumps({"wrote": args.output, "object_count": result["object_count"]}, indent=2, sort_keys=True))
@@ -754,6 +767,13 @@ def build_parser() -> argparse.ArgumentParser:
     reanalysis_frames.add_argument("--model-family", choices=["gamm", "xgboost"], required=True)
     reanalysis_frames.add_argument("--output", required=True)
     reanalysis_frames.set_defaults(func=cmd_reanalysis_frames)
+    reanalysis_external = reanalysis_sub.add_parser("validate-external")
+    reanalysis_external.add_argument("--vpts-csv", required=True)
+    reanalysis_external.add_argument("--predictions-csv", required=True)
+    reanalysis_external.add_argument("--site-json", required=True)
+    reanalysis_external.add_argument("--model-json", required=True)
+    reanalysis_external.add_argument("--output", required=True)
+    reanalysis_external.set_defaults(func=cmd_reanalysis_validate_external)
 
     bto_parser = subparsers.add_parser("bto")
     bto_sub = bto_parser.add_subparsers(required=True)
