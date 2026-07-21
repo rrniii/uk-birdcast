@@ -14,7 +14,8 @@
       },
       "vid_birds_per_km2": {
         "intensity_transform": "cube_root",
-        "intensity_weights": "profile_count"
+        "intensity_weights": "profile_count",
+        "include_radar_random_effect": false
       },
       "bird_u_ms": {
         "vector_weights": "uniform"
@@ -24,5 +25,5 @@
       }
     }
   },
-  "known_limitation": "LP velocity transfer remains weak under leave-one-radar-out validation. Product metadata must retain this limitation and should not imply calibrated LP flow direction away from reporting radars."
+  "known_limitation": "LP velocity transfer remains weak under leave-one-radar-out validation. Product metadata must retain this limitation and should not imply calibrated LP flow direction away from reporting radars. SP VID also remains below the internal transfer threshold."
 }
