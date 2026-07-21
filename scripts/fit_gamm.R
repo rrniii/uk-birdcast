@@ -33,6 +33,7 @@ spatial_k <- if (!is.null(options$spatial_k)) as.integer(options$spatial_k) else
 covariate_k <- if (!is.null(options$covariate_k)) as.integer(options$covariate_k) else NULL
 interactions <- if (!is.null(options$meteorology_interactions)) unlist(options$meteorology_interactions) else character()
 temporal_smooths <- if (!is.null(options$temporal_smooths)) unlist(options$temporal_smooths) else character()
+temporal_interactions <- if (!is.null(options$temporal_interactions)) unlist(options$temporal_interactions) else character()
 requested_targets <- if (!is.null(options$targets)) unlist(options$targets) else NULL
 if (!(intensity_transform %in% c("cube_root", "sqrt", "log1p"))) stop("unsupported intensity_transform")
 if (!(intensity_family %in% c("gaussian_transform", "tweedie"))) stop("unsupported intensity_family")
@@ -107,6 +108,12 @@ fit_formula <- function(target, variables) {
   unknown_temporal_smooths <- setdiff(temporal_smooths, names(valid_temporal_smooths))
   if (length(unknown_temporal_smooths)) stop(sprintf("unsupported temporal smooth: %s", paste(unknown_temporal_smooths, collapse=", ")))
   terms <- c(terms, unname(valid_temporal_smooths[temporal_smooths]))
+  valid_temporal_interactions <- c(
+    seasonal_diurnal = "ti(day_of_year, utc_hour, bs=c('cc','cc'), k=c(20,12))"
+  )
+  unknown_temporal_interactions <- setdiff(temporal_interactions, names(valid_temporal_interactions))
+  if (length(unknown_temporal_interactions)) stop(sprintf("unsupported temporal interaction: %s", paste(unknown_temporal_interactions, collapse=", ")))
+  terms <- c(terms, unname(valid_temporal_interactions[temporal_interactions]))
   stats::as.formula(sprintf("response ~ %s", paste(terms, collapse = " + ")))
 }
 
@@ -268,7 +275,7 @@ for (pulse in spec$pulses) {
 
 jsonlite::write_json(list(
   model_family = "gamm", metrics = metric_rows,
-  model_time_terms = if (length(temporal_smooths)) temporal_smooths else "none",
+  model_time_terms = if (length(c(temporal_smooths, temporal_interactions))) c(temporal_smooths, temporal_interactions) else "none",
   fold_metrics = fold_metric_rows,
   predictors = predictors,
   gamm_options = list(
@@ -277,6 +284,7 @@ jsonlite::write_json(list(
     intensity_weight_power = intensity_weight_power,
     spatial_k = spatial_k, covariate_k = covariate_k, meteorology_interactions = interactions,
     temporal_smooths = temporal_smooths,
+    temporal_interactions = temporal_interactions,
     targets = targets
   )
 ), file.path(output_dir, "metrics.json"), auto_unbox = TRUE, pretty = TRUE)
