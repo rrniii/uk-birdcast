@@ -30,6 +30,7 @@ intensity_family <- if (!is.null(options$intensity_family)) options$intensity_fa
 intensity_weights <- if (!is.null(options$intensity_weights)) options$intensity_weights else "profile_count"
 intensity_weight_power <- if (!is.null(options$intensity_weight_power)) as.numeric(options$intensity_weight_power) else NULL
 vector_weights <- if (!is.null(options$vector_weights)) options$vector_weights else "mtr"
+vector_wind_offset <- if (!is.null(options$vector_wind_offset)) options$vector_wind_offset else "none"
 include_radar_random_effect <- if (!is.null(options$include_radar_random_effect)) isTRUE(options$include_radar_random_effect) else TRUE
 target_overrides <- if (!is.null(options$target_overrides)) options$target_overrides else list()
 spatial_k <- if (!is.null(options$spatial_k)) as.integer(options$spatial_k) else 10L
@@ -42,6 +43,7 @@ if (!(intensity_transform %in% c("cube_root", "sqrt", "log1p"))) stop("unsupport
 if (!(intensity_family %in% c("gaussian_transform", "tweedie"))) stop("unsupported intensity_family")
 if (!(intensity_weights %in% c("profile_count", "uniform", "sqrt_mtr", "mtr", "mtr_power"))) stop("unsupported intensity_weights")
 if (!(vector_weights %in% c("uniform", "mtr", "sqrt_mtr"))) stop("unsupported vector_weights")
+if (!(vector_wind_offset %in% c("none", "era5_850"))) stop("unsupported vector_wind_offset")
 if (intensity_weights == "mtr_power" && (is.null(intensity_weight_power) || !is.finite(intensity_weight_power) || intensity_weight_power < 0 || intensity_weight_power > 1)) {
   stop("mtr_power intensity weighting requires intensity_weight_power in [0, 1]")
 }
@@ -52,6 +54,7 @@ default_intensity_family <- intensity_family
 default_intensity_weights <- intensity_weights
 default_intensity_weight_power <- intensity_weight_power
 default_vector_weights <- vector_weights
+default_vector_wind_offset <- vector_wind_offset
 default_include_radar_random_effect <- include_radar_random_effect
 predictors <- spec$predictors
 missing_predictors <- setdiff(predictors, names(data))
@@ -178,6 +181,17 @@ vector_weight <- function(frame) {
   )
 }
 
+# For directional targets the ERA5 850-hPa wind can be treated as a known
+# physical baseline. The GAMM then learns the bird-air velocity residual and
+# adds the wind back for each prediction. This is still the same additive
+# spatial/ERA5 GAMM; it merely fixes the leading wind coefficient at one.
+wind_component <- function(frame, target, offset) {
+  if (offset == "none") return(rep(0, nrow(frame)))
+  if (target == "bird_u_ms") return(frame$u_850_ms)
+  if (target == "bird_v_ms") return(frame$v_850_ms)
+  stop(sprintf("wind offset is only valid for bird vector targets, not %s", target))
+}
+
 blocked_time_split <- function(data) {
   times <- sort(unique(as.character(data$time_utc)))
   if (length(times) < 10) return(NULL)
@@ -203,6 +217,7 @@ for (pulse in spec$pulses) {
     intensity_weights <- default_intensity_weights
     intensity_weight_power <- default_intensity_weight_power
     vector_weights <- default_vector_weights
+    vector_wind_offset <- default_vector_wind_offset
     include_radar_random_effect <- default_include_radar_random_effect
     override <- target_overrides[[target]]
     if (!is.null(override)) {
@@ -211,12 +226,15 @@ for (pulse in spec$pulses) {
       if (!is.null(override$intensity_weights)) intensity_weights <- override$intensity_weights
       if (!is.null(override$intensity_weight_power)) intensity_weight_power <- as.numeric(override$intensity_weight_power)
       if (!is.null(override$vector_weights)) vector_weights <- override$vector_weights
+      if (!is.null(override$vector_wind_offset)) vector_wind_offset <- override$vector_wind_offset
       if (!is.null(override$include_radar_random_effect)) include_radar_random_effect <- isTRUE(override$include_radar_random_effect)
     }
     if (!(intensity_transform %in% c("cube_root", "sqrt", "log1p"))) stop(sprintf("unsupported intensity_transform for %s", target))
     if (!(intensity_family %in% c("gaussian_transform", "tweedie"))) stop(sprintf("unsupported intensity_family for %s", target))
     if (!(intensity_weights %in% c("profile_count", "uniform", "sqrt_mtr", "mtr", "mtr_power"))) stop(sprintf("unsupported intensity_weights for %s", target))
     if (!(vector_weights %in% c("uniform", "mtr", "sqrt_mtr"))) stop(sprintf("unsupported vector_weights for %s", target))
+    if (!(vector_wind_offset %in% c("none", "era5_850"))) stop(sprintf("unsupported vector_wind_offset for %s", target))
+    if (vector_wind_offset != "none" && !(target %in% spec$vector_targets)) stop(sprintf("vector_wind_offset is only valid for vector targets, not %s", target))
     if (intensity_weights == "mtr_power" && (is.null(intensity_weight_power) || !is.finite(intensity_weight_power) || intensity_weight_power < 0 || intensity_weight_power > 1)) {
       stop(sprintf("mtr_power intensity weighting requires intensity_weight_power in [0, 1] for %s", target))
     }
@@ -224,7 +242,7 @@ for (pulse in spec$pulses) {
     subset <- pulse_data[stats::complete.cases(pulse_data[, required, drop = FALSE]), , drop = FALSE]
     if (nrow(subset) < 30 || length(unique(subset$radar)) < 2) next
     is_intensity <- target %in% spec$intensity_targets
-    subset$response <- if (is_intensity && intensity_family == "tweedie") pmax(subset[[target]], 0) else if (is_intensity) transform_intensity(subset[[target]]) else subset[[target]]
+    subset$response <- if (is_intensity && intensity_family == "tweedie") pmax(subset[[target]], 0) else if (is_intensity) transform_intensity(subset[[target]]) else subset[[target]] - wind_component(subset, target, vector_wind_offset)
     weights <- if (is_intensity) intensity_weight(subset) else vector_weight(subset)
     formula <- fit_formula(target, smooth_features)
     held_out <- list()
@@ -245,7 +263,7 @@ for (pulse in spec$pulses) {
         rep(as.character(train$radar[[1]]), nrow(test)),
         levels = levels(train$radar)
       )
-      predicted <- predict_response(model, prediction_test, is_intensity)
+      predicted <- predict_response(model, prediction_test, is_intensity) + wind_component(prediction_test, target, vector_wind_offset)
       held_out[[length(held_out) + 1]] <- data.frame(observed = test[[target]], predicted = predicted)
       fold_row_id <- fold_row_id + 1
       fold_metric_rows[[fold_row_id]] <- c(
@@ -269,7 +287,7 @@ for (pulse in spec$pulses) {
         method = "fREML", discrete = TRUE, nthreads = threads,
         knots = temporal_knots, family = fit_family(is_intensity)
       )
-      time_predicted <- predict_response(time_model, blocked$test, is_intensity)
+      time_predicted <- predict_response(time_model, blocked$test, is_intensity) + wind_component(blocked$test, target, vector_wind_offset)
       time_metrics <- score(blocked$test[[target]], time_predicted)
       row_id <- row_id + 1
       metric_rows[[row_id]] <- c(
@@ -300,6 +318,7 @@ for (pulse in spec$pulses) {
       value <- as.numeric(estimate$fit)
       if (is_intensity && intensity_family == "tweedie") value <- exp(value)
       if (is_intensity && intensity_family != "tweedie") value <- inverse_intensity(value)
+      if (!is_intensity) value <- value + wind_component(prediction_data, target, vector_wind_offset)
       pulse_prediction[[target]] <- value
       pulse_prediction[[sprintf("uncertainty_%s", target)]] <- as.numeric(estimate$se.fit)
     }
@@ -326,6 +345,7 @@ jsonlite::write_json(list(
     intensity_weights = intensity_weights,
     intensity_weight_power = intensity_weight_power,
     vector_weights = vector_weights,
+    vector_wind_offset = default_vector_wind_offset,
     include_radar_random_effect = default_include_radar_random_effect,
     spatial_k = spatial_k, covariate_k = covariate_k, meteorology_interactions = interactions,
     temporal_smooths = temporal_smooths,
