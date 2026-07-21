@@ -59,4 +59,5 @@ below the internal transfer threshold and should retain uncertainty labelling.
 - Selection configuration: `configs/gamm_uk_holdout_selected.json`
 - GAMM runner: `scripts/fit_gamm.R`
 - Original diagnostic: `uk_gamm_holdout_and_nearby_vpts_diagnostics_2025-07-14_to_2026-07-13.md`
-- Full selected JASMIN run: `artifacts/gamm-experiments/selected_uk_holdout_v1`
+- Immutable selected metrics: `reports/data/uk_gamm_selected_holdout_2025-07-14_to_2026-07-13.json`
+- Full selected JASMIN run: `artifacts/gamm-experiments/selected_uk_holdout_v2` (Slurm job `41026431`, completed `0:0`)
