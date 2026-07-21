@@ -27,13 +27,17 @@ options <- spec$gamm_options
 if (is.null(options)) options <- list()
 intensity_transform <- if (!is.null(options$intensity_transform)) options$intensity_transform else "cube_root"
 intensity_weights <- if (!is.null(options$intensity_weights)) options$intensity_weights else "profile_count"
+intensity_weight_power <- if (!is.null(options$intensity_weight_power)) as.numeric(options$intensity_weight_power) else NULL
 spatial_k <- if (!is.null(options$spatial_k)) as.integer(options$spatial_k) else 10L
 covariate_k <- if (!is.null(options$covariate_k)) as.integer(options$covariate_k) else NULL
 interactions <- if (!is.null(options$meteorology_interactions)) unlist(options$meteorology_interactions) else character()
 temporal_smooths <- if (!is.null(options$temporal_smooths)) unlist(options$temporal_smooths) else character()
 requested_targets <- if (!is.null(options$targets)) unlist(options$targets) else NULL
 if (!(intensity_transform %in% c("cube_root", "sqrt", "log1p"))) stop("unsupported intensity_transform")
-if (!(intensity_weights %in% c("profile_count", "uniform", "sqrt_mtr", "mtr"))) stop("unsupported intensity_weights")
+if (!(intensity_weights %in% c("profile_count", "uniform", "sqrt_mtr", "mtr", "mtr_power"))) stop("unsupported intensity_weights")
+if (intensity_weights == "mtr_power" && (is.null(intensity_weight_power) || !is.finite(intensity_weight_power) || intensity_weight_power < 0 || intensity_weight_power > 1)) {
+  stop("mtr_power intensity weighting requires intensity_weight_power in [0, 1]")
+}
 if (spatial_k < 3) stop("spatial_k must be at least 3")
 temporal_knots <- if (length(temporal_smooths)) list(day_of_year = c(0.5, 366.5), utc_hour = c(-0.5, 23.5)) else NULL
 predictors <- spec$predictors
@@ -127,6 +131,7 @@ intensity_weight <- function(frame) {
     profile_count = pmax(frame$profile_count, 1),
     uniform = rep(1, nrow(frame)),
     sqrt_mtr = sqrt(pmax(frame$mtr_birds_km_h, 0.01)),
+    mtr_power = pmax(frame$mtr_birds_km_h, 0.01)^intensity_weight_power,
     mtr = pmax(frame$mtr_birds_km_h, 0.01)
   )
 }
@@ -253,6 +258,7 @@ jsonlite::write_json(list(
   predictors = predictors,
   gamm_options = list(
     intensity_transform = intensity_transform, intensity_weights = intensity_weights,
+    intensity_weight_power = intensity_weight_power,
     spatial_k = spatial_k, covariate_k = covariate_k, meteorology_interactions = interactions,
     temporal_smooths = temporal_smooths,
     targets = targets
