@@ -33,17 +33,19 @@ VECTOR_TARGETS = ("bird_u_ms", "bird_v_ms")
 ERA5_FEATURES = (
     "temperature_850_k",
     "relative_humidity_850_percent",
-    "u_925_ms",
-    "v_925_ms",
     "u_850_ms",
     "v_850_ms",
-    "u_700_ms",
-    "v_700_ms",
     "surface_pressure_pa",
     "mean_sea_level_pressure_pa",
     "total_cloud_cover_fraction",
     "boundary_layer_height_m",
     "hourly_precipitation_m",
+)
+OPTIONAL_ERA5_FEATURES = (
+    "u_925_ms",
+    "v_925_ms",
+    "u_700_ms",
+    "v_700_ms",
 )
 
 
@@ -96,8 +98,14 @@ def prepare_training_table(
     output: Path,
     window_days: int = 365,
     min_profiles_per_hour: int = 3,
+    extra_era5_features: tuple[str, ...] = (),
 ) -> dict[str, object]:
     """Create a reproducible, pulse-separated rolling ERA5/VPTS model table."""
+
+    unknown_features = set(extra_era5_features) - set(OPTIONAL_ERA5_FEATURES)
+    if unknown_features:
+        raise ValueError(f"unsupported optional ERA5 features: {', '.join(sorted(unknown_features))}")
+    required_features = (*ERA5_FEATURES, *extra_era5_features)
 
     payload = _read_json(joined_features)
     source_rows = payload.get("rows")
@@ -107,7 +115,7 @@ def prepare_training_table(
     candidates = [
         row
         for row in candidates
-        if row is not None and all(_number(row.get(feature)) is not None for feature in ERA5_FEATURES)
+        if row is not None and all(_number(row.get(feature)) is not None for feature in required_features)
     ]
     if not candidates:
         raise ValueError(
@@ -124,10 +132,10 @@ def prepare_training_table(
     if not rows:
         raise ValueError("no rows remain in selected rolling window")
 
-    fieldnames = _fieldnames(rows)
+    fieldnames = _fieldnames(rows, required_features)
     feature_ranges = {
         name: {"lower": lower, "upper": upper}
-        for name in ERA5_FEATURES
+        for name in required_features
         if (bounds := _percentile_range(rows, name)) is not None
         for lower, upper in (bounds,)
     }
@@ -151,7 +159,7 @@ def prepare_training_table(
         "row_count": len(rows),
         "radar_count": len({str(row["radar"]) for row in rows}),
         "pulse_counts": {pulse: sum(row["pulse"] == pulse for row in rows) for pulse in PULSES},
-        "feature_columns": [name for name in ERA5_FEATURES if name in fieldnames],
+        "feature_columns": [name for name in required_features if name in fieldnames],
         "feature_ranges": feature_ranges,
         "target_columns": [*INTENSITY_TARGETS, *VECTOR_TARGETS],
         "quality_policy": {
@@ -662,8 +670,8 @@ def _complete_days(rows: list[dict[str, object]]):
     return [day for day, present in hours.items() if len(present) == 24]
 
 
-def _fieldnames(rows: list[dict[str, object]]) -> list[str]:
-    preferred = ["radar", "pulse", "time_utc", "latitude", "longitude", "easting_m", "northing_m", *INTENSITY_TARGETS, *VECTOR_TARGETS, "profile_count", "rain_suspect_fraction", *ERA5_FEATURES]
+def _fieldnames(rows: list[dict[str, object]], era5_features: tuple[str, ...] = ERA5_FEATURES) -> list[str]:
+    preferred = ["radar", "pulse", "time_utc", "latitude", "longitude", "easting_m", "northing_m", *INTENSITY_TARGETS, *VECTOR_TARGETS, "profile_count", "rain_suspect_fraction", *era5_features]
     observed = {key for row in rows for key in row}
     return [key for key in preferred if key in observed] + sorted(observed - set(preferred))
 

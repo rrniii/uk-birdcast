@@ -408,6 +408,7 @@ def cmd_reanalysis_prepare(args: argparse.Namespace) -> int:
         output=Path(args.output),
         window_days=args.window_days,
         min_profiles_per_hour=args.min_profiles_per_hour,
+        extra_era5_features=tuple(args.extra_era5_feature),
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
@@ -744,6 +745,12 @@ def build_parser() -> argparse.ArgumentParser:
     reanalysis_prepare.add_argument("--output", required=True)
     reanalysis_prepare.add_argument("--window-days", type=int, default=365)
     reanalysis_prepare.add_argument("--min-profiles-per-hour", type=int, default=3)
+    reanalysis_prepare.add_argument(
+        "--extra-era5-feature",
+        action="append",
+        default=[],
+        help="Opt-in ERA5 predictor requiring complete coverage, for example u_925_ms.",
+    )
     reanalysis_prepare.set_defaults(func=cmd_reanalysis_prepare)
     reanalysis_spec = reanalysis_sub.add_parser("spec")
     reanalysis_spec.add_argument("--table", required=True)

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from birdcast_uk.reanalysis import (
     ERA5_FEATURES,
+    OPTIONAL_ERA5_FEATURES,
     build_prediction_frames,
     compare_models,
     prepare_training_table,
@@ -141,6 +142,27 @@ def test_prepare_table_accepts_decimal_pressure_level_keys(tmp_path: Path) -> No
     table = json.loads((tmp_path / "table.json").read_text(encoding="utf-8"))
 
     assert table["feature_columns"] == list(ERA5_FEATURES)
+    assert table["row_count"] == 48
+
+
+def test_prepare_table_requires_opt_in_vertical_wind_coverage(tmp_path: Path) -> None:
+    rows = _joined_rows()
+    for row in rows:
+        row["u_pressure_level_925.0"] = row.pop("u_pressure_level_925")
+        row["v_pressure_level_925.0"] = row.pop("v_pressure_level_925")
+        row["u_pressure_level_700.0"] = row.pop("u_pressure_level_700")
+        row["v_pressure_level_700.0"] = row.pop("v_pressure_level_700")
+    joined = tmp_path / "joined.json"
+    joined.write_text(json.dumps({"rows": rows}), encoding="utf-8")
+
+    prepare_training_table(
+        joined_features=joined,
+        output=tmp_path / "table.json",
+        extra_era5_features=OPTIONAL_ERA5_FEATURES,
+    )
+    table = json.loads((tmp_path / "table.json").read_text(encoding="utf-8"))
+
+    assert table["feature_columns"] == [*ERA5_FEATURES, *OPTIONAL_ERA5_FEATURES]
     assert table["row_count"] == 48
 
 
