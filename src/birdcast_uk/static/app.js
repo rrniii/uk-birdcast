@@ -383,10 +383,9 @@ function drawMap() {
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, rect.width, rect.height);
   drawGraticule(ctx, rect.width, rect.height);
-  drawBoundary(ctx, rect.width, rect.height, true);
   if (state.view === "modelled") drawModelledField(ctx, rect.width, rect.height);
   else drawRadarValues(ctx, rect.width, rect.height);
-  drawBoundary(ctx, rect.width, rect.height, false);
+  drawBoundary(ctx, rect.width, rect.height);
   drawRadarMarkers(ctx, rect.width, rect.height);
 }
 
@@ -428,18 +427,13 @@ function drawGraticule(ctx, width, height) {
   }
 }
 
-function drawBoundary(ctx, width, height, fill) {
+function drawBoundary(ctx, width, height) {
   if (!state.boundary) return;
   for (const feature of state.boundary.features || []) {
     traceGeometry(ctx, feature.geometry, width, height);
-    if (fill) {
-      ctx.fillStyle = feature.properties.ADM0_A3 === "GBR" ? "#101512" : "#090c0b";
-      ctx.fill("evenodd");
-    } else {
-      ctx.strokeStyle = feature.properties.ADM0_A3 === "GBR" ? "#f2f5f3" : "#87928c";
-      ctx.lineWidth = feature.properties.ADM0_A3 === "GBR" ? 1.3 : .75;
-      ctx.stroke();
-    }
+    ctx.strokeStyle = feature.properties.ADM0_A3 === "GBR" ? "rgba(242, 245, 243, .86)" : "rgba(135, 146, 140, .72)";
+    ctx.lineWidth = feature.properties.ADM0_A3 === "GBR" ? 1.3 : .75;
+    ctx.stroke();
   }
 }
 
