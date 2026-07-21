@@ -33,7 +33,7 @@ const state = {
   animation: null,
 };
 
-const MTR_CUTOFF_BIRDS_KM_H = 100;
+const MTR_CUTOFF_BIRDS_KM_H = 10;
 
 (async function initialise() {
   const config = await fetchJson("config.json", {data_base_url: "../"});

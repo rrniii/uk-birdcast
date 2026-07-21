@@ -193,7 +193,7 @@ def test_static_ui_is_historical_not_forecast() -> None:
     assert 'isAvailable ? "#22ed5a" : "#f14640"' not in javascript
     assert "max_range_m" in javascript
     assert "drawRadarMarker" in javascript
-    assert "const MTR_CUTOFF_BIRDS_KM_H = 100" in javascript
+    assert "const MTR_CUTOFF_BIRDS_KM_H = 10" in javascript
     assert "visibleModelCells" in javascript
     assert "COLOUR_SCHEMES" in javascript
     assert "colourSchemeSelect" in html
