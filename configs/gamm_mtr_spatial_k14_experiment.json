@@ -1,0 +1,18 @@
+{
+  "selection_id": "uk-gamm-mtr-spatial-k14-experiment",
+  "selection_policy": "Leave-one-UK-radar-out MTR-only GAMM parameter experiment over 14 July 2025 to 13 July 2026. It retains the selected response transform, radar effect, and cyclic temporal structure while increasing the projected spatial smooth rank from 10 to 14.",
+  "gamm_options": {
+    "targets": ["mtr_birds_km_h"],
+    "spatial_k": 14,
+    "meteorology_interactions": [],
+    "temporal_smooths": ["day_of_year", "utc_hour"],
+    "temporal_interactions": ["seasonal_diurnal"],
+    "target_overrides": {
+      "mtr_birds_km_h": {
+        "intensity_transform": "sqrt",
+        "intensity_weights": "mtr_power",
+        "intensity_weight_power": 0.2
+      }
+    }
+  }
+}

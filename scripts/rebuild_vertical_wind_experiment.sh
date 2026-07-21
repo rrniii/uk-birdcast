@@ -7,9 +7,17 @@ set -euo pipefail
 : "${BIRDCAST_UK_EXPERIMENT_DIR:?Set the experiment artifact directory}"
 : "${BIRDCAST_UK_PYTHON:?Set the project Python executable}"
 
-raw_dir="$BIRDCAST_UK_ROOT/data/era5/raw"
+raw_dir="${BIRDCAST_UK_ERA5_RAW_DIR:-$BIRDCAST_UK_ROOT/data/era5/raw}"
 site_dir="$BIRDCAST_UK_EXPERIMENT_DIR/site-features"
 mkdir -p "$site_dir"
+
+extra_era5_args=()
+if [[ -n "${BIRDCAST_UK_EXTRA_ERA5_FEATURES:-}" ]]; then
+  IFS=',' read -r -a extra_era5_features <<< "$BIRDCAST_UK_EXTRA_ERA5_FEATURES"
+  for feature in "${extra_era5_features[@]}"; do
+    extra_era5_args+=(--extra-era5-feature "$feature")
+  done
+fi
 
 for pressure in "$raw_dir"/era5_pressure_levels_*_uk.nc; do
   stamp="${pressure##*/}"
@@ -29,4 +37,5 @@ done
 
 "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli reanalysis prepare \
   --joined-features "$BIRDCAST_UK_EXPERIMENT_DIR/model-features.json" \
-  --output "$BIRDCAST_UK_EXPERIMENT_DIR/training-table-full.json"
+  --output "$BIRDCAST_UK_EXPERIMENT_DIR/training-table-full.json" \
+  "${extra_era5_args[@]}"
