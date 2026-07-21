@@ -16,7 +16,9 @@ dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 spec <- jsonlite::fromJSON(spec_path, simplifyVector = TRUE)
 data <- utils::read.csv(spec$training_csv, check.names = FALSE)
 data$radar <- factor(data$radar)
-timestamps <- as.POSIXct(data$time_utc, tz = "UTC")
+# The CSV uses ISO-8601 UTC timestamps. Supplying the format is essential:
+# as.POSIXct's default parser accepts the date while silently dropping hours.
+timestamps <- as.POSIXct(data$time_utc, format = "%Y-%m-%dT%H:%M:%OSZ", tz = "UTC")
 if (any(is.na(timestamps))) stop("training table contains invalid UTC timestamps")
 data$day_of_year <- as.numeric(format(timestamps, "%j"))
 data$utc_hour <- as.numeric(format(timestamps, "%H"))
