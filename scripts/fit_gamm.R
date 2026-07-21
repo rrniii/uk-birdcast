@@ -26,6 +26,7 @@ threads <- max(1L, as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", "1")))
 options <- spec$gamm_options
 if (is.null(options)) options <- list()
 intensity_transform <- if (!is.null(options$intensity_transform)) options$intensity_transform else "cube_root"
+intensity_family <- if (!is.null(options$intensity_family)) options$intensity_family else "gaussian_transform"
 intensity_weights <- if (!is.null(options$intensity_weights)) options$intensity_weights else "profile_count"
 intensity_weight_power <- if (!is.null(options$intensity_weight_power)) as.numeric(options$intensity_weight_power) else NULL
 spatial_k <- if (!is.null(options$spatial_k)) as.integer(options$spatial_k) else 10L
@@ -34,6 +35,7 @@ interactions <- if (!is.null(options$meteorology_interactions)) unlist(options$m
 temporal_smooths <- if (!is.null(options$temporal_smooths)) unlist(options$temporal_smooths) else character()
 requested_targets <- if (!is.null(options$targets)) unlist(options$targets) else NULL
 if (!(intensity_transform %in% c("cube_root", "sqrt", "log1p"))) stop("unsupported intensity_transform")
+if (!(intensity_family %in% c("gaussian_transform", "tweedie"))) stop("unsupported intensity_family")
 if (!(intensity_weights %in% c("profile_count", "uniform", "sqrt_mtr", "mtr", "mtr_power"))) stop("unsupported intensity_weights")
 if (intensity_weights == "mtr_power" && (is.null(intensity_weight_power) || !is.finite(intensity_weight_power) || intensity_weight_power < 0 || intensity_weight_power > 1)) {
   stop("mtr_power intensity weighting requires intensity_weight_power in [0, 1]")
@@ -126,6 +128,20 @@ inverse_intensity <- function(values) {
   )
 }
 
+fit_family <- function(is_intensity) {
+  if (is_intensity && intensity_family == "tweedie") return(mgcv::tw(link = "log"))
+  gaussian()
+}
+
+predict_response <- function(model, frame, is_intensity) {
+  if (is_intensity && intensity_family == "tweedie") {
+    return(as.numeric(stats::predict(model, newdata = frame, type = "response", exclude = "s(radar)")))
+  }
+  predicted <- as.numeric(stats::predict(model, newdata = frame, exclude = "s(radar)"))
+  if (is_intensity) predicted <- inverse_intensity(predicted)
+  predicted
+}
+
 intensity_weight <- function(frame) {
   switch(intensity_weights,
     profile_count = pmax(frame$profile_count, 1),
@@ -158,7 +174,7 @@ for (pulse in spec$pulses) {
     subset <- pulse_data[stats::complete.cases(pulse_data[, required, drop = FALSE]), , drop = FALSE]
     if (nrow(subset) < 30 || length(unique(subset$radar)) < 2) next
     is_intensity <- target %in% spec$intensity_targets
-    subset$response <- if (is_intensity) transform_intensity(subset[[target]]) else subset[[target]]
+    subset$response <- if (is_intensity && intensity_family == "tweedie") pmax(subset[[target]], 0) else if (is_intensity) transform_intensity(subset[[target]]) else subset[[target]]
     weights <- if (is_intensity) intensity_weight(subset) else pmax(subset$mtr_birds_km_h, 0.01)
     formula <- fit_formula(target, smooth_features)
     held_out <- list()
@@ -169,7 +185,7 @@ for (pulse in spec$pulses) {
       model <- mgcv::bam(
         formula, data = train, weights = weights[subset$radar != held_radar],
         method = "fREML", discrete = TRUE, nthreads = threads,
-        knots = temporal_knots
+        knots = temporal_knots, family = fit_family(is_intensity)
       )
       # The radar random effect is excluded for spatial transfer. Give mgcv a
       # level present in the fitted data so it does not warn about the
@@ -179,8 +195,7 @@ for (pulse in spec$pulses) {
         rep(as.character(train$radar[[1]]), nrow(test)),
         levels = levels(train$radar)
       )
-      predicted <- as.numeric(stats::predict(model, newdata = prediction_test, exclude = "s(radar)"))
-      if (is_intensity) predicted <- inverse_intensity(predicted)
+      predicted <- predict_response(model, prediction_test, is_intensity)
       held_out[[length(held_out) + 1]] <- data.frame(observed = test[[target]], predicted = predicted)
       fold_row_id <- fold_row_id + 1
       fold_metric_rows[[fold_row_id]] <- c(
@@ -202,10 +217,9 @@ for (pulse in spec$pulses) {
         formula, data = blocked$train,
         weights = if (is_intensity) intensity_weight(blocked$train) else pmax(blocked$train$mtr_birds_km_h, 0.01),
         method = "fREML", discrete = TRUE, nthreads = threads,
-        knots = temporal_knots
+        knots = temporal_knots, family = fit_family(is_intensity)
       )
-      time_predicted <- as.numeric(stats::predict(time_model, newdata = blocked$test, exclude = "s(radar)"))
-      if (is_intensity) time_predicted <- inverse_intensity(time_predicted)
+      time_predicted <- predict_response(time_model, blocked$test, is_intensity)
       time_metrics <- score(blocked$test[[target]], time_predicted)
       row_id <- row_id + 1
       metric_rows[[row_id]] <- c(
@@ -216,7 +230,7 @@ for (pulse in spec$pulses) {
     final_model <- mgcv::bam(
       formula, data = subset, weights = weights,
       method = "fREML", discrete = TRUE, nthreads = threads,
-      knots = temporal_knots
+      knots = temporal_knots, family = fit_family(is_intensity)
     )
     saveRDS(final_model, file.path(output_dir, sprintf("gamm_%s_%s.rds", pulse, target)))
     if (!is.null(prediction_grid)) {
@@ -234,7 +248,8 @@ for (pulse in spec$pulses) {
         se.fit = TRUE
       )
       value <- as.numeric(estimate$fit)
-      if (is_intensity) value <- inverse_intensity(value)
+      if (is_intensity && intensity_family == "tweedie") value <- exp(value)
+      if (is_intensity && intensity_family != "tweedie") value <- inverse_intensity(value)
       pulse_prediction[[target]] <- value
       pulse_prediction[[sprintf("uncertainty_%s", target)]] <- as.numeric(estimate$se.fit)
     }
@@ -257,7 +272,8 @@ jsonlite::write_json(list(
   fold_metrics = fold_metric_rows,
   predictors = predictors,
   gamm_options = list(
-    intensity_transform = intensity_transform, intensity_weights = intensity_weights,
+    intensity_transform = intensity_transform, intensity_family = intensity_family,
+    intensity_weights = intensity_weights,
     intensity_weight_power = intensity_weight_power,
     spatial_k = spatial_k, covariate_k = covariate_k, meteorology_interactions = interactions,
     temporal_smooths = temporal_smooths,
