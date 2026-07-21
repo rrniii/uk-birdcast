@@ -152,6 +152,7 @@ function configureControls() {
   const dateInput = document.getElementById("dateInput");
   dateInput.addEventListener("change", async () => {
     if (!dateInput.value) return;
+    stopAnimation();
     state.date = dateInput.value;
     state.dates[state.view] = state.date;
     await loadCurrentData();
@@ -180,8 +181,8 @@ function configureControls() {
     drawMap();
   });
   document.getElementById("playButton").addEventListener("click", toggleAnimation);
-  document.getElementById("previousButton").addEventListener("click", () => stepHour(-1));
-  document.getElementById("nextButton").addEventListener("click", () => stepHour(1));
+  document.getElementById("previousButton").addEventListener("click", async () => { await stepHour(-1); });
+  document.getElementById("nextButton").addEventListener("click", async () => { await stepHour(1); });
   document.getElementById("resetButton").addEventListener("click", () => {
     const hours = availableHours();
     state.hour = hours[0] ?? 0;
@@ -656,12 +657,41 @@ function availableHours() {
   return (state.modelDayPayload && state.modelDayPayload.frames || []).map((frame) => new Date(frame.time_utc).getUTCHours());
 }
 
-function stepHour(direction) {
+function availableModelDates() {
+  const assets = state.model && state.model.assets && state.model.assets[state.pulse];
+  return Object.keys(assets || {}).sort();
+}
+
+async function stepHour(direction) {
   const hours = availableHours();
   if (!hours.length) return;
   const index = Math.max(0, hours.indexOf(state.hour));
-  state.hour = hours[(index + direction + hours.length) % hours.length];
-  render();
+  const nextIndex = index + direction;
+  if (0 <= nextIndex && nextIndex < hours.length) {
+    state.hour = hours[nextIndex];
+    render();
+    return;
+  }
+
+  const dates = availableModelDates();
+  if (!dates.length) return;
+  let dateIndex = Math.max(0, dates.indexOf(state.date));
+  for (let attempts = 0; attempts < dates.length; attempts += 1) {
+    dateIndex = (dateIndex + direction + dates.length) % dates.length;
+    state.date = dates[dateIndex];
+    state.dates.modelled = state.date;
+    await loadModelDay();
+    const targetYear = Number(state.date.slice(0, 4));
+    if (state.historical && state.historical.first_date <= state.date && state.date <= state.historical.latest_date
+        && (!state.yearPayload || Number(state.yearPayload.year) !== targetYear)) {
+      await loadYear(targetYear);
+    }
+    const nextHours = availableHours();
+    if (!nextHours.length) continue;
+    state.hour = direction > 0 ? nextHours[0] : nextHours[nextHours.length - 1];
+    render();
+    return;
+  }
 }
 
 function toggleAnimation() {
@@ -669,11 +699,17 @@ function toggleAnimation() {
   const button = document.getElementById("playButton");
   button.textContent = "❚❚";
   button.classList.add("active");
-  state.animation = window.setInterval(() => stepHour(1), 900);
+  state.animation = window.setTimeout(advanceAnimation, 900);
+}
+
+async function advanceAnimation() {
+  if (!state.animation) return;
+  await stepHour(1);
+  if (state.animation) state.animation = window.setTimeout(advanceAnimation, 900);
 }
 
 function stopAnimation() {
-  if (state.animation) window.clearInterval(state.animation);
+  if (state.animation) window.clearTimeout(state.animation);
   state.animation = null;
   const button = document.getElementById("playButton");
   if (button) { button.textContent = "▶"; button.classList.remove("active"); }

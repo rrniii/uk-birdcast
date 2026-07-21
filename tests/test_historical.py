@@ -197,5 +197,9 @@ def test_static_ui_is_historical_not_forecast() -> None:
     assert "drawRadarMarker" in javascript
     assert "const MTR_CUTOFF_BIRDS_KM_H = 10" in javascript
     assert "visibleModelCells" in javascript
+    assert "function availableModelDates()" in javascript
+    assert "async function stepHour(direction)" in javascript
+    assert "window.setTimeout(advanceAnimation, 900)" in javascript
+    assert "window.setInterval" not in javascript
     assert "COLOUR_SCHEMES" in javascript
     assert "colourSchemeSelect" in html
