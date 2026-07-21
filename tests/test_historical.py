@@ -176,8 +176,8 @@ def test_static_ui_is_historical_not_forecast() -> None:
     javascript = (static_root / "app.js").read_text(encoding="utf-8")
 
     assert "96-hour forecast" not in html
-    assert "BirdDAR UK" in html
-    assert "The UK Weather Surveillance Network" in html
+    assert "Live UK Bird Maps" in html
+    assert "Historical UK weather-radar and ERA5 reanalysis" in html
     assert "uk_boundary.geojson" not in javascript
     assert "devicePixelRatio" in javascript
     assert "periodControl" not in html
@@ -193,5 +193,7 @@ def test_static_ui_is_historical_not_forecast() -> None:
     assert 'isAvailable ? "#22ed5a" : "#f14640"' not in javascript
     assert "max_range_m" in javascript
     assert "drawRadarMarker" in javascript
+    assert "const MTR_CUTOFF_BIRDS_KM_H = 100" in javascript
+    assert "visibleModelCells" in javascript
     assert "COLOUR_SCHEMES" in javascript
     assert "colourSchemeSelect" in html

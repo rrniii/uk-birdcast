@@ -33,6 +33,8 @@ const state = {
   animation: null,
 };
 
+const MTR_CUTOFF_BIRDS_KM_H = 100;
+
 (async function initialise() {
   const config = await fetchJson("config.json", {data_base_url: "../"});
   state.base = (config.data_base_url || "../").replace(/\/$/, "");
@@ -261,7 +263,7 @@ function renderModelled() {
   state.statusRows = aggregateObservedRows(historicalRows.filter((row) => row.date === state.date && row.pulse === state.pulse));
   state.visibleRows = [];
   const metric = modelMetric();
-  const cells = state.modelFrame && state.modelFrame.cells || [];
+  const cells = visibleModelCells(state.modelFrame && state.modelFrame.cells || []);
   const values = cells.map((cell) => Number(cell[state.modelMetric])).filter(Number.isFinite);
   const mean = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
   document.getElementById("mapTitle").textContent = "Modelled migration";
@@ -276,6 +278,10 @@ function renderModelled() {
   renderRadarListForStatus();
   setLegend(activeScale(values), metric);
   drawMap();
+}
+
+function visibleModelCells(cells) {
+  return cells.filter((cell) => Number(cell.mtr_birds_km_h) >= MTR_CUTOFF_BIRDS_KM_H);
 }
 
 function observedMetric() {
@@ -297,7 +303,11 @@ function activeScale(values) {
   const manifest = activeManifest();
   const key = state.view === "modelled" ? state.modelMetric : state.metric;
   const published = manifest && manifest.colour_scales && manifest.colour_scales[key];
-  return applyColourScheme(published || fallbackScale(values, ["vid", "mtr_birds_km_h", "vid_birds_per_km2"].includes(key) ? "log10" : "linear"));
+  const scale = applyColourScheme(published || fallbackScale(values, ["vid", "mtr_birds_km_h", "vid_birds_per_km2"].includes(key) ? "log10" : "linear"));
+  if (state.view !== "modelled" || key !== "mtr_birds_km_h") return scale;
+  const minimum = Math.max(MTR_CUTOFF_BIRDS_KM_H, Number(scale.minimum));
+  const maximum = Math.max(minimum * 10, Number(scale.maximum));
+  return {...scale, minimum, maximum, ticks: logTicks(minimum, maximum)};
 }
 
 function applyColourScheme(scale) {
@@ -450,7 +460,7 @@ function traceGeometry(ctx, geometry, width, height) {
 }
 
 function drawModelledField(ctx, width, height) {
-  const cells = state.modelFrame && state.modelFrame.cells || [];
+  const cells = visibleModelCells(state.modelFrame && state.modelFrame.cells || []);
   if (!cells.length) return;
   const scale = activeScale(cells.map((cell) => Number(cell[state.modelMetric])));
   const grid = state.modelDayPayload && state.modelDayPayload.grid || {};
