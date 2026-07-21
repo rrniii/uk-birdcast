@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from birdcast_uk.archive import (
     aloft_daily_objects,
+    build_comparison_index,
     build_crosswalk,
     compare_vpts_profiles,
     load_vpts_rows,
@@ -87,3 +88,27 @@ def test_crosswalk_requires_explicit_mapping_and_keeps_unmatched_radars_visible(
     assert payload["entry_count"] == 1
     assert payload["entries"][0]["uk_radar"] == "chenies"
     assert payload["unmatched_uk_radars"] == ["jersey"]
+
+
+def test_comparison_index_only_publishes_reports_that_match_the_explicit_crosswalk() -> None:
+    crosswalk = build_crosswalk(
+        [{"slug": "chenies", "label": "Chenies"}],
+        [{"uk_radar": "chenies", "aloft_source": "baltrad", "aloft_radar": "ukche", "comparison_class": "exact"}],
+    )
+    report = {
+        "generated_at_utc": "2026-07-21T10:00:00Z",
+        "requested_time_utc": "2026-07-18T01:00:00Z",
+        "common_altitude_count": 25,
+        "time_difference_seconds": 0,
+        "within_time_tolerance": True,
+        "uk": {"provenance": {"radar": "chenies"}},
+        "aloft": {"provenance": {"source": "baltrad", "radar": "ukche"}},
+        "metrics": {"dens": {"count": 25, "bias": 1.0}},
+    }
+
+    index = build_comparison_index(crosswalk, [report, {**report, "uk": {"provenance": {"radar": "jersey"}}}])
+
+    assert index["status"] == "ready"
+    assert index["report_count"] == 1
+    assert index["entries"][0]["report_available"] is True
+    assert "rows" not in index["entries"][0]

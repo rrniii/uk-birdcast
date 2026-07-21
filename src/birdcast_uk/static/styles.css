@@ -185,6 +185,7 @@ dd { margin: 0; overflow-wrap: anywhere; }
 .crow-detail-heading { display: flex; justify-content: space-between; align-items: end; gap: 18px; margin-bottom: 12px; }
 .crow-detail-heading h2 { margin: 2px 0 0; font-size: 18px; }
 .crow-detail-heading > p { max-width: 440px; margin: 0; color: #aeb9b2; font-size: 11px; line-height: 1.45; }
+.archive-comparison-status { margin: -2px 0 12px; color: #aeb9b2; font-size: 11px; line-height: 1.45; }
 
 .plots { padding: 26px clamp(16px, 3vw, 42px); background: #e9eeea; color: #141916; }
 .section-heading { display: flex; justify-content: space-between; gap: 24px; align-items: end; }

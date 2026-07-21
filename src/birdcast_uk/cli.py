@@ -10,6 +10,7 @@ from pathlib import Path
 from .archive import (
     VptsObject,
     aloft_daily_objects,
+    build_comparison_index,
     build_crosswalk,
     compare_vpts_profiles,
     load_vpts_rows,
@@ -329,6 +330,23 @@ def cmd_archive_crosswalk(args: argparse.Namespace) -> int:
     payload = build_crosswalk(uk_radars, mappings)
     write_json(Path(args.output), payload)
     print(json.dumps({"wrote": args.output, "entry_count": payload["entry_count"]}, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_archive_comparison_index(args: argparse.Namespace) -> int:
+    crosswalk = json.loads(Path(args.crosswalk).read_text(encoding="utf-8"))
+    if not isinstance(crosswalk, dict):
+        raise ValueError("Crosswalk must be a JSON object")
+    reports: list[dict[str, object]] = []
+    report_directory = Path(args.reports_dir)
+    if report_directory.exists():
+        for path in sorted(report_directory.glob("*.json")):
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                reports.append(payload)
+    payload = build_comparison_index(crosswalk, reports)
+    write_json(Path(args.output), payload)
+    print(json.dumps({"wrote": args.output, "entry_count": payload["entry_count"], "report_count": payload["report_count"], "status": payload["status"]}, indent=2, sort_keys=True))
     return 0
 
 
@@ -670,6 +688,12 @@ def build_parser() -> argparse.ArgumentParser:
     archive_crosswalk.add_argument("--mappings", required=True)
     archive_crosswalk.add_argument("--output", required=True)
     archive_crosswalk.set_defaults(func=cmd_archive_crosswalk)
+
+    archive_index = archive_sub.add_parser("comparison-index")
+    archive_index.add_argument("--crosswalk", required=True)
+    archive_index.add_argument("--reports-dir", required=True)
+    archive_index.add_argument("--output", required=True)
+    archive_index.set_defaults(func=cmd_archive_comparison_index)
 
     observed_parser = subparsers.add_parser("observed")
     observed_sub = observed_parser.add_subparsers(required=True)

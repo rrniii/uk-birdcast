@@ -241,6 +241,64 @@ def write_comparison_report(report: dict[str, Any], output: Path) -> dict[str, A
     return {"ok": True, "output": str(output), "common_altitude_count": report["common_altitude_count"]}
 
 
+def build_comparison_index(
+    crosswalk: dict[str, Any], reports: Iterable[dict[str, Any]],
+) -> dict[str, Any]:
+    """Build a small dashboard index from explicit mappings and reports.
+
+    The index intentionally excludes profile rows. A report is visible only
+    when its UK and Aloft provenance agrees with a configured crosswalk entry.
+    """
+    configured = {
+        (
+            str(entry.get("uk_radar") or "").lower(),
+            str(entry.get("aloft_source") or ""),
+            str(entry.get("aloft_radar") or "").lower(),
+        ): entry
+        for entry in crosswalk.get("entries", [])
+    }
+    indexed: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for report in reports:
+        uk = report.get("uk", {}).get("provenance", {})
+        aloft = report.get("aloft", {}).get("provenance", {})
+        key = (
+            str(uk.get("radar") or "").lower(),
+            str(aloft.get("source") or ""),
+            str(aloft.get("radar") or "").lower(),
+        )
+        entry = configured.get(key)
+        if not entry:
+            continue
+        candidate = {
+            **entry,
+            "report_available": True,
+            "generated_at_utc": report.get("generated_at_utc"),
+            "requested_time_utc": report.get("requested_time_utc"),
+            "time_difference_seconds": report.get("time_difference_seconds"),
+            "within_time_tolerance": report.get("within_time_tolerance"),
+            "common_altitude_count": report.get("common_altitude_count"),
+            "metrics": report.get("metrics", {}),
+            "source_policy": report.get("source_policy"),
+        }
+        previous = indexed.get(key)
+        if previous is None or str(candidate.get("generated_at_utc") or "") > str(previous.get("generated_at_utc") or ""):
+            indexed[key] = candidate
+    entries = []
+    for key, entry in sorted(configured.items()):
+        entries.append(indexed.get(key, {**entry, "report_available": False}))
+    return {
+        "schema_version": "birdcast-uk-archive-comparison-index-1.0",
+        "generated_at_utc": utc_now(),
+        "status": "ready" if entries else "no_verified_pairs",
+        "entry_count": len(entries),
+        "report_count": sum(1 for entry in entries if entry["report_available"]),
+        "entries": entries,
+        "unmatched_uk_radars": crosswalk.get("unmatched_uk_radars", []),
+        "matching_policy": crosswalk.get("matching_policy"),
+        "source_policy": "The index contains no profile rows; UK and Aloft VPTS objects remain read only.",
+    }
+
+
 def _common_altitude_rows(
     uk_rows: Iterable[dict[str, Any]], aloft_rows: Iterable[dict[str, Any]]
 ) -> list[tuple[dict[str, Any], dict[str, Any]]]:

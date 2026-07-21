@@ -36,6 +36,7 @@ const state = {
   mapWasDragged: false,
   selectedRadar: null,
   vptsObjectUrlTemplate: "",
+  archiveComparisonIndex: null,
 };
 
 const MTR_CUTOFF_BIRDS_KM_H = 10;
@@ -44,12 +45,15 @@ const MTR_CUTOFF_BIRDS_KM_H = 10;
   const config = await fetchJson("config.json", {data_base_url: "../"});
   state.base = (config.data_base_url || "../").replace(/\/$/, "");
   state.vptsObjectUrlTemplate = config.vpts_object_url_template || "https://ncas-radar-o.s3-ext.jc.rl.ac.uk/uk-wsr-visualizer-public/ukmo-nimrod/vpts/current_ci_le4/{radar}/{yyyy}/{yyyymmdd}_{pulse}_vpts.csv";
-  const [historical, model] = await Promise.all([
+  const comparisonIndexUrl = config.archive_comparison_index_url || "";
+  const [historical, model, archiveComparisonIndex] = await Promise.all([
     fetchJson(`${state.base}/latest/historical.json`, null),
     fetchJson(`${state.base}/latest/gam-era5.json`, null),
+    fetchJson(comparisonIndexUrl, null),
   ]);
   state.historical = historical && historical.data_available ? historical : null;
   state.model = model && model.data_available ? model : null;
+  state.archiveComparisonIndex = archiveComparisonIndex;
   if (!state.historical && !state.model) {
     showUnavailable();
     configureControls();
@@ -855,6 +859,7 @@ function highlightRadar(point) {
 function syncCrowRadarDetail() {
   const section = document.getElementById("crowDetailSection");
   const detail = document.getElementById("crowRadarDetail");
+  const comparisonStatus = document.getElementById("archiveComparisonStatus");
   if (state.view !== "observed" || !state.selectedRadar) {
     section.hidden = true;
     return;
@@ -867,6 +872,18 @@ function syncCrowRadarDetail() {
   setCrowAttribute(detail, "pulse", state.pulse);
   setCrowAttribute(detail, "interval-hours", detail.getAttribute("interval-hours") || "24");
   setCrowAttribute(detail, "object-url-template", state.vptsObjectUrlTemplate);
+  comparisonStatus.textContent = archiveComparisonText(state.selectedRadar.slug);
+}
+
+function archiveComparisonText(radar) {
+  const index = state.archiveComparisonIndex;
+  if (!index) return "UK archive VPTS are available here. No UK-Aloft comparison index has been published.";
+  const entry = (index.entries || []).find((candidate) => candidate.uk_radar === radar);
+  if (!entry) return "No verified physical-radar UK-Aloft comparison is configured for this radar.";
+  if (!entry.report_available) return `${entry.comparison_class} UK-Aloft comparison configured; no comparison report is published yet.`;
+  const dens = entry.metrics && entry.metrics.dens;
+  const count = dens && dens.count;
+  return `${entry.comparison_class} UK-Aloft comparison published${count ? ` (${count} matched density levels)` : ""}.`;
 }
 
 function setCrowAttribute(element, name, value) {

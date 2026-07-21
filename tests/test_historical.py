@@ -205,6 +205,8 @@ def test_static_ui_is_historical_not_forecast() -> None:
     assert "const MTR_CUTOFF_BIRDS_KM_H = 10" in javascript
     assert "crow-radar-detail.js" in html
     assert "syncCrowRadarDetail" in javascript
+    assert "archiveComparisonText" in javascript
+    assert "archiveComparisonIndex" in javascript
     assert "visibleModelCells" in javascript
     assert "function availableModelDates()" in javascript
     assert "async function stepHour(direction)" in javascript

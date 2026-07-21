@@ -38,6 +38,18 @@ The crosswalk intentionally starts empty. Add a pair only after confirming that
 the two identifiers represent the same physical radar, or classify it as a
 documented nearby-radar comparison. The comparison command consumes two
 existing daily VPTS URLs and writes only a compact metrics/provenance report.
+Build the browser-facing index from that explicit crosswalk and a directory of
+such reports:
+
+```bash
+birdcast-uk archive comparison-index \
+  --crosswalk /path/to/crosswalk.json \
+  --reports-dir /path/to/comparison-reports \
+  --output /path/to/archive/comparisons/latest.json
+```
+
+The dashboard reads this optional index only. It never downloads, rewrites, or
+publishes profile rows from either archive.
 
 ## Data flow
 
