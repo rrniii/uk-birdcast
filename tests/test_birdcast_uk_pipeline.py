@@ -495,6 +495,21 @@ def test_slurm_scripts_initialise_jasmin_modules() -> None:
         assert content.index(". /etc/profile.d/modules.sh") < content.index("module load ")
 
 
+def test_grid_reconcile_validates_radar_range_status_not_legacy_land_mask_size() -> None:
+    script = (
+        Path(__file__).parents[1]
+        / "deploy"
+        / "slurm"
+        / "birdcast-uk-era5-grid-reconcile.sbatch"
+    ).read_text(encoding="utf-8")
+
+    assert "12841" not in script
+    assert 'p.get("domain_policy") == "union_of_radar_ranges"' in script
+    assert 'p.get("boundary") is None' in script
+    assert 'int(p["row_count"]) + 1' in script
+    assert 'mv "${temporary}.status.json" "${output}.status.json"' in script
+
+
 def test_vpts_inventory_accepts_a_pinned_common_end_date() -> None:
     script = (
         Path(__file__).parents[1]

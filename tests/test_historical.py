@@ -185,7 +185,7 @@ def test_static_ui_is_historical_not_forecast() -> None:
     assert "aggregateObservedRows" in javascript
     assert "clipToUK" not in javascript
     assert 'ctx.clip("evenodd")' not in javascript
-    assert "drawBoundary" not in javascript
+    assert "drawBoundary(ctx, rect.width, rect.height)" in javascript
     assert "ctx.fill(\"evenodd\")" not in javascript
     assert "Physical radar range; land and water" in javascript
     assert 'ctx.strokeStyle = "#050806"' in javascript

@@ -13,6 +13,7 @@ const state = {
   base: "../",
   historical: null,
   model: null,
+  boundary: null,
   yearPayload: null,
   modelDayPayload: null,
   view: "observed",
@@ -48,6 +49,9 @@ const state = {
     return;
   }
   if (!state.historical) state.view = "modelled";
+  const boundaryPath = (state.historical && state.historical.assets && state.historical.assets.boundary)
+    || (state.model && state.model.assets && state.model.assets.boundary);
+  state.boundary = await fetchJson(assetUrl(boundaryPath), null);
   state.pulse = (state.historical && state.historical.default_pulse) || "lp";
   configureControls();
   setViewAvailability();
@@ -381,6 +385,7 @@ function drawMap() {
   drawGraticule(ctx, rect.width, rect.height);
   if (state.view === "modelled") drawModelledField(ctx, rect.width, rect.height);
   else drawRadarValues(ctx, rect.width, rect.height);
+  drawBoundary(ctx, rect.width, rect.height);
   drawRadarMarkers(ctx, rect.width, rect.height);
 }
 
@@ -419,6 +424,28 @@ function drawGraticule(ctx, width, height) {
     const left = project(bounds.west, lat, width, height);
     const right = project(bounds.east, lat, width, height);
     ctx.beginPath(); ctx.moveTo(left.x, left.y); ctx.lineTo(right.x, right.y); ctx.stroke();
+  }
+}
+
+function drawBoundary(ctx, width, height) {
+  if (!state.boundary) return;
+  for (const feature of state.boundary.features || []) {
+    traceGeometry(ctx, feature.geometry, width, height);
+    ctx.strokeStyle = feature.properties.ADM0_A3 === "GBR" ? "rgba(242, 245, 243, .86)" : "rgba(135, 146, 140, .72)";
+    ctx.lineWidth = feature.properties.ADM0_A3 === "GBR" ? 1.3 : .75;
+    ctx.stroke();
+  }
+}
+
+function traceGeometry(ctx, geometry, width, height) {
+  const polygons = geometry.type === "MultiPolygon" ? geometry.coordinates : [geometry.coordinates];
+  ctx.beginPath();
+  for (const polygon of polygons) for (const ring of polygon) {
+    ring.forEach(([lon, lat], index) => {
+      const point = project(lon, lat, width, height);
+      if (index === 0) ctx.moveTo(point.x, point.y); else ctx.lineTo(point.x, point.y);
+    });
+    ctx.closePath();
   }
 }
 
