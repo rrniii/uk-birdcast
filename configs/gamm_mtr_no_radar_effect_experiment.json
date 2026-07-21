@@ -1,0 +1,29 @@
+{
+  "selection_id": "uk-gamm-mtr-no-radar-effect-experiment",
+  "selection_policy": "Leave-one-UK-radar-out GAMM experiment over 14 July 2025 to 13 July 2026. It retains the selected all-hour cyclic temporal structure and response transforms, but fits MTR without a radar random effect so site-specific intensity offsets cannot absorb shared spatial/meteorological signal unavailable at a held-out radar.",
+  "gamm_options": {
+    "spatial_k": 10,
+    "meteorology_interactions": [],
+    "temporal_smooths": ["day_of_year", "utc_hour"],
+    "temporal_interactions": ["seasonal_diurnal"],
+    "target_overrides": {
+      "mtr_birds_km_h": {
+        "intensity_transform": "sqrt",
+        "intensity_weights": "mtr_power",
+        "intensity_weight_power": 0.2,
+        "include_radar_random_effect": false
+      },
+      "vid_birds_per_km2": {
+        "intensity_transform": "cube_root",
+        "intensity_weights": "profile_count",
+        "include_radar_random_effect": false
+      },
+      "bird_u_ms": {
+        "vector_weights": "uniform"
+      },
+      "bird_v_ms": {
+        "vector_weights": "uniform"
+      }
+    }
+  }
+}
