@@ -84,7 +84,11 @@ if (!is.null(grid_path) && file.exists(grid_path)) {
   if (!all(c(grid_columns, predictors) %in% names(prediction_grid))) {
     stop("national ERA5 grid must include time_utc, coordinates, support, and all predictors")
   }
-  grid_timestamps <- as.POSIXct(prediction_grid$time_utc, format = "%Y-%m-%dT%H:%M:%OSZ", tz = "UTC")
+  # ERA5 grid CSVs are written from NumPy datetimes (for example
+  # 2025-07-14T00:00:00.000000000) while training rows use ISO UTC with Z.
+  # Convert both representations to the same UTC calendar covariates.
+  grid_time_text <- sub("Z$", "", sub("\\.[0-9]+Z?$", "", prediction_grid$time_utc))
+  grid_timestamps <- as.POSIXct(grid_time_text, format = "%Y-%m-%dT%H:%M:%S", tz = "UTC")
   if (any(is.na(grid_timestamps))) stop("national ERA5 grid contains invalid UTC timestamps")
   prediction_grid$day_of_year <- as.numeric(format(grid_timestamps, "%j"))
   prediction_grid$utc_hour <- as.numeric(format(grid_timestamps, "%H"))
