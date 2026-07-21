@@ -437,18 +437,17 @@ function currentBounds() {
 }
 
 function drawGraticule(ctx, width, height) {
-  const bounds = currentBounds();
   ctx.strokeStyle = "rgba(210, 225, 217, .13)";
   ctx.lineWidth = 1;
-  for (let lon = Math.ceil(bounds.west / 2) * 2; lon <= bounds.east; lon += 2) {
-    const top = project(lon, bounds.north, width, height);
-    const bottom = project(lon, bounds.south, width, height);
-    ctx.beginPath(); ctx.moveTo(top.x, top.y); ctx.lineTo(bottom.x, bottom.y); ctx.stroke();
+  for (let lon = -180; lon <= 180; lon += 2) {
+    const point = project(lon, 0, width, height);
+    if (point.x < 0 || point.x > width) continue;
+    ctx.beginPath(); ctx.moveTo(point.x, 0); ctx.lineTo(point.x, height); ctx.stroke();
   }
-  for (let lat = Math.ceil(bounds.south / 2) * 2; lat <= bounds.north; lat += 2) {
-    const left = project(bounds.west, lat, width, height);
-    const right = project(bounds.east, lat, width, height);
-    ctx.beginPath(); ctx.moveTo(left.x, left.y); ctx.lineTo(right.x, right.y); ctx.stroke();
+  for (let lat = -90; lat <= 90; lat += 2) {
+    const point = project(0, lat, width, height);
+    if (point.y < 0 || point.y > height) continue;
+    ctx.beginPath(); ctx.moveTo(0, point.y); ctx.lineTo(width, point.y); ctx.stroke();
   }
 }
 
@@ -537,14 +536,28 @@ function drawRadarValues(ctx, width, height) {
     const value = row && Number(row[state.metric]);
     if (!Number.isFinite(value)) continue;
     const point = project(radar.longitude, radar.latitude, width, height);
-    const glow = ctx.createRadialGradient(point.x, point.y, 1, point.x, point.y, 20);
+    const radius = radarRadiusPixels(radar, width, height, 50);
+    const footprint = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, radius);
     const colour = quantitativeColor(value, scale);
-    glow.addColorStop(0, colour);
-    glow.addColorStop(.35, colour);
-    glow.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = glow;
-    ctx.beginPath(); ctx.arc(point.x, point.y, 20, 0, Math.PI * 2); ctx.fill();
+    footprint.addColorStop(0, colour);
+    footprint.addColorStop(.82, colour);
+    footprint.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.save();
+    ctx.globalAlpha = .62;
+    ctx.fillStyle = footprint;
+    ctx.beginPath(); ctx.arc(point.x, point.y, radius, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = .9;
+    ctx.strokeStyle = colour;
+    ctx.lineWidth = .8;
+    ctx.beginPath(); ctx.arc(point.x, point.y, radius, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
   }
+}
+
+function radarRadiusPixels(radar, width, height, radiusKm) {
+  const centre = project(Number(radar.longitude), Number(radar.latitude), width, height);
+  const north = project(Number(radar.longitude), Number(radar.latitude) + radiusKm / 111.195, width, height);
+  return Math.max(2, Math.hypot(north.x - centre.x, north.y - centre.y));
 }
 
 function drawRadarMarkers(ctx, width, height) {

@@ -186,6 +186,9 @@ def test_static_ui_is_historical_not_forecast() -> None:
     assert 'fetchJson("regional-boundaries.geojson", null)' in javascript
     assert "function zoomMap(factor, focus)" in javascript
     assert "function beginMapDrag(event)" in javascript
+    assert "function radarRadiusPixels(radar, width, height, radiusKm)" in javascript
+    assert "radiusKm / 111.195" in javascript
+    assert "ctx.moveTo(point.x, 0); ctx.lineTo(point.x, height)" in javascript
     assert "periodControl" not in html
     assert "row.period" not in javascript
     assert "aggregateObservedRows" in javascript
