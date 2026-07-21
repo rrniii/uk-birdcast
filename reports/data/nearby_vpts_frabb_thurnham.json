@@ -1,0 +1,90 @@
+{
+  "schema_version": "birdcast-uk-nearby-vpts-structure-1.0",
+  "generated_at_utc": "2026-07-21T20:07:57Z",
+  "purpose": "Compare raw VPTS profile structure before modelling; no VP, VPTS, or PVOL products are created.",
+  "interpretation": "Sites are 154-172 km apart. Differences combine biological spatial variation with archive/product processing differences and must not be treated as co-located instrument bias.",
+  "pair_count": 1,
+  "pairs": [
+    {
+      "pair_id": "frabb_thurnham",
+      "aloft_radar": "frabb",
+      "uk_radar": "thurnham",
+      "distance_km": 155.3,
+      "aloft_label": "Abbeville",
+      "uk_label": "Thurnham",
+      "comparison_class": "nearby_radar_profile_structure",
+      "uk_pulse": "lp",
+      "altitude_band_m": [
+        200.0,
+        4000.0
+      ],
+      "matched_profile_count": 25793,
+      "matched_altitude_row_count": 515860,
+      "median_profile_time_offset_seconds": 108.0,
+      "downloaded_uk_file_count": 0,
+      "unavailable_uk_file_count": 64,
+      "variables": {
+        "dens": {
+          "count": 332021,
+          "uk_mean": 0.22807985037091028,
+          "aloft_mean": 0.10830748086733094,
+          "bias": 0.11977236950357933,
+          "rmse": 0.8768218825214066,
+          "correlation": -0.005044779573490461,
+          "median_uk_to_aloft_ratio": 14.71914255686647,
+          "median_log10_uk_to_aloft_ratio": 1.1678825115186304
+        },
+        "eta": {
+          "count": 317929,
+          "uk_mean": 7.018028647905664,
+          "aloft_mean": 3.056308314278904,
+          "bias": 3.9617203336267606,
+          "rmse": 17.428082853700825,
+          "correlation": 0.047233501448403284,
+          "median_uk_to_aloft_ratio": 3.445185080358904,
+          "median_log10_uk_to_aloft_ratio": null
+        },
+        "dbz": {
+          "count": 231085,
+          "uk_mean": -22.147567172252636,
+          "aloft_mean": -27.301686187520946,
+          "bias": 5.154119015268313,
+          "rmse": 13.20147503029602,
+          "correlation": 0.008430231373014973,
+          "median_uk_to_aloft_ratio": null,
+          "median_log10_uk_to_aloft_ratio": null
+        },
+        "u": {
+          "count": 3577,
+          "uk_mean": 1.2811042773273693,
+          "aloft_mean": 2.1696309614552303,
+          "bias": -0.8885266841278611,
+          "rmse": 9.504595397521793,
+          "correlation": 0.44486718378869,
+          "median_uk_to_aloft_ratio": 1.0648414137319298,
+          "median_log10_uk_to_aloft_ratio": null
+        },
+        "v": {
+          "count": 3577,
+          "uk_mean": 1.2402627900475258,
+          "aloft_mean": 1.8305015968739975,
+          "bias": -0.5902388068264716,
+          "rmse": 9.867985020740825,
+          "correlation": 0.32050730530850213,
+          "median_uk_to_aloft_ratio": 1.2914052844416695,
+          "median_log10_uk_to_aloft_ratio": null
+        },
+        "ff": {
+          "count": 3577,
+          "uk_mean": 10.982532848755941,
+          "aloft_mean": 9.317065820452019,
+          "bias": 1.6654670283039221,
+          "rmse": 8.249144727497027,
+          "correlation": 0.4012132753222859,
+          "median_uk_to_aloft_ratio": 1.0255259030363564,
+          "median_log10_uk_to_aloft_ratio": null
+        }
+      }
+    }
+  ]
+}
