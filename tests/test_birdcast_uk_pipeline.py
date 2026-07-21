@@ -171,7 +171,7 @@ def test_era5_requests_match_the_nine_model_predictors() -> None:
         "u_component_of_wind",
         "v_component_of_wind",
     )
-    assert ERA5_PRESSURE_LEVELS == ("850",)
+    assert ERA5_PRESSURE_LEVELS == ("925", "850", "700")
 
 
 def test_era5_period_request_contains_each_day_in_one_month(tmp_path: Path) -> None:
