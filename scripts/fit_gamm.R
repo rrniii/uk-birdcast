@@ -218,6 +218,7 @@ for (pulse in spec$pulses) {
     intensity_weight_power <- default_intensity_weight_power
     vector_weights <- default_vector_weights
     vector_wind_offset <- default_vector_wind_offset
+    excluded_predictors <- character()
     include_radar_random_effect <- default_include_radar_random_effect
     override <- target_overrides[[target]]
     if (!is.null(override)) {
@@ -227,6 +228,7 @@ for (pulse in spec$pulses) {
       if (!is.null(override$intensity_weight_power)) intensity_weight_power <- as.numeric(override$intensity_weight_power)
       if (!is.null(override$vector_weights)) vector_weights <- override$vector_weights
       if (!is.null(override$vector_wind_offset)) vector_wind_offset <- override$vector_wind_offset
+      if (!is.null(override$exclude_predictors)) excluded_predictors <- unlist(override$exclude_predictors)
       if (!is.null(override$include_radar_random_effect)) include_radar_random_effect <- isTRUE(override$include_radar_random_effect)
     }
     if (!(intensity_transform %in% c("cube_root", "sqrt", "log1p"))) stop(sprintf("unsupported intensity_transform for %s", target))
@@ -235,6 +237,7 @@ for (pulse in spec$pulses) {
     if (!(vector_weights %in% c("uniform", "mtr", "sqrt_mtr"))) stop(sprintf("unsupported vector_weights for %s", target))
     if (!(vector_wind_offset %in% c("none", "era5_850"))) stop(sprintf("unsupported vector_wind_offset for %s", target))
     if (vector_wind_offset != "none" && !(target %in% spec$vector_targets)) stop(sprintf("vector_wind_offset is only valid for vector targets, not %s", target))
+    if (length(setdiff(excluded_predictors, smooth_features))) stop(sprintf("target %s excludes undeclared or spatial predictors: %s", target, paste(setdiff(excluded_predictors, smooth_features), collapse = ", ")))
     if (intensity_weights == "mtr_power" && (is.null(intensity_weight_power) || !is.finite(intensity_weight_power) || intensity_weight_power < 0 || intensity_weight_power > 1)) {
       stop(sprintf("mtr_power intensity weighting requires intensity_weight_power in [0, 1] for %s", target))
     }
@@ -244,7 +247,7 @@ for (pulse in spec$pulses) {
     is_intensity <- target %in% spec$intensity_targets
     subset$response <- if (is_intensity && intensity_family == "tweedie") pmax(subset[[target]], 0) else if (is_intensity) transform_intensity(subset[[target]]) else subset[[target]] - wind_component(subset, target, vector_wind_offset)
     weights <- if (is_intensity) intensity_weight(subset) else vector_weight(subset)
-    formula <- fit_formula(target, smooth_features)
+    formula <- fit_formula(target, setdiff(smooth_features, excluded_predictors))
     held_out <- list()
     for (held_radar in unique(subset$radar)) {
       train <- subset[subset$radar != held_radar, , drop = FALSE]

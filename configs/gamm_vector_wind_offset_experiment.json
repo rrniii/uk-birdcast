@@ -1,7 +1,8 @@
 {
-  "selection_id": "uk-gamm-vector-wind-offset-experiment",
-  "selection_policy": "Targeted leave-one-UK-radar-out GAMM experiment. It preserves the selected intensity options and evaluates whether the LP vector residual relative to ERA5 850-hPa wind transfers more faithfully.",
+  "selection_id": "uk-gamm-vector-wind-residual-experiment",
+  "selection_policy": "Targeted leave-one-UK-radar-out GAMM experiment. It evaluates whether the LP vector residual relative to ERA5 850-hPa wind transfers more faithfully when the fixed wind baseline is not duplicated as a flexible GAMM term.",
   "gamm_options": {
+    "targets": ["bird_u_ms", "bird_v_ms"],
     "spatial_k": 10,
     "meteorology_interactions": [],
     "temporal_smooths": ["day_of_year", "utc_hour"],
@@ -10,11 +11,13 @@
       "bird_u_ms": {
         "vector_weights": "uniform",
         "vector_wind_offset": "era5_850",
+        "exclude_predictors": ["u_850_ms", "v_850_ms"],
         "include_radar_random_effect": false
       },
       "bird_v_ms": {
         "vector_weights": "uniform",
         "vector_wind_offset": "era5_850",
+        "exclude_predictors": ["u_850_ms", "v_850_ms"],
         "include_radar_random_effect": false
       }
     }
