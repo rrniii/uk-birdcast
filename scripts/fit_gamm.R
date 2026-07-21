@@ -30,6 +30,7 @@ intensity_family <- if (!is.null(options$intensity_family)) options$intensity_fa
 intensity_weights <- if (!is.null(options$intensity_weights)) options$intensity_weights else "profile_count"
 intensity_weight_power <- if (!is.null(options$intensity_weight_power)) as.numeric(options$intensity_weight_power) else NULL
 vector_weights <- if (!is.null(options$vector_weights)) options$vector_weights else "mtr"
+target_overrides <- if (!is.null(options$target_overrides)) options$target_overrides else list()
 spatial_k <- if (!is.null(options$spatial_k)) as.integer(options$spatial_k) else 10L
 covariate_k <- if (!is.null(options$covariate_k)) as.integer(options$covariate_k) else NULL
 interactions <- if (!is.null(options$meteorology_interactions)) unlist(options$meteorology_interactions) else character()
@@ -45,6 +46,11 @@ if (intensity_weights == "mtr_power" && (is.null(intensity_weight_power) || !is.
 }
 if (spatial_k < 3) stop("spatial_k must be at least 3")
 temporal_knots <- if (length(temporal_smooths)) list(day_of_year = c(0.5, 366.5), utc_hour = c(-0.5, 23.5)) else NULL
+default_intensity_transform <- intensity_transform
+default_intensity_family <- intensity_family
+default_intensity_weights <- intensity_weights
+default_intensity_weight_power <- intensity_weight_power
+default_vector_weights <- vector_weights
 predictors <- spec$predictors
 missing_predictors <- setdiff(predictors, names(data))
 if (length(missing_predictors)) {
@@ -187,6 +193,28 @@ for (pulse in spec$pulses) {
     pulse_prediction <- prediction_grid[, c("time_utc", "longitude", "latitude", "support"), drop = FALSE]
   }
   for (target in targets) {
+    # A single release can use independently validated response treatment for
+    # MTR, VID, and vectors while retaining one common GAMM predictor structure.
+    intensity_transform <- default_intensity_transform
+    intensity_family <- default_intensity_family
+    intensity_weights <- default_intensity_weights
+    intensity_weight_power <- default_intensity_weight_power
+    vector_weights <- default_vector_weights
+    override <- target_overrides[[target]]
+    if (!is.null(override)) {
+      if (!is.null(override$intensity_transform)) intensity_transform <- override$intensity_transform
+      if (!is.null(override$intensity_family)) intensity_family <- override$intensity_family
+      if (!is.null(override$intensity_weights)) intensity_weights <- override$intensity_weights
+      if (!is.null(override$intensity_weight_power)) intensity_weight_power <- as.numeric(override$intensity_weight_power)
+      if (!is.null(override$vector_weights)) vector_weights <- override$vector_weights
+    }
+    if (!(intensity_transform %in% c("cube_root", "sqrt", "log1p"))) stop(sprintf("unsupported intensity_transform for %s", target))
+    if (!(intensity_family %in% c("gaussian_transform", "tweedie"))) stop(sprintf("unsupported intensity_family for %s", target))
+    if (!(intensity_weights %in% c("profile_count", "uniform", "sqrt_mtr", "mtr", "mtr_power"))) stop(sprintf("unsupported intensity_weights for %s", target))
+    if (!(vector_weights %in% c("uniform", "mtr", "sqrt_mtr"))) stop(sprintf("unsupported vector_weights for %s", target))
+    if (intensity_weights == "mtr_power" && (is.null(intensity_weight_power) || !is.finite(intensity_weight_power) || intensity_weight_power < 0 || intensity_weight_power > 1)) {
+      stop(sprintf("mtr_power intensity weighting requires intensity_weight_power in [0, 1] for %s", target))
+    }
     required <- unique(c("radar", target, predictors))
     subset <- pulse_data[stats::complete.cases(pulse_data[, required, drop = FALSE]), , drop = FALSE]
     if (nrow(subset) < 30 || length(unique(subset$radar)) < 2) next
@@ -296,6 +324,7 @@ jsonlite::write_json(list(
     spatial_k = spatial_k, covariate_k = covariate_k, meteorology_interactions = interactions,
     temporal_smooths = temporal_smooths,
     temporal_interactions = temporal_interactions,
+    target_overrides = target_overrides,
     targets = targets
   )
 ), file.path(output_dir, "metrics.json"), auto_unbox = TRUE, pretty = TRUE)

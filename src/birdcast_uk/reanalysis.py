@@ -161,7 +161,13 @@ def prepare_training_table(
     return result
 
 
-def write_model_spec(output: Path, *, table: Path, model_family: str) -> dict[str, object]:
+def write_model_spec(
+    output: Path,
+    *,
+    table: Path,
+    model_family: str,
+    gamm_options_path: Path | None = None,
+) -> dict[str, object]:
     """Write the immutable fitting contract consumed by batch runners."""
 
     if model_family not in MODEL_FAMILIES:
@@ -170,6 +176,15 @@ def write_model_spec(output: Path, *, table: Path, model_family: str) -> dict[st
     features = list(table_payload.get("feature_columns") or [])
     if not features:
         raise ValueError("training table contains no recognised ERA5 feature columns")
+    gamm_options: dict[str, object] = {}
+    gamm_selection_id: str | None = None
+    if gamm_options_path is not None:
+        selection = _read_json(gamm_options_path)
+        candidate = selection.get("gamm_options")
+        if not isinstance(candidate, dict):
+            raise ValueError("GAMM options file must contain a gamm_options object")
+        gamm_options = candidate
+        gamm_selection_id = str(selection.get("selection_id") or "") or None
     payload = {
         "schema_version": REANALYSIS_SCHEMA_VERSION,
         "generated_at_utc": utc_now(),
@@ -182,13 +197,16 @@ def write_model_spec(output: Path, *, table: Path, model_family: str) -> dict[st
         "vector_targets": list(VECTOR_TARGETS),
         "predictors": ["easting_m", "northing_m", *features],
         "radar_random_effect": model_family == "gamm",
-        "time_predictors": [],
+        "time_predictors": list(gamm_options.get("temporal_smooths") or []),
         "validation": {
             "spatial": "leave-one-radar-out",
             "temporal": "contiguous blocked UTC windows",
             "metrics": ["rmse", "mae", "bias", "r_squared", "top_decile_precision", "top_decile_recall", "speed_mae", "direction_mae_deg"],
         },
     }
+    if model_family == "gamm" and gamm_options:
+        payload["gamm_options"] = gamm_options
+        payload["gamm_selection_id"] = gamm_selection_id
     write_json(output, payload)
     return payload
 

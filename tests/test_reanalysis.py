@@ -88,6 +88,33 @@ def test_prepare_table_is_pulse_separated_and_has_no_time_predictor(tmp_path: Pa
     assert "rows" not in table
 
 
+def test_model_spec_embeds_selected_gamm_options(tmp_path: Path) -> None:
+    joined = tmp_path / "joined.json"
+    joined.write_text(json.dumps({"rows": _joined_rows()}), encoding="utf-8")
+    prepare_training_table(joined_features=joined, output=tmp_path / "table.json", window_days=365)
+    selection = tmp_path / "selection.json"
+    selection.write_text(
+        json.dumps(
+            {
+                "selection_id": "test-selection",
+                "gamm_options": {"temporal_smooths": ["day_of_year", "utc_hour"], "spatial_k": 10},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    spec = write_model_spec(
+        tmp_path / "gamm.json",
+        table=tmp_path / "table.json",
+        model_family="gamm",
+        gamm_options_path=selection,
+    )
+
+    assert spec["gamm_selection_id"] == "test-selection"
+    assert spec["gamm_options"]["spatial_k"] == 10
+    assert spec["time_predictors"] == ["day_of_year", "utc_hour"]
+
+
 def test_prepare_table_accepts_decimal_pressure_level_keys(tmp_path: Path) -> None:
     rows = _joined_rows()
     replacements = {

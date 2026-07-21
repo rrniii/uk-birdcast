@@ -21,9 +21,11 @@ set -u
 : "${BIRDCAST_UK_PYTHON:?Set the project Python executable}"
 
 mkdir -p "$BIRDCAST_UK_REANALYSIS_RUN_DIR/gamm"
+gamm_options="${BIRDCAST_UK_GAMM_OPTIONS:-$BIRDCAST_UK_ROOT/configs/gamm_uk_holdout_selected.json}"
 "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli reanalysis spec \
   --table "$BIRDCAST_UK_REANALYSIS_TRAINING_TABLE" \
   --model-family gamm \
+  --gamm-options "$gamm_options" \
   --output "$BIRDCAST_UK_REANALYSIS_RUN_DIR/gamm-spec.json"
 module load jasr/4.4/v20250704
 Rscript "$BIRDCAST_UK_ROOT/scripts/fit_gamm.R" \

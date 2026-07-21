@@ -414,7 +414,12 @@ def cmd_reanalysis_prepare(args: argparse.Namespace) -> int:
 
 
 def cmd_reanalysis_spec(args: argparse.Namespace) -> int:
-    result = write_model_spec(Path(args.output), table=Path(args.table), model_family=args.model_family)
+    result = write_model_spec(
+        Path(args.output),
+        table=Path(args.table),
+        model_family=args.model_family,
+        gamm_options_path=Path(args.gamm_options) if args.gamm_options else None,
+    )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 
@@ -743,6 +748,7 @@ def build_parser() -> argparse.ArgumentParser:
     reanalysis_spec = reanalysis_sub.add_parser("spec")
     reanalysis_spec.add_argument("--table", required=True)
     reanalysis_spec.add_argument("--model-family", choices=["gamm", "xgboost"], required=True)
+    reanalysis_spec.add_argument("--gamm-options")
     reanalysis_spec.add_argument("--output", required=True)
     reanalysis_spec.set_defaults(func=cmd_reanalysis_spec)
     reanalysis_compare = reanalysis_sub.add_parser("compare")
