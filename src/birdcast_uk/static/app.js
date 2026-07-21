@@ -34,6 +34,8 @@ const state = {
   mapView: {zoom: 1, panX: 0, panY: 0},
   mapDrag: null,
   mapWasDragged: false,
+  selectedRadar: null,
+  vptsObjectUrlTemplate: "",
 };
 
 const MTR_CUTOFF_BIRDS_KM_H = 10;
@@ -41,6 +43,7 @@ const MTR_CUTOFF_BIRDS_KM_H = 10;
 (async function initialise() {
   const config = await fetchJson("config.json", {data_base_url: "../"});
   state.base = (config.data_base_url || "../").replace(/\/$/, "");
+  state.vptsObjectUrlTemplate = config.vpts_object_url_template || "https://ncas-radar-o.s3-ext.jc.rl.ac.uk/uk-wsr-visualizer-public/ukmo-nimrod/vpts/current_ci_le4/{radar}/{yyyy}/{yyyymmdd}_{pulse}_vpts.csv";
   const [historical, model] = await Promise.all([
     fetchJson(`${state.base}/latest/historical.json`, null),
     fetchJson(`${state.base}/latest/gam-era5.json`, null),
@@ -247,6 +250,7 @@ function renderObserved() {
   renderPlots((state.historical.assets && state.historical.assets.plots) || []);
   setLegend(activeScale(values), metric);
   drawMap();
+  syncCrowRadarDetail();
 }
 
 function aggregateObservedRows(rows) {
@@ -293,6 +297,7 @@ function renderModelled() {
   renderRadarListForStatus();
   setLegend(activeScale(values), metric);
   drawMap();
+  document.getElementById("crowDetailSection").hidden = true;
 }
 
 function visibleModelCells(cells) {
@@ -842,7 +847,30 @@ function highlightRadar(point) {
     const value = point.row && Number(point.row[state.metric]);
     document.getElementById("networkValue").textContent = Number.isFinite(value) ? observedMetric().format(value) : "No observation";
     document.getElementById("networkUnit").textContent = point.radar.label;
+    state.selectedRadar = point.radar;
+    syncCrowRadarDetail();
   }
+}
+
+function syncCrowRadarDetail() {
+  const section = document.getElementById("crowDetailSection");
+  const detail = document.getElementById("crowRadarDetail");
+  if (state.view !== "observed" || !state.selectedRadar) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+  document.getElementById("crowDetailHeading").textContent = `${state.selectedRadar.label} raw radar profiles`;
+  setCrowAttribute(detail, "radar", state.selectedRadar.slug);
+  setCrowAttribute(detail, "radar-label", state.selectedRadar.label);
+  setCrowAttribute(detail, "date", state.date);
+  setCrowAttribute(detail, "pulse", state.pulse);
+  setCrowAttribute(detail, "interval-hours", detail.getAttribute("interval-hours") || "24");
+  setCrowAttribute(detail, "object-url-template", state.vptsObjectUrlTemplate);
+}
+
+function setCrowAttribute(element, name, value) {
+  if (element.getAttribute(name) !== String(value)) element.setAttribute(name, value);
 }
 
 function showUnavailable() {

@@ -11,7 +11,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 
-from .config import OBJECT_PREFIX, PROCESSING_VERSION
+from .config import OBJECT_PREFIX, PROCESSING_VERSION, UKMO_VPTS_CATALOG_URL
 from .radars import load_radars, radar_records
 
 
@@ -188,6 +188,7 @@ def build_static_artifacts(
         "live-uk-bird-maps-logo.jpg",
         "live-uk-bird-maps-icon.svg",
         "radar-marker.svg",
+        "crow-radar-detail.js",
         "regional-boundaries.geojson",
     ):
         source = static_root.joinpath(name)
@@ -198,6 +199,8 @@ def build_static_artifacts(
             "data_base_url": data_base_url,
             "generated_at_utc": generated_at,
             "object_prefix": object_prefix,
+            "vpts_catalog_url": UKMO_VPTS_CATALOG_URL,
+            "vpts_object_url_template": "https://ncas-radar-o.s3-ext.jc.rl.ac.uk/uk-wsr-visualizer-public/ukmo-nimrod/vpts/current_ci_le4/{radar}/{yyyy}/{yyyymmdd}_{pulse}_vpts.csv",
         },
     )
 
@@ -227,6 +230,7 @@ def install_static_site(
         "live-uk-bird-maps-logo.jpg",
         "live-uk-bird-maps-icon.svg",
         "radar-marker.svg",
+        "crow-radar-detail.js",
         "regional-boundaries.geojson",
     )
     missing = [name for name in required_files if not (web_root / name).is_file()]
@@ -252,6 +256,8 @@ def install_static_site(
             "data_base_url": data_base_url.rstrip("/"),
             "generated_at_utc": generated_at,
             "object_prefix": object_prefix,
+            "vpts_catalog_url": UKMO_VPTS_CATALOG_URL,
+            "vpts_object_url_template": "https://ncas-radar-o.s3-ext.jc.rl.ac.uk/uk-wsr-visualizer-public/ukmo-nimrod/vpts/current_ci_le4/{radar}/{yyyy}/{yyyymmdd}_{pulse}_vpts.csv",
         },
     )
     site_root.chmod(0o755)

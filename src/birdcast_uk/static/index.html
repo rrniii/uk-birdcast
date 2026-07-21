@@ -133,6 +133,17 @@
             <p id="interpretationText">These are historical radar-derived migration products, not a forecast or a real-time operational feed.</p>
           </section>
         </div>
+
+        <section id="crowDetailSection" class="crow-detail" hidden aria-labelledby="crowDetailHeading">
+          <div class="crow-detail-heading">
+            <div>
+              <p class="eyebrow">Radar profile explorer</p>
+              <h2 id="crowDetailHeading">Select a reporting radar</h2>
+            </div>
+            <p>Raw 10-minute VPTS profiles, calculated in the browser with the CROW metric definitions.</p>
+          </div>
+          <crow-radar-detail id="crowRadarDetail"></crow-radar-detail>
+        </section>
       </section>
 
       <section id="plotsSection" class="plots" aria-labelledby="plotsTitle">
@@ -150,6 +161,7 @@
     <footer>
       Historical research product using UK weather-radar bioRad VPTS and ERA5. Coastlines are visual context only and do not constrain the analysis.
     </footer>
+    <script src="crow-radar-detail.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
