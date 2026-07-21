@@ -72,6 +72,9 @@ def test_install_static_site_uses_same_origin_data_url(tmp_path: Path) -> None:
     assert (site_root / "live-uk-bird-maps-icon.svg").is_file()
     assert (site_root / "radar-marker.svg").is_file()
     assert (site_root / "regional-boundaries.geojson").is_file()
+    regional = json.loads((site_root / "regional-boundaries.geojson").read_text(encoding="utf-8"))
+    regional_codes = {feature["properties"]["ADM0_A3"] for feature in regional["features"]}
+    assert {"GBR", "IRL", "JEY", "FRA", "DEU", "ESP", "SWE", "POL"} <= regional_codes
     assert (site_root / "config.json").stat().st_mode & 0o777 == 0o644
 
 
