@@ -9,6 +9,36 @@ The public product is intentionally historical. Radar delivery is delayed, so
 forecast generation and ECMWF Open Data retrieval are dormant. ERA5 is retained
 as an independent historical weather flow for attribution and model analysis.
 
+## Archive access and Aloft comparisons
+
+UK Bird Maps reads the existing UK VPTS CSV archive directly from the JASMIN
+Object Store. Aloft VPTS are read directly from the published Aloft bucket.
+An individual VP is selected in memory from an existing VPTS object; the project
+does not write new VP or VPTS files, recalculate a replacement archive, or
+republish source data.
+
+Discover daily Aloft files for a known radar and period:
+
+```bash
+birdcast-uk archive aloft-coverage \
+  --radar seang --start-day 2020-08-29 --end-day 2020-08-30 \
+  --source baltrad --output /path/to/aloft-coverage.json
+```
+
+Create the explicit UK-to-Aloft comparison crosswalk:
+
+```bash
+birdcast-uk archive crosswalk \
+  --uk-radars data/historical-input/radars.json \
+  --mappings configs/aloft_crosswalk.example.json \
+  --output /path/to/crosswalk.json
+```
+
+The crosswalk intentionally starts empty. Add a pair only after confirming that
+the two identifiers represent the same physical radar, or classify it as a
+documented nearby-radar comparison. The comparison command consumes two
+existing daily VPTS URLs and writes only a compact metrics/provenance report.
+
 ## Data flow
 
 1. Read VPTS products from the public Object Store catalogue under

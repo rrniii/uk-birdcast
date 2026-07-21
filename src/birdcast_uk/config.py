@@ -25,6 +25,10 @@ UKMO_PVOL_CATALOG_URL = f"{DEFAULT_PUBLIC_BASE_URL}/ukmo-nimrod/catalog/pvol/cat
 UKMO_VPTS_CATALOG_URL = (
     f"{DEFAULT_PUBLIC_BASE_URL}/ukmo-nimrod/catalog/vpts/current_ci_le4/catalog.json"
 )
+ALOFT_PUBLIC_BASE_URL = "https://aloftdata.s3-eu-west-1.amazonaws.com"
+ALOFT_COVERAGE_URL = f"{ALOFT_PUBLIC_BASE_URL}/coverage.csv"
+ALOFT_SOURCES = ("baltrad", "uva", "ecog-04003")
+ARCHIVE_COMPARISON_PREFIX = f"{OBJECT_PREFIX}/archive/comparisons"
 
 VPTS_PULSE_POLICY = "lp_preferred_sp_fallback"
 VPTS_ALTITUDE_MIN_M = 200.0

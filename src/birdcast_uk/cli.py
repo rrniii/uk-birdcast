@@ -7,8 +7,19 @@ import json
 import os
 from pathlib import Path
 
+from .archive import (
+    VptsObject,
+    aloft_daily_objects,
+    build_crosswalk,
+    compare_vpts_profiles,
+    load_vpts_rows,
+    write_comparison_report,
+)
 from .bto import validate_aggregates, write_request_template, write_validation_status
 from .config import (
+    ALOFT_COVERAGE_URL,
+    ALOFT_PUBLIC_BASE_URL,
+    ALOFT_SOURCES,
     DEFAULT_BUCKET,
     DEFAULT_INTERNAL_ENDPOINT,
     DEFAULT_PUBLIC_BASE_URL,
@@ -30,7 +41,7 @@ from .observed import build_hourly_observations, build_observed_products
 from .publication import build_publication_plan, validate_release, write_sync_commands
 from .radars import radars_from_pvol_catalog, write_radars
 from .reanalysis import build_prediction_frames, compare_models, prepare_training_table, publish_reanalysis, publish_wide_reanalysis, write_model_spec
-from .static_artifacts import build_static_artifacts, install_static_site
+from .static_artifacts import build_static_artifacts, install_static_site, write_json
 from .vpts import build_catalog_inventory, build_historical_inventory, validate_manifest
 
 
@@ -257,6 +268,68 @@ def cmd_vpts_historical_inventory(args: argparse.Namespace) -> int:
         )
     )
     return 0 if payload["ok"] else 1
+
+
+def cmd_archive_aloft_coverage(args: argparse.Namespace) -> int:
+    objects = aloft_daily_objects(
+        radar=args.radar,
+        start_day=args.start_day,
+        end_day=args.end_day,
+        source=args.source,
+        coverage_url=args.coverage_url,
+        public_base_url=args.public_base_url,
+    )
+    payload = {
+        "schema_version": "birdcast-uk-aloft-coverage-1.0",
+        "source": args.source,
+        "radar": args.radar.lower(),
+        "start_day": args.start_day,
+        "end_day": args.end_day,
+        "object_count": len(objects),
+        "objects": [obj.to_dict() for obj in objects],
+        "source_policy": "Existing Aloft VPTS objects are catalogued read-only.",
+    }
+    write_json(Path(args.output), payload)
+    print(json.dumps({"wrote": args.output, "object_count": len(objects)}, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_archive_compare(args: argparse.Namespace) -> int:
+    uk = VptsObject(
+        source="jasmin-uk",
+        radar=args.uk_radar.lower(),
+        day=args.day.replace("-", ""),
+        url=args.uk_url,
+        pulse=args.pulse,
+    )
+    aloft = VptsObject(
+        source=args.aloft_source,
+        radar=args.aloft_radar.lower(),
+        day=args.day.replace("-", ""),
+        url=args.aloft_url,
+    )
+    report = compare_vpts_profiles(
+        load_vpts_rows(uk),
+        load_vpts_rows(aloft),
+        requested=args.datetime,
+        max_time_offset_seconds=args.max_time_offset_seconds,
+    )
+    result = write_comparison_report(report, Path(args.output))
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_archive_crosswalk(args: argparse.Namespace) -> int:
+    radar_payload = json.loads(Path(args.uk_radars).read_text(encoding="utf-8"))
+    uk_radars = radar_payload.get("radars", radar_payload) if isinstance(radar_payload, dict) else radar_payload
+    mapping_payload = json.loads(Path(args.mappings).read_text(encoding="utf-8"))
+    mappings = mapping_payload.get("mappings", mapping_payload) if isinstance(mapping_payload, dict) else mapping_payload
+    if not isinstance(uk_radars, list) or not isinstance(mappings, list):
+        raise ValueError("UK radar and mapping files must each contain a list")
+    payload = build_crosswalk(uk_radars, mappings)
+    write_json(Path(args.output), payload)
+    print(json.dumps({"wrote": args.output, "entry_count": payload["entry_count"]}, indent=2, sort_keys=True))
+    return 0
 
 
 def cmd_observed_build(args: argparse.Namespace) -> int:
@@ -566,6 +639,37 @@ def build_parser() -> argparse.ArgumentParser:
     vpts_validate.add_argument("--input", required=True)
     vpts_validate.add_argument("--output")
     vpts_validate.set_defaults(func=cmd_vpts_validate)
+
+    archive_parser = subparsers.add_parser("archive")
+    archive_sub = archive_parser.add_subparsers(required=True)
+    aloft_coverage = archive_sub.add_parser("aloft-coverage")
+    aloft_coverage.add_argument("--radar", required=True)
+    aloft_coverage.add_argument("--start-day", required=True)
+    aloft_coverage.add_argument("--end-day", required=True)
+    aloft_coverage.add_argument("--source", choices=ALOFT_SOURCES, default="baltrad")
+    aloft_coverage.add_argument("--coverage-url", default=ALOFT_COVERAGE_URL)
+    aloft_coverage.add_argument("--public-base-url", default=ALOFT_PUBLIC_BASE_URL)
+    aloft_coverage.add_argument("--output", required=True)
+    aloft_coverage.set_defaults(func=cmd_archive_aloft_coverage)
+
+    archive_compare = archive_sub.add_parser("compare")
+    archive_compare.add_argument("--uk-radar", required=True)
+    archive_compare.add_argument("--uk-url", required=True)
+    archive_compare.add_argument("--pulse", choices=["lp", "sp"], required=True)
+    archive_compare.add_argument("--aloft-radar", required=True)
+    archive_compare.add_argument("--aloft-source", choices=ALOFT_SOURCES, default="baltrad")
+    archive_compare.add_argument("--aloft-url", required=True)
+    archive_compare.add_argument("--day", required=True)
+    archive_compare.add_argument("--datetime", required=True)
+    archive_compare.add_argument("--max-time-offset-seconds", type=float, default=300.0)
+    archive_compare.add_argument("--output", required=True)
+    archive_compare.set_defaults(func=cmd_archive_compare)
+
+    archive_crosswalk = archive_sub.add_parser("crosswalk")
+    archive_crosswalk.add_argument("--uk-radars", required=True)
+    archive_crosswalk.add_argument("--mappings", required=True)
+    archive_crosswalk.add_argument("--output", required=True)
+    archive_crosswalk.set_defaults(func=cmd_archive_crosswalk)
 
     observed_parser = subparsers.add_parser("observed")
     observed_sub = observed_parser.add_subparsers(required=True)

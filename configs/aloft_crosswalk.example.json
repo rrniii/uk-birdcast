@@ -1,0 +1,4 @@
+{
+  "mappings": [],
+  "instructions": "Add a mapping only after confirming that the UK and Aloft identifiers represent the same physical radar, or document it as a nearby-radar comparison. Each mapping requires uk_radar, aloft_source, aloft_radar, comparison_class, max_time_offset_seconds and notes."
+}

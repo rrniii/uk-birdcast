@@ -11,7 +11,13 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 
-from .config import OBJECT_PREFIX, PROCESSING_VERSION, UKMO_VPTS_CATALOG_URL
+from .config import (
+    ALOFT_COVERAGE_URL,
+    ALOFT_PUBLIC_BASE_URL,
+    OBJECT_PREFIX,
+    PROCESSING_VERSION,
+    UKMO_VPTS_CATALOG_URL,
+)
 from .radars import load_radars, radar_records
 
 
@@ -201,6 +207,11 @@ def build_static_artifacts(
             "object_prefix": object_prefix,
             "vpts_catalog_url": UKMO_VPTS_CATALOG_URL,
             "vpts_object_url_template": "https://ncas-radar-o.s3-ext.jc.rl.ac.uk/uk-wsr-visualizer-public/ukmo-nimrod/vpts/current_ci_le4/{radar}/{yyyy}/{yyyymmdd}_{pulse}_vpts.csv",
+            "archive_sources": {
+                "jasmin-uk": {"kind": "vpts", "catalog_url": UKMO_VPTS_CATALOG_URL},
+                "aloft": {"kind": "vpts", "coverage_url": ALOFT_COVERAGE_URL, "public_base_url": ALOFT_PUBLIC_BASE_URL},
+            },
+            "archive_comparison_index_url": f"{data_base_url}/archive/comparisons/latest.json",
         },
     )
 
@@ -258,6 +269,11 @@ def install_static_site(
             "object_prefix": object_prefix,
             "vpts_catalog_url": UKMO_VPTS_CATALOG_URL,
             "vpts_object_url_template": "https://ncas-radar-o.s3-ext.jc.rl.ac.uk/uk-wsr-visualizer-public/ukmo-nimrod/vpts/current_ci_le4/{radar}/{yyyy}/{yyyymmdd}_{pulse}_vpts.csv",
+            "archive_sources": {
+                "jasmin-uk": {"kind": "vpts", "catalog_url": UKMO_VPTS_CATALOG_URL},
+                "aloft": {"kind": "vpts", "coverage_url": ALOFT_COVERAGE_URL, "public_base_url": ALOFT_PUBLIC_BASE_URL},
+            },
+            "archive_comparison_index_url": f"{data_base_url.rstrip('/')}/archive/comparisons/latest.json",
         },
     )
     site_root.chmod(0o755)
