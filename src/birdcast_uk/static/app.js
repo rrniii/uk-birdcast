@@ -1,4 +1,5 @@
 const FALLBACK_BOUNDS = {west: -11.5, east: 4.5, south: 46.5, north: 61.5};
+const VECTOR_COLOUR = "#d7ccff";
 const PALETTE = ["#101817", "#16484a", "#43887a", "#9fc57a", "#e5d17c", "#f2b863", "#e47b52", "#b94135"];
 const PALETTE_POSITIONS = [0, .18, .38, .58, .75, .90, .95, 1];
 const COLOUR_SCHEMES = {
@@ -477,9 +478,6 @@ function drawModelledField(ctx, width, height) {
 }
 
 function drawVectors(ctx, width, height, cells, scale) {
-  ctx.strokeStyle = "#f2b632";
-  ctx.fillStyle = "#f2b632";
-  ctx.lineWidth = 1.8;
   cells.forEach((cell, index) => {
     if (index % 4) return;
     const u = Number(cell.bird_u_ms), v = Number(cell.bird_v_ms), intensity = Number(cell.mtr_birds_km_h);
@@ -488,9 +486,18 @@ function drawVectors(ctx, width, height, cells, scale) {
     const magnitude = Math.hypot(u, v);
     const length = Math.min(22, 7 + magnitude * .8);
     const end = {x: start.x + u * length / Math.max(1, magnitude), y: start.y - v * length / Math.max(1, magnitude)};
-    ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
     const angle = Math.atan2(end.y - start.y, end.x - start.x);
-    ctx.beginPath(); ctx.moveTo(end.x, end.y); ctx.lineTo(end.x - 5 * Math.cos(angle - .5), end.y - 5 * Math.sin(angle - .5)); ctx.lineTo(end.x - 5 * Math.cos(angle + .5), end.y - 5 * Math.sin(angle + .5)); ctx.closePath(); ctx.fill();
+    // Pale lilac is not part of any quantitative palette; the dark keyline keeps it legible on bright cells.
+    ctx.strokeStyle = "rgba(7, 9, 14, .82)";
+    ctx.lineWidth = 3.5;
+    ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
+    ctx.strokeStyle = VECTOR_COLOUR;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
+    ctx.fillStyle = "rgba(7, 9, 14, .82)";
+    ctx.beginPath(); ctx.moveTo(end.x, end.y); ctx.lineTo(end.x - 6 * Math.cos(angle - .5), end.y - 6 * Math.sin(angle - .5)); ctx.lineTo(end.x - 6 * Math.cos(angle + .5), end.y - 6 * Math.sin(angle + .5)); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = VECTOR_COLOUR;
+    ctx.beginPath(); ctx.moveTo(end.x, end.y); ctx.lineTo(end.x - 4.4 * Math.cos(angle - .5), end.y - 4.4 * Math.sin(angle - .5)); ctx.lineTo(end.x - 4.4 * Math.cos(angle + .5), end.y - 4.4 * Math.sin(angle + .5)); ctx.closePath(); ctx.fill();
   });
 }
 

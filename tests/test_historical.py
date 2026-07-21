@@ -188,6 +188,8 @@ def test_static_ui_is_historical_not_forecast() -> None:
     assert "drawBoundary(ctx, rect.width, rect.height, true)" not in javascript
     assert "ctx.fill(\"evenodd\")" not in javascript
     assert "Physical radar range; land and water" in javascript
+    assert 'const VECTOR_COLOUR = "#d7ccff"' in javascript
+    assert 'ctx.strokeStyle = "#f2b632"' not in javascript
     assert "max_range_m" in javascript
     assert "drawRadarMarker" in javascript
     assert "COLOUR_SCHEMES" in javascript
