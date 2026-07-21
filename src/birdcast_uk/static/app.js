@@ -536,27 +536,33 @@ function drawRadarIcon(ctx, x, y, colour) {
   ctx.translate(x, y);
   ctx.strokeStyle = colour;
   ctx.fillStyle = colour;
-  ctx.lineWidth = 1.15;
+  ctx.scale(.58, .58);
+  ctx.translate(-16, -16);
+  ctx.lineWidth = 1.55;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
-  // Satellite-dish silhouette: a heavy lower bowl, light rim, feed, and flat base.
-  ctx.rotate(-.55);
-  ctx.beginPath();
-  ctx.ellipse(-1, 0, 4.8, 2, 0, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.lineWidth = 3.3;
-  ctx.beginPath();
-  ctx.ellipse(-1, 0, 4.8, 2, 0, Math.PI * .62, Math.PI * 1.4);
-  ctx.stroke();
+  // Compact tilted dish, receiver, and separate base, matched to radar-marker.svg.
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.moveTo(1.4, -1); ctx.lineTo(4.2, -4.5);
-  ctx.moveTo(1.9, 1.2); ctx.lineTo(4.2, 4.7);
+  ctx.ellipse(15.5, 15.5, 13, 5.4, Math.PI / 4, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.beginPath(); ctx.arc(4.2, -4.5, 1.45, 0, Math.PI * 2); ctx.fill();
+  ctx.lineWidth = 4.2;
+  ctx.beginPath();
+  ctx.moveTo(7.1, 6.7);
+  ctx.bezierCurveTo(3.6, 11.8, 4.3, 18.6, 8.8, 23);
+  ctx.bezierCurveTo(12.7, 26.8, 18.2, 28.2, 23, 26.7);
+  ctx.stroke();
+  ctx.lineWidth = 1.55;
+  ctx.beginPath();
+  ctx.moveTo(15.2, 13.1); ctx.lineTo(19.5, 8.8);
+  ctx.moveTo(17.2, 15.1); ctx.lineTo(21.5, 19.4);
+  ctx.stroke();
+  ctx.beginPath(); ctx.arc(20.1, 8.2, 2.25, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(8.4, 29); ctx.lineTo(23.6, 29); ctx.bezierCurveTo(24.4, 29, 24.8, 28.1, 24.2, 27.5); ctx.lineTo(20.8, 24); ctx.lineTo(14.6, 24); ctx.lineTo(7.8, 27.5); ctx.bezierCurveTo(7.2, 28.1, 7.6, 29, 8.4, 29); ctx.closePath();
+  ctx.fill();
   ctx.restore();
-  ctx.beginPath(); ctx.moveTo(x + 1.7, y + 5.6); ctx.lineTo(x + 8.3, y + 5.6); ctx.lineTo(x + 5, y + 2.1); ctx.closePath(); ctx.fill();
 }
 
 function project(lon, lat, width, height) {
