@@ -182,6 +182,9 @@ def test_static_ui_is_historical_not_forecast() -> None:
     assert "devicePixelRatio" in javascript
     assert "const longitudeFactor = Math.cos(centreLat * Math.PI / 180)" in javascript
     assert "const scale = Math.min(" in javascript
+    assert 'fetchJson("regional-boundaries.geojson", null)' in javascript
+    assert "function zoomMap(factor, focus)" in javascript
+    assert "function beginMapDrag(event)" in javascript
     assert "periodControl" not in html
     assert "row.period" not in javascript
     assert "aggregateObservedRows" in javascript

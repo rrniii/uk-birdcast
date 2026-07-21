@@ -64,7 +64,8 @@ input[type="date"], select {
 .toggle > span { margin: 0 !important; color: inherit !important; font-size: inherit !important; }
 
 .map-stage { position: relative; isolation: isolate; overflow: hidden; background: #000; }
-#mapCanvas { display: block; width: 100%; height: min(76vh, 860px); min-height: 620px; }
+#mapCanvas { display: block; width: 100%; height: clamp(680px, calc(100vh - 150px), 980px); min-height: 680px; cursor: grab; }
+#mapCanvas.dragging { cursor: grabbing; }
 .map-heading {
   position: absolute;
   z-index: 3;
@@ -105,6 +106,27 @@ input[type="date"], select {
 .radar-symbol { width: 15px; height: 15px; background: currentColor; mask: url("radar-marker.svg") center/contain no-repeat; }
 .radar-symbol.active { color: #22ed5a; }
 .radar-symbol.inactive { color: #f14640; }
+
+.map-controls {
+  position: absolute;
+  z-index: 4;
+  top: 124px;
+  left: clamp(16px, 3vw, 42px);
+  display: grid;
+  gap: 4px;
+}
+.map-controls button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid #53605a;
+  border-radius: 0;
+  background: rgba(5, 9, 8, .88);
+  color: #edf3ee;
+  font-size: 20px;
+  line-height: 1;
+}
+.map-controls button:hover { border-color: #edf3ee; background: #17201c; }
 
 .colour-legend {
   position: absolute;
@@ -179,6 +201,8 @@ footer { padding: 18px clamp(16px, 3vw, 42px); color: #77827c; background: #080b
   .view-tabs { border-right: 0; padding: 0 0 8px; }
   .control-bar { gap: 9px; }
   #mapCanvas { height: 68vh; min-height: 510px; }
+  .map-controls { top: 106px; left: 10px; }
+  .map-controls button { width: 30px; height: 30px; font-size: 17px; }
   .map-heading { top: 12px; left: 12px; right: 12px; }
   .radar-key { top: 82px; right: 12px; }
   .colour-legend { right: 10px; bottom: 14px; width: 94px; padding: 6px; }

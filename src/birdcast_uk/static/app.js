@@ -31,6 +31,9 @@ const state = {
   modelFrame: null,
   points: [],
   animation: null,
+  mapView: {zoom: 1, panX: 0, panY: 0},
+  mapDrag: null,
+  mapWasDragged: false,
 };
 
 const MTR_CUTOFF_BIRDS_KM_H = 10;
@@ -53,7 +56,8 @@ const MTR_CUTOFF_BIRDS_KM_H = 10;
   if (!state.historical) state.view = "modelled";
   const boundaryPath = (state.historical && state.historical.assets && state.historical.assets.boundary)
     || (state.model && state.model.assets && state.model.assets.boundary);
-  state.boundary = await fetchJson(assetUrl(boundaryPath), null);
+  state.boundary = await fetchJson("regional-boundaries.geojson", null)
+    || await fetchJson(assetUrl(boundaryPath), null);
   state.pulse = (state.historical && state.historical.default_pulse) || "lp";
   configureControls();
   setViewAvailability();
@@ -62,9 +66,19 @@ const MTR_CUTOFF_BIRDS_KM_H = 10;
   render();
   window.addEventListener("resize", drawMap);
   const canvas = document.getElementById("mapCanvas");
-  canvas.addEventListener("pointermove", showRadarTooltip);
+  canvas.addEventListener("pointerdown", beginMapDrag);
+  canvas.addEventListener("pointermove", handleMapPointerMove);
+  canvas.addEventListener("pointerup", endMapDrag);
+  canvas.addEventListener("pointercancel", endMapDrag);
+  canvas.addEventListener("wheel", zoomMapWithWheel, {passive: false});
   canvas.addEventListener("pointerleave", hideRadarTooltip);
-  canvas.addEventListener("click", selectRadarAtPoint);
+  canvas.addEventListener("click", (event) => {
+    if (!state.mapWasDragged) selectRadarAtPoint(event);
+    state.mapWasDragged = false;
+  });
+  document.getElementById("zoomInButton").addEventListener("click", () => zoomMap(1.35));
+  document.getElementById("zoomOutButton").addEventListener("click", () => zoomMap(1 / 1.35));
+  document.getElementById("resetMapButton").addEventListener("click", resetMapView);
 })();
 
 async function fetchJson(url, fallback) {
@@ -440,12 +454,20 @@ function drawGraticule(ctx, width, height) {
 
 function drawBoundary(ctx, width, height) {
   if (!state.boundary) return;
+  const plot = mapPlotBounds(width, height);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(plot.left, plot.top, plot.right - plot.left, plot.bottom - plot.top);
+  ctx.clip();
   for (const feature of state.boundary.features || []) {
     traceGeometry(ctx, feature.geometry, width, height);
-    ctx.strokeStyle = feature.properties.ADM0_A3 === "GBR" ? "rgba(242, 245, 243, .86)" : "rgba(135, 146, 140, .72)";
-    ctx.lineWidth = feature.properties.ADM0_A3 === "GBR" ? 1.3 : .75;
+    const code = feature.properties.ADM0_A3;
+    const home = ["GBR", "JEY", "GGY", "IMN"].includes(code);
+    ctx.strokeStyle = home ? "rgba(242, 245, 243, .9)" : "rgba(135, 146, 140, .72)";
+    ctx.lineWidth = home ? 1.3 : .8;
     ctx.stroke();
   }
+  ctx.restore();
 }
 
 function traceGeometry(ctx, geometry, width, height) {
@@ -585,16 +607,17 @@ function project(lon, lat, width, height) {
   );
   const centreX = (plot.left + plot.right) / 2;
   const centreY = (plot.top + plot.bottom) / 2;
+  const view = state.mapView;
   return {
-    x: centreX + (lon - centreLon) * longitudeFactor * scale,
-    y: centreY - (lat - centreLat) * scale,
+    x: centreX + (lon - centreLon) * longitudeFactor * scale * view.zoom + view.panX,
+    y: centreY - (lat - centreLat) * scale * view.zoom + view.panY,
   };
 }
 
 function mapPlotBounds(width, height) {
   const compact = width <= 850;
   const left = compact ? 10 : Math.max(20, width * .035);
-  const rightRail = compact ? 122 : Math.max(180, width * .18);
+  const rightRail = compact ? 122 : 156;
   const topRail = compact ? 108 : 84;
   const bottomRail = compact ? 106 : 48;
   const top = Math.min(height - 120, topRail);
@@ -604,6 +627,59 @@ function mapPlotBounds(width, height) {
     top,
     bottom: Math.max(top + 160, height - bottomRail),
   };
+}
+
+function zoomMap(factor, focus) {
+  const canvas = document.getElementById("mapCanvas");
+  const rect = canvas.getBoundingClientRect();
+  const plot = mapPlotBounds(rect.width, rect.height);
+  const centre = {x: (plot.left + plot.right) / 2, y: (plot.top + plot.bottom) / 2};
+  const point = focus || centre;
+  const previous = state.mapView.zoom;
+  const next = Math.max(1, Math.min(8, previous * factor));
+  if (next === previous) return;
+  state.mapView.panX = point.x - centre.x - ((point.x - centre.x - state.mapView.panX) / previous) * next;
+  state.mapView.panY = point.y - centre.y - ((point.y - centre.y - state.mapView.panY) / previous) * next;
+  state.mapView.zoom = next;
+  drawMap();
+}
+
+function zoomMapWithWheel(event) {
+  event.preventDefault();
+  const rect = event.currentTarget.getBoundingClientRect();
+  zoomMap(event.deltaY < 0 ? 1.18 : 1 / 1.18, {x: event.clientX - rect.left, y: event.clientY - rect.top});
+}
+
+function resetMapView() {
+  state.mapView = {zoom: 1, panX: 0, panY: 0};
+  drawMap();
+}
+
+function beginMapDrag(event) {
+  if (event.button !== 0) return;
+  state.mapDrag = {pointerId: event.pointerId, x: event.clientX, y: event.clientY};
+  state.mapWasDragged = false;
+  event.currentTarget.setPointerCapture(event.pointerId);
+  event.currentTarget.classList.add("dragging");
+  hideRadarTooltip();
+}
+
+function handleMapPointerMove(event) {
+  if (!state.mapDrag || state.mapDrag.pointerId !== event.pointerId) return showRadarTooltip(event);
+  const deltaX = event.clientX - state.mapDrag.x;
+  const deltaY = event.clientY - state.mapDrag.y;
+  if (Math.abs(deltaX) + Math.abs(deltaY) > 1) state.mapWasDragged = true;
+  state.mapView.panX += deltaX;
+  state.mapView.panY += deltaY;
+  state.mapDrag.x = event.clientX;
+  state.mapDrag.y = event.clientY;
+  drawMap();
+}
+
+function endMapDrag(event) {
+  if (!state.mapDrag || state.mapDrag.pointerId !== event.pointerId) return;
+  state.mapDrag = null;
+  event.currentTarget.classList.remove("dragging");
 }
 
 function scalePosition(value, scale) {

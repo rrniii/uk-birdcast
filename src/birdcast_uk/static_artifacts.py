@@ -188,6 +188,7 @@ def build_static_artifacts(
         "live-uk-bird-maps-logo.jpg",
         "live-uk-bird-maps-icon.svg",
         "radar-marker.svg",
+        "regional-boundaries.geojson",
     ):
         source = static_root.joinpath(name)
         shutil.copyfile(source, web_dir / name)
@@ -226,6 +227,7 @@ def install_static_site(
         "live-uk-bird-maps-logo.jpg",
         "live-uk-bird-maps-icon.svg",
         "radar-marker.svg",
+        "regional-boundaries.geojson",
     )
     missing = [name for name in required_files if not (web_root / name).is_file()]
     if missing:
