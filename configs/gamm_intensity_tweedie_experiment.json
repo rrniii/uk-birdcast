@@ -1,0 +1,28 @@
+{
+  "selection_id": "uk-gamm-intensity-tweedie-experiment",
+  "selection_policy": "Leave-one-UK-radar-out BirdCast-style GAMM experiment over 14 July 2025 to 13 July 2026. It retains the selected spatial, ERA5, cyclic temporal, and vector structure, changing only the likelihood for positive MTR and VID responses. No hard-coded season, solar, or time-of-day exclusion is applied.",
+  "gamm_options": {
+    "spatial_k": 10,
+    "meteorology_interactions": [],
+    "temporal_smooths": ["day_of_year", "utc_hour"],
+    "temporal_interactions": ["seasonal_diurnal"],
+    "target_overrides": {
+      "mtr_birds_km_h": {
+        "intensity_family": "tweedie",
+        "intensity_weights": "mtr_power",
+        "intensity_weight_power": 0.2
+      },
+      "vid_birds_per_km2": {
+        "intensity_family": "tweedie",
+        "intensity_weights": "profile_count",
+        "include_radar_random_effect": false
+      },
+      "bird_u_ms": {
+        "vector_weights": "uniform"
+      },
+      "bird_v_ms": {
+        "vector_weights": "uniform"
+      }
+    }
+  }
+}
