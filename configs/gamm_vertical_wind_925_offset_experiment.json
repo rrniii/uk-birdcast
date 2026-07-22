@@ -1,0 +1,22 @@
+{
+  "selection_id": "uk-gamm-vertical-wind-925-offset-experiment",
+  "selection_policy": "Leave-one-UK-radar-out BirdCast-style GAMM experiment. It keeps the selected additive spatial, ERA5, cyclic temporal, and radar-effect structure, using 925-hPa wind as a fixed directional baseline and fitting the residual velocity without duplicate 925-hPa smooths. No season, solar, or time-of-day exclusion is applied.",
+  "gamm_options": {
+    "spatial_k": 10,
+    "meteorology_interactions": [],
+    "temporal_smooths": ["day_of_year", "utc_hour"],
+    "temporal_interactions": ["seasonal_diurnal"],
+    "target_overrides": {
+      "bird_u_ms": {
+        "vector_weights": "uniform",
+        "vector_wind_offset": "era5_925",
+        "exclude_predictors": ["u_925_ms", "v_925_ms"]
+      },
+      "bird_v_ms": {
+        "vector_weights": "uniform",
+        "vector_wind_offset": "era5_925",
+        "exclude_predictors": ["u_925_ms", "v_925_ms"]
+      }
+    }
+  }
+}

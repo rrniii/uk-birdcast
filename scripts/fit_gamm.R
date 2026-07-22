@@ -48,7 +48,7 @@ if (!(intensity_transform %in% c("cube_root", "sqrt", "log1p"))) stop("unsupport
 if (!(intensity_family %in% c("gaussian_transform", "tweedie"))) stop("unsupported intensity_family")
 if (!(intensity_weights %in% c("profile_count", "uniform", "sqrt_mtr", "mtr", "mtr_power"))) stop("unsupported intensity_weights")
 if (!(vector_weights %in% c("uniform", "mtr", "sqrt_mtr"))) stop("unsupported vector_weights")
-if (!(vector_wind_offset %in% c("none", "era5_850"))) stop("unsupported vector_wind_offset")
+if (!(vector_wind_offset %in% c("none", "era5_850", "era5_925", "era5_700"))) stop("unsupported vector_wind_offset")
 if (intensity_weights == "mtr_power" && (is.null(intensity_weight_power) || !is.finite(intensity_weight_power) || intensity_weight_power < 0 || intensity_weight_power > 1)) {
   stop("mtr_power intensity weighting requires intensity_weight_power in [0, 1]")
 }
@@ -202,14 +202,18 @@ vector_weight <- function(frame) {
   )
 }
 
-# For directional targets the ERA5 850-hPa wind can be treated as a known
+# For directional targets an ERA5 pressure-level wind can be treated as a known
 # physical baseline. The GAMM then learns the bird-air velocity residual and
 # adds the wind back for each prediction. This is still the same additive
 # spatial/ERA5 GAMM; it merely fixes the leading wind coefficient at one.
 wind_component <- function(frame, target, offset) {
   if (offset == "none") return(rep(0, nrow(frame)))
-  if (target == "bird_u_ms") return(frame$u_850_ms)
-  if (target == "bird_v_ms") return(frame$v_850_ms)
+  component <- switch(offset,
+    era5_850 = if (target == "bird_u_ms") "u_850_ms" else if (target == "bird_v_ms") "v_850_ms" else NULL,
+    era5_925 = if (target == "bird_u_ms") "u_925_ms" else if (target == "bird_v_ms") "v_925_ms" else NULL,
+    era5_700 = if (target == "bird_u_ms") "u_700_ms" else if (target == "bird_v_ms") "v_700_ms" else NULL
+  )
+  if (!is.null(component)) return(frame[[component]])
   stop(sprintf("wind offset is only valid for bird vector targets, not %s", target))
 }
 
@@ -257,7 +261,7 @@ for (pulse in spec$pulses) {
     if (intensity_family == "tweedie" && !statmod_available) stop("Tweedie GAMM responses require the statmod R package")
     if (!(intensity_weights %in% c("profile_count", "uniform", "sqrt_mtr", "mtr", "mtr_power"))) stop(sprintf("unsupported intensity_weights for %s", target))
     if (!(vector_weights %in% c("uniform", "mtr", "sqrt_mtr"))) stop(sprintf("unsupported vector_weights for %s", target))
-    if (!(vector_wind_offset %in% c("none", "era5_850"))) stop(sprintf("unsupported vector_wind_offset for %s", target))
+    if (!(vector_wind_offset %in% c("none", "era5_850", "era5_925", "era5_700"))) stop(sprintf("unsupported vector_wind_offset for %s", target))
     if (vector_wind_offset != "none" && !(target %in% spec$vector_targets)) stop(sprintf("vector_wind_offset is only valid for vector targets, not %s", target))
     if (length(setdiff(excluded_predictors, smooth_features))) stop(sprintf("target %s excludes undeclared or spatial predictors: %s", target, paste(setdiff(excluded_predictors, smooth_features), collapse = ", ")))
     if (intensity_weights == "mtr_power" && (is.null(intensity_weight_power) || !is.finite(intensity_weight_power) || intensity_weight_power < 0 || intensity_weight_power > 1)) {
