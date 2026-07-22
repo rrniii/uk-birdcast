@@ -214,3 +214,6 @@ def test_static_ui_is_historical_not_forecast() -> None:
     assert "window.setInterval" not in javascript
     assert "COLOUR_SCHEMES" in javascript
     assert "colourSchemeSelect" in html
+    assert 'id="arrowsLabel"' in html
+    assert 'state.showArrows && state.pulse === "sp"' in javascript
+    assert "LP vector transfer is not validated away from reporting radars" in javascript

@@ -231,6 +231,11 @@ function render() {
   document.getElementById("dateInput").value = state.date;
   document.getElementById("hourInput").value = state.hour;
   document.getElementById("hourValue").textContent = `${String(state.hour).padStart(2, "0")}:00`;
+  const vectorsValidated = state.view !== "modelled" || state.pulse === "sp";
+  const arrowsToggle = document.getElementById("arrowsToggle");
+  arrowsToggle.disabled = !vectorsValidated;
+  arrowsToggle.title = vectorsValidated ? "" : "LP vector transfer is not validated away from reporting radars";
+  document.getElementById("arrowsLabel").textContent = vectorsValidated ? "Bird vectors" : "Bird vectors (SP only)";
   document.getElementById("plotsSection").hidden = state.view === "modelled";
   if (state.view === "modelled") renderModelled(); else renderObserved();
 }
@@ -514,7 +519,7 @@ function drawModelledField(ctx, width, height) {
     }
   }
   ctx.globalAlpha = 1;
-  if (state.showArrows) drawVectors(ctx, width, height, cells, scale);
+  if (state.showArrows && state.pulse === "sp") drawVectors(ctx, width, height, cells, scale);
 }
 
 function drawVectors(ctx, width, height, cells, scale) {
