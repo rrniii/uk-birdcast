@@ -7,6 +7,16 @@
     "temporal_smooths": ["day_of_year", "utc_hour"],
     "temporal_interactions": ["seasonal_diurnal"],
     "target_overrides": {
+      "mtr_birds_km_h": {
+        "intensity_transform": "sqrt",
+        "intensity_weights": "mtr_power",
+        "intensity_weight_power": 0.2
+      },
+      "vid_birds_per_km2": {
+        "intensity_transform": "cube_root",
+        "intensity_weights": "profile_count",
+        "include_radar_random_effect": false
+      },
       "bird_u_ms": {
         "vector_weights": "uniform",
         "vector_wind_offset": "era5_700",
