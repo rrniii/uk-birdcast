@@ -1,0 +1,6 @@
+{
+  "selection_id": "uk-gamm-heldout-v2-sp-vector-925",
+  "selection_policy": "Use the selected 850-hPa GAMM for all intensity products and LP vectors. Use the 925-hPa wind-interaction GAMM only for SP u/v after it improves both leave-one-UK-radar-out and blocked-time R2.",
+  "component_selection_manifest": "artifacts/gamm-experiments/selected_uk_holdout_v3/component-selection.json",
+  "known_limitation": "LP velocity transfer remains weak under leave-one-radar-out validation, so LP vectors remain from the selected 850-hPa control and must retain uncertainty labelling. SP VID remains below the internal transfer threshold."
+}

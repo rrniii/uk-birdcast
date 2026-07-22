@@ -38,12 +38,40 @@ These are controlled GAMM parameter changes only. They retain the same
 archive, response target, radar-wise hold-out protocol, and all-hour/year
 sampling used by the benchmark.
 
-## Next Evaluation
+## Multi-Level ERA5 Evaluation
 
 A separate full-coverage ERA5 archive with 925, 850, and 700 hPa wind fields
-is being built in an experiment-only path. Its rebuild guard requires an exact
-match to the baseline UK table's row and pulse counts before fitting. The
-following BirdCast-style GAMM candidates will be evaluated automatically:
+was built in an experiment-only path. Its rebuild guard passed with an exact
+match to the baseline UK table: 142,614 rows (LP 114,796; SP 27,818), with all
+four added wind features present. All candidates retained the same UK VPTS
+archive, all-hour/year sampling, GAMM form, and radar-wise holdout method.
+
+| Change | LP MTR delta R2 | LP VID delta R2 | SP MTR delta R2 | LP u/v mean delta R2 | SP u/v mean delta R2 | Decision |
+|---|---:|---:|---:|---:|---:|---|
+| Tweedie intensity likelihood | +0.0282 | -0.1037 | -0.0299 | +0.0000 | +0.0000 | Reject: material VID and SP MTR loss |
+| 925/700 winds as smooth predictors | -0.0034 | +0.0006 | -0.0031 | +0.0027 | +0.0551 | Do not select globally: LP gain too small |
+| 925-hPa-only wind interaction | +0.0008 | +0.0016 | +0.0011 | +0.0025 | +0.0555 | Select for SP u/v only |
+| 925-hPa interaction with retained 850-hPa terms | +0.0008 | +0.0016 | +0.0011 | +0.0029 | +0.0317 | Reject: weaker SP v than 925-only interaction |
+| 925-hPa fixed wind residual | -0.0034 | +0.0006 | -0.0031 | -0.0168 | +0.0475 | Reject: LP vector regression |
+| 700-hPa fixed wind residual | -0.0034 | +0.0006 | -0.0031 | -0.0731 | -0.1679 | Reject: vector regression |
+
+The first 925/700 offset executions accidentally used generic intensity
+defaults. They are retained as auditable experiment artifacts but excluded
+from the table above. The corrected controls shown above use the identical
+response treatment as the retained benchmark.
+
+## V2 Selection Rule
+
+The original global-candidate gate requires primary intensity non-regression
+(no R2 loss greater than 0.01 for LP MTR, LP VID, or SP MTR) and a mean LP
+vector R2 gain of at least 0.02. No whole-model variant satisfies it, so no
+whole-model replacement is made.
+
+The 925-hPa interaction is selected only for SP `bird_u_ms` and `bird_v_ms`.
+It improves 16/17 radar-wise held-out sites for each component and improves
+both blocked-time R2 values (u: 0.3899 to 0.5686; v: 0.0935 to 0.3417). Every
+other component remains the benchmark artifact. The assembled component
+manifest verifies those inequalities and fingerprints each selected RDS file.
 
 1. all vertical winds as additional smooth predictors;
 2. a 925-hPa-only directional predictor treatment; and
