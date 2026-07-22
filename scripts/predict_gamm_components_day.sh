@@ -13,7 +13,10 @@ set -euo pipefail
 # Slurm jobs do not inherit an interactive JASMIN module session. Allow a
 # different R module to be supplied, while retaining the project runtime.
 if ! command -v Rscript >/dev/null 2>&1; then
+  # The site profile reads optional interactive shell variables.
+  set +u
   source /etc/profile
+  set -u
   module load "${BIRDCAST_UK_R_MODULE:-jasr/4.4/v20250704}"
 fi
 
