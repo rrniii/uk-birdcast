@@ -10,6 +10,13 @@ set -euo pipefail
 : "${BIRDCAST_UK_ROOT:?Set the uk-birdcast checkout root}"
 : "${SLURM_ARRAY_TASK_ID:?Run through a Slurm array}"
 
+# Slurm jobs do not inherit an interactive JASMIN module session. Allow a
+# different R module to be supplied, while retaining the project runtime.
+if ! command -v Rscript >/dev/null 2>&1; then
+  source /etc/profile
+  module load "${BIRDCAST_UK_R_MODULE:-jasr/4.4/v20250704}"
+fi
+
 mapfile -t grid_files < <(
   find "$BIRDCAST_UK_ERA5_GRID_DIR" -maxdepth 1 -type f -name 'era5_grid_*.csv' -print | sort
 )
