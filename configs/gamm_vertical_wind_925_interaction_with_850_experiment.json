@@ -1,0 +1,28 @@
+{
+  "selection_id": "uk-gamm-vertical-wind-925-interaction-with-850-experiment",
+  "selection_policy": "Leave-one-UK-radar-out BirdCast-style GAMM experiment. It retains the selected response treatments, additive 850-hPa ERA5 predictors, cyclic temporal smooths, and radar-effect structure, adding only a low-rank 925-hPa wind interaction. No season, solar, or time-of-day exclusion is applied.",
+  "gamm_options": {
+    "spatial_k": 10,
+    "meteorology_interactions": ["wind_925"],
+    "temporal_smooths": ["day_of_year", "utc_hour"],
+    "temporal_interactions": ["seasonal_diurnal"],
+    "target_overrides": {
+      "mtr_birds_km_h": {
+        "intensity_transform": "sqrt",
+        "intensity_weights": "mtr_power",
+        "intensity_weight_power": 0.2
+      },
+      "vid_birds_per_km2": {
+        "intensity_transform": "cube_root",
+        "intensity_weights": "profile_count",
+        "include_radar_random_effect": false
+      },
+      "bird_u_ms": {
+        "vector_weights": "uniform"
+      },
+      "bird_v_ms": {
+        "vector_weights": "uniform"
+      }
+    }
+  }
+}
