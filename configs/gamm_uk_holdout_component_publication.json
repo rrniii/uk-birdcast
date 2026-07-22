@@ -1,0 +1,13 @@
+{
+  "schema_version": "uk-gamm-component-publication-v1",
+  "selected_model_family": "gamm",
+  "selection_id": "uk-gamm-heldout-v2-sp-vector-925",
+  "selection_manifest": "artifacts/gamm-experiments/selected_uk_holdout_v3/component-selection.json",
+  "validation_scope": "Leave-one-UK-radar-out and blocked-time validation on the 14 July 2025 to 13 July 2026 UK VPTS archive.",
+  "interpretation": "Historical UK radar reanalysis. It is not an externally absolute-density-calibrated product.",
+  "limitations": [
+    "LP vector transfer remains weak away from reporting radars.",
+    "SP VID remains below the internal transfer threshold.",
+    "Nearby UK-to-Aloft comparisons are site-dependent and do not support a universal density conversion."
+  ]
+}
