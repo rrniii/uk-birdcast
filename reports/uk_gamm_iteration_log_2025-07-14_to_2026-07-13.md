@@ -72,11 +72,3 @@ It improves 16/17 radar-wise held-out sites for each component and improves
 both blocked-time R2 values (u: 0.3899 to 0.5686; v: 0.0935 to 0.3417). Every
 other component remains the benchmark artifact. The assembled component
 manifest verifies those inequalities and fingerprints each selected RDS file.
-
-1. all vertical winds as additional smooth predictors;
-2. a 925-hPa-only directional predictor treatment; and
-3. a low-rank 925-hPa wind interaction.
-
-The candidate comparison gate requires primary intensity non-regression (no
-R2 loss greater than 0.01 for LP MTR, LP VID, or SP MTR) and a mean LP vector
-R2 gain of at least 0.02 before a vertical candidate is eligible for follow-up.
