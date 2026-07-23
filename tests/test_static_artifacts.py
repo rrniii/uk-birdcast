@@ -71,6 +71,10 @@ def test_install_static_site_uses_same_origin_data_url(tmp_path: Path) -> None:
     assert (site_root / "live-uk-bird-maps-logo.jpg").is_file()
     assert (site_root / "live-uk-bird-maps-icon.svg").is_file()
     assert (site_root / "radar-marker.svg").is_file()
+    radar_marker = (site_root / "radar-marker.svg").read_text(encoding="utf-8")
+    assert 'viewBox="95 45 230 270"' in radar_marker
+    assert "105.27299,306.47299" in radar_marker
+    assert "currentColor" in radar_marker
     assert (site_root / "crow-radar-detail.js").is_file()
     assert (site_root / "regional-boundaries.geojson").is_file()
     assert "ukmo-nimrod/vpts/current_ci_le4" in config["vpts_object_url_template"]

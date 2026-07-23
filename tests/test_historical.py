@@ -202,6 +202,8 @@ def test_static_ui_is_historical_not_forecast() -> None:
     assert 'isAvailable ? "#22ed5a" : "#f14640"' not in javascript
     assert "max_range_m" in javascript
     assert "drawRadarMarker" in javascript
+    assert "const RADAR_MARKER_PATH = new Path2D" in javascript
+    assert "ctx.fill(RADAR_MARKER_PATH)" in javascript
     assert "const MTR_CUTOFF_BIRDS_KM_H = 10" in javascript
     assert "crow-radar-detail.js" in html
     assert "syncCrowRadarDetail" in javascript
