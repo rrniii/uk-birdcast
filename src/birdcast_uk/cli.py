@@ -121,6 +121,7 @@ def cmd_europe_stream_chunk(args: argparse.Namespace) -> int:
         chunk,
         output_root=Path(args.output_root),
         public_base_url=args.public_base_url,
+        release_id=args.release_id,
     )
     print(json.dumps({key: value for key, value in result.items() if key != "audits"}, indent=2, sort_keys=True))
     return 0
@@ -132,6 +133,7 @@ def cmd_europe_verify_chunk(args: argparse.Namespace) -> int:
         chunk,
         hourly_root=Path(args.hourly_root),
         public_base_url=args.public_base_url,
+        release_id=args.release_id,
     )
     write_fidelity_report(payload, Path(args.output))
     print(json.dumps(payload, indent=2, sort_keys=True))
@@ -698,12 +700,14 @@ def build_parser() -> argparse.ArgumentParser:
     europe_chunk.add_argument("--index", required=True, type=int)
     europe_chunk.add_argument("--output-root", required=True)
     europe_chunk.add_argument("--public-base-url", default=ALOFT_PUBLIC_BASE_URL)
+    europe_chunk.add_argument("--release-id", default="unversioned")
     europe_chunk.set_defaults(func=cmd_europe_stream_chunk)
     europe_verify_chunk = europe_sub.add_parser("verify-chunk")
     europe_verify_chunk.add_argument("--manifest", required=True)
     europe_verify_chunk.add_argument("--index", required=True, type=int)
     europe_verify_chunk.add_argument("--hourly-root", required=True)
     europe_verify_chunk.add_argument("--public-base-url", default=ALOFT_PUBLIC_BASE_URL)
+    europe_verify_chunk.add_argument("--release-id", default="unversioned")
     europe_verify_chunk.add_argument("--output", required=True)
     europe_verify_chunk.set_defaults(func=cmd_europe_verify_chunk)
     europe_verify_training = europe_sub.add_parser("verify-training")

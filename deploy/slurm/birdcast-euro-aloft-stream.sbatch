@@ -17,6 +17,7 @@ set -eo pipefail
 set -u
 
 : "${BIRDCAST_EURO_ROOT:?Set the immutable Europe release checkout}"
+: "${BIRDCAST_EURO_RELEASE:?Set the immutable Europe release identifier}"
 : "${BIRDCAST_EURO_PYTHON:?Set the branch Python executable}"
 : "${BIRDCAST_EURO_CHUNK_MANIFEST:?Set the radar-month JSONL manifest}"
 : "${BIRDCAST_EURO_HOURLY_ROOT:?Set the derived hourly output root}"
@@ -29,4 +30,5 @@ export PYTHONPATH="$BIRDCAST_EURO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 timeout --kill-after=60s 50m "$BIRDCAST_EURO_PYTHON" -m birdcast_uk.cli europe stream-chunk \
   --manifest "$BIRDCAST_EURO_CHUNK_MANIFEST" \
   --index "$SLURM_ARRAY_TASK_ID" \
-  --output-root "$BIRDCAST_EURO_HOURLY_ROOT"
+  --output-root "$BIRDCAST_EURO_HOURLY_ROOT" \
+  --release-id "$BIRDCAST_EURO_RELEASE"

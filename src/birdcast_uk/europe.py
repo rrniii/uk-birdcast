@@ -302,6 +302,7 @@ def stream_aloft_chunk(
     output_root: Path,
     public_base_url: str = ALOFT_PUBLIC_BASE_URL,
     opener: OpenUrl = urlopen,
+    release_id: str = "unversioned",
 ) -> dict[str, Any]:
     source = str(chunk["source"])
     radar = str(chunk["radar"])
@@ -311,7 +312,7 @@ def stream_aloft_chunk(
     manifest_path = output.with_suffix(output.suffix + ".manifest.json")
     if output.is_file() and manifest_path.is_file():
         existing = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if existing.get("status") == "complete":
+        if existing.get("status") == "complete" and existing.get("release_id") == release_id:
             return {**existing, "skipped": True}
     rows: list[dict[str, Any]] = []
     audits: list[dict[str, Any]] = []
@@ -344,6 +345,7 @@ def stream_aloft_chunk(
         "status": "complete",
         "generated_at_utc": utc_now(),
         "processing_version": EUROPE_PROCESSING_VERSION,
+        "release_id": release_id,
         "raw_source_persisted": False,
         "role": chunk.get("role"),
         "derived_hourly_path": str(output),

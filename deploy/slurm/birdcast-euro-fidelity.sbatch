@@ -18,6 +18,7 @@ set -eo pipefail
 set -u
 
 : "${BIRDCAST_EURO_ROOT:?Set the immutable Europe release checkout}"
+: "${BIRDCAST_EURO_RELEASE:?Set the immutable Europe release identifier}"
 : "${BIRDCAST_EURO_PYTHON:?Set the branch Python executable}"
 : "${BIRDCAST_EURO_CHUNK_MANIFEST:?Set the radar-month JSONL manifest}"
 : "${BIRDCAST_EURO_HOURLY_ROOT:?Set the derived hourly output root}"
@@ -31,4 +32,5 @@ mkdir -p "$BIRDCAST_EURO_FIDELITY_ROOT"
   --manifest "$BIRDCAST_EURO_CHUNK_MANIFEST" \
   --index "$SLURM_ARRAY_TASK_ID" \
   --hourly-root "$BIRDCAST_EURO_HOURLY_ROOT" \
-  --output "$BIRDCAST_EURO_FIDELITY_ROOT/${SLURM_ARRAY_TASK_ID}.json"
+  --output "$BIRDCAST_EURO_FIDELITY_ROOT/${SLURM_ARRAY_TASK_ID}.json" \
+  --release-id "$BIRDCAST_EURO_RELEASE"

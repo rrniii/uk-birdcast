@@ -186,6 +186,31 @@ def test_fidelity_reads_hive_partition_without_merging_source_column(tmp_path: P
     assert result["hourly_row_count"] == 1
 
 
+def test_fidelity_denies_a_partition_from_a_different_release(tmp_path: Path) -> None:
+    source = (
+        "radar,datetime,height,ff,dd,gap,dens,dbz,radar_latitude,radar_longitude\n"
+        "bejab,2026-07-01T00:00:00Z,200,10,90,FALSE,2,-10,51.1,3.1\n"
+    )
+    chunk = {"source": "baltrad", "radar": "bejab", "year": "2026", "month": "07", "role": "training", "days": ["20260701"]}
+    stream_aloft_chunk(
+        chunk, output_root=tmp_path, public_base_url="https://example", opener=opener(source), release_id="release-a"
+    )
+    try:
+        verify_aloft_chunk(
+            chunk, hourly_root=tmp_path, public_base_url="https://example", opener=opener(source), release_id="release-b"
+        )
+    except ValueError as error:
+        assert "declared Europe release" in str(error)
+    else:
+        raise AssertionError("a partition from another release must be denied")
+
+    result = stream_aloft_chunk(
+        chunk, output_root=tmp_path, public_base_url="https://example", opener=opener(source), release_id="release-b"
+    )
+    assert result["skipped"] is False
+    assert result["release_id"] == "release-b"
+
+
 def test_training_fidelity_rejects_transfer_and_non_sp_uk_rows(tmp_path: Path) -> None:
     cohort = tmp_path / "cohort.json"
     cohort.write_text(json.dumps({"entries": [

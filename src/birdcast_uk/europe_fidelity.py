@@ -25,6 +25,7 @@ def verify_aloft_chunk(
     hourly_root: Path,
     public_base_url: str = ALOFT_PUBLIC_BASE_URL,
     opener: OpenUrl | None = None,
+    release_id: str = "unversioned",
 ) -> dict[str, Any]:
     """Reconstruct a derived radar-month partition and reject any difference."""
 
@@ -39,6 +40,8 @@ def verify_aloft_chunk(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest.get("status") != "complete" or manifest.get("raw_source_persisted") is not False:
         raise ValueError("derived partition does not declare a complete raw-free stream")
+    if manifest.get("release_id") != release_id:
+        raise ValueError("derived partition was not produced by the declared Europe release")
 
     try:
         import pyarrow.parquet as pq
@@ -75,6 +78,7 @@ def verify_aloft_chunk(
         "status": "passed",
         "generated_at_utc": utc_now(),
         "raw_source_persisted": False,
+        "release_id": release_id,
         "chunk": {key: chunk[key] for key in ("source", "radar", "year", "month", "role")},
         "source_day_count": len(expected_days),
         "hourly_row_count": checked_rows,
