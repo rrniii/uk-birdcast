@@ -4,12 +4,10 @@
 from __future__ import annotations
 
 import argparse
+from collections import defaultdict
+from glob import glob
 import json
 from pathlib import Path
-
-
-def sql_literal(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
 
 
 def load_overrides(path: str | None) -> dict[str, dict[str, object]]:
@@ -28,25 +26,35 @@ def load_overrides(path: str | None) -> dict[str, dict[str, object]]:
 
 def build(args: argparse.Namespace) -> dict[str, object]:
     try:
-        import duckdb
+        import pyarrow.parquet as pq
     except ImportError as exc:
-        raise RuntimeError("duckdb is required") from exc
+        raise RuntimeError("pyarrow is required") from exc
 
     overrides = load_overrides(args.overrides)
-    con = duckdb.connect()
-    rows = con.execute(
-        f"""
-        SELECT lower(radar) AS radar,
-               avg(latitude) AS latitude,
-               avg(longitude) AS longitude,
-               count(*) AS hourly_rows
-        FROM read_parquet({sql_literal(args.aloft_parquet)},
-                          hive_partitioning=true, union_by_name=true)
-        WHERE latitude IS NOT NULL AND longitude IS NOT NULL
-        GROUP BY lower(radar)
-        ORDER BY radar
-        """
-    ).fetchall()
+    aggregate: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0, 0.0])
+    paths = sorted(glob(args.aloft_parquet, recursive=True))
+    if not paths:
+        raise ValueError("no derived Aloft hourly partitions matched")
+    for path in paths:
+        parquet = pq.ParquetFile(path)
+        for batch in parquet.iter_batches(columns=["radar", "latitude", "longitude"]):
+            for row in batch.to_pylist():
+                radar = str(row.get("radar") or "").lower()
+                latitude = row.get("latitude")
+                longitude = row.get("longitude")
+                if not radar or latitude is None or longitude is None:
+                    continue
+                values = aggregate[radar]
+                values[0] += float(latitude)
+                values[1] += float(longitude)
+                values[2] += 1
+    rows = [
+        (radar, latitude / count, longitude / count, int(count))
+        for radar, (latitude, longitude, count) in sorted(aggregate.items())
+        if count
+    ]
+    if not rows:
+        raise ValueError("derived Aloft hourly partitions contain no radar locations")
     radars: list[dict[str, object]] = []
     for radar, latitude, longitude, hourly_rows in rows:
         override = overrides.get(radar, {})
