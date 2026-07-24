@@ -157,3 +157,10 @@ The public artifact tree also retains `validation/source-fidelity.json`,
 `validation/era5-fidelity.json`, `validation/training-fidelity.json`, and
 `validation/model-validation.json`; the manifest links directly to the final
 held-out model report.
+
+Publication is a two-stage promotion. The JASMIN job first uploads all
+validated assets to `birdcast-euro/data` in the Object Store, then uploads
+`latest/reanalysis.json` last. The web host only replaces its Nginx artifact
+symlink after it has pulled that manifest and verified `release_status`,
+`data_available`, and the referenced fixed grid. A failed model, audit, or
+incomplete transfer cannot alter the public Europe tab.

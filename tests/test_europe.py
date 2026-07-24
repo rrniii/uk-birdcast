@@ -374,6 +374,21 @@ def test_europe_batch_jobs_pin_the_declared_release_and_bound_streaming() -> Non
     gamm = (slurm_dir / "birdcast-euro-gamm.sbatch").read_text(encoding="utf-8")
     assert "#SBATCH --cpus-per-task=1" in gamm
     assert "#SBATCH --mem=128G" in gamm
+    publish = (slurm_dir / "birdcast-euro-publish.sbatch").read_text(encoding="utf-8")
+    assert '--exclude "latest/reanalysis.json"' in publish
+    assert '"$target/latest/reanalysis.json"' in publish
+
+
+def test_europe_public_promotion_only_switches_a_complete_manifest() -> None:
+    root = Path(__file__).parents[1]
+    script = (root / "deploy/scripts/birdcast-euro-object-store-pull.sh").read_text(encoding="utf-8")
+    nginx = (root / "deploy/nginx/birdcast-uk.conf").read_text(encoding="utf-8")
+
+    assert 'manifest.get("release_status") != "published"' in script
+    assert 'manifest.get("data_available") is not True' in script
+    assert 'test -f "$stage/$grid"' in script
+    assert 'mv -Tf "$BIRDCAST_EURO_ARTIFACT_ROOT.next"' in script
+    assert "alias /opt/birdcast-euro/artifacts-current/;" in nginx
 
 
 def load_script(name: str):

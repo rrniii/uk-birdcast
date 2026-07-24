@@ -28,6 +28,10 @@ export PYTHONPATH="$BIRDCAST_EURO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 : "${BIRDCAST_EURO_TRAINING_FIDELITY:?Set the passed training fidelity report}"
 : "${BIRDCAST_EURO_MODEL_VALIDATION:?Set the passed GAMM validation report}"
 : "${BIRDCAST_EURO_PUBLICATION_FIDELITY:?Set publication fidelity report output}"
+: "${BIRDCAST_EURO_OBJECT_STORE_BUCKET:?Set the public Object Store bucket}"
+: "${BIRDCAST_EURO_OBJECT_STORE_ENDPOINT:?Set the public Object Store endpoint}"
+: "${BIRDCAST_EURO_AWS_PROFILE:?Set the Object Store AWS profile}"
+: "${BIRDCAST_EURO_OBJECT_PREFIX:?Set the public Object Store prefix}"
 
 module load jaspy/3.12/v20250704
 mkdir -p "$BIRDCAST_EURO_ARTIFACT_ROOT/validation"
@@ -44,3 +48,13 @@ cp "$BIRDCAST_EURO_MODEL_VALIDATION" "$BIRDCAST_EURO_ARTIFACT_ROOT/validation/mo
   --predictions "$BIRDCAST_EURO_PREDICTIONS" --output-root "$BIRDCAST_EURO_ARTIFACT_ROOT" \
   --source-fidelity "$BIRDCAST_EURO_SOURCE_FIDELITY" --training-fidelity "$BIRDCAST_EURO_TRAINING_FIDELITY" \
   --model-validation "$BIRDCAST_EURO_MODEL_VALIDATION" --output "$BIRDCAST_EURO_PUBLICATION_FIDELITY"
+
+# A public manifest is the promotion switch. All assets reach the Object Store
+# before it does, so a web host can never activate a partial release.
+target="s3://${BIRDCAST_EURO_OBJECT_STORE_BUCKET}/${BIRDCAST_EURO_OBJECT_PREFIX}"
+aws --profile "$BIRDCAST_EURO_AWS_PROFILE" --endpoint-url "$BIRDCAST_EURO_OBJECT_STORE_ENDPOINT" s3 sync \
+  "$BIRDCAST_EURO_ARTIFACT_ROOT" "$target" --acl public-read --only-show-errors \
+  --exclude "latest/reanalysis.json"
+aws --profile "$BIRDCAST_EURO_AWS_PROFILE" --endpoint-url "$BIRDCAST_EURO_OBJECT_STORE_ENDPOINT" s3 cp \
+  "$BIRDCAST_EURO_ARTIFACT_ROOT/latest/reanalysis.json" "$target/latest/reanalysis.json" \
+  --acl public-read --only-show-errors
