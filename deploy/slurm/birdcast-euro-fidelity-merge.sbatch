@@ -12,6 +12,7 @@
 
 set -euo pipefail
 : "${BIRDCAST_EURO_ROOT:?Set the immutable Europe release checkout}"
+: "${BIRDCAST_EURO_RELEASE:?Set the immutable Europe release identifier}"
 : "${BIRDCAST_EURO_PYTHON:?Set the branch Python executable}"
 export PYTHONPATH="$BIRDCAST_EURO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 : "${BIRDCAST_EURO_CHUNK_MANIFEST:?Set the radar-month JSONL manifest}"
@@ -21,4 +22,5 @@ export PYTHONPATH="$BIRDCAST_EURO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 "$BIRDCAST_EURO_PYTHON" "$BIRDCAST_EURO_ROOT/scripts/merge_europe_fidelity.py" \
   --manifest "$BIRDCAST_EURO_CHUNK_MANIFEST" \
   --reports-root "$BIRDCAST_EURO_FIDELITY_ROOT" \
-  --output "$BIRDCAST_EURO_FIDELITY_SUMMARY"
+  --output "$BIRDCAST_EURO_FIDELITY_SUMMARY" \
+  --release-id "$BIRDCAST_EURO_RELEASE"

@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 
-def merge(manifest: Path, reports_root: Path, output: Path) -> dict[str, object]:
+def merge(manifest: Path, reports_root: Path, output: Path, *, release_id: str) -> dict[str, object]:
     chunks = [json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip()]
     expected = {int(chunk["index"]): chunk for chunk in chunks}
     reports: dict[int, dict[str, object]] = {}
@@ -22,14 +22,16 @@ def merge(manifest: Path, reports_root: Path, output: Path) -> dict[str, object]
     missing = sorted(set(expected) - set(reports))
     unexpected = sorted(set(reports) - set(expected))
     failed = sorted(index for index, payload in reports.items() if payload.get("status") != "passed")
-    if missing or unexpected or failed:
+    stale = sorted(index for index, payload in reports.items() if payload.get("release_id") != release_id)
+    if missing or unexpected or failed or stale:
         raise ValueError(
             f"Europe source fidelity is incomplete: missing={len(missing)}, "
-            f"unexpected={len(unexpected)}, failed={len(failed)}"
+            f"unexpected={len(unexpected)}, failed={len(failed)}, stale={len(stale)}"
         )
     payload = {
         "schema_version": "birdcast-euro-fidelity-source-summary-1.0",
         "status": "passed",
+        "release_id": release_id,
         "raw_source_persisted": False,
         "expected_chunk_count": len(expected),
         "passed_chunk_count": len(reports),
@@ -48,5 +50,6 @@ if __name__ == "__main__":
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--reports-root", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--release-id", required=True)
     args = parser.parse_args()
-    print(json.dumps(merge(Path(args.manifest), Path(args.reports_root), Path(args.output)), indent=2))
+    print(json.dumps(merge(Path(args.manifest), Path(args.reports_root), Path(args.output), release_id=args.release_id), indent=2))
