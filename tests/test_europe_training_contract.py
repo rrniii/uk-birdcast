@@ -37,12 +37,14 @@ def test_runtime_spec_requires_passed_fidelity(tmp_path: Path) -> None:
     training.write_text("x\n1\n", encoding="utf-8")
     validation.write_text("x\n1\n", encoding="utf-8")
     source = tmp_path / "source.json"
+    era5 = tmp_path / "era5.json"
     fidelity = tmp_path / "training-fidelity.json"
     source.write_text(json.dumps({"status": "passed"}), encoding="utf-8")
+    era5.write_text(json.dumps({"status": "passed"}), encoding="utf-8")
     fidelity.write_text(json.dumps({"status": "passed"}), encoding="utf-8")
     output = tmp_path / "runtime.json"
     payload = _load("prepare_europe_model_spec.py").prepare(
-        spec, training, validation, fidelity, source, output
+        spec, training, validation, fidelity, source, era5, output
     )
     assert payload["training_csv"] == str(training)
     assert payload["frozen_input_sha256"]["training_csv"]

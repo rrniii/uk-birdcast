@@ -17,6 +17,7 @@ set -u
 : "${BIRDCAST_EURO_ROOT:?Set the immutable Europe release checkout}"
 : "${BIRDCAST_EURO_PYTHON:?Set the branch Python executable}"
 : "${BIRDCAST_EURO_SOURCE_FIDELITY:?Set the passed source fidelity summary}"
+: "${BIRDCAST_EURO_ERA5_FIDELITY:?Set the passed ERA5 fidelity summary}"
 : "${BIRDCAST_EURO_HOURLY_ROOT:?Set the derived hourly root}"
 : "${BIRDCAST_EURO_SITE_ERA5_ROOT:?Set the daily Europe ERA5 site-feature root}"
 : "${BIRDCAST_EURO_SITE_ERA5_TABLE:?Set the merged site-feature Parquet path}"
@@ -31,6 +32,7 @@ set -u
 : "${BIRDCAST_EURO_RUNTIME_MODEL_SPEC:?Set the immutable runtime GAMM spec output}"
 
 test "$("$BIRDCAST_EURO_PYTHON" -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "$BIRDCAST_EURO_SOURCE_FIDELITY")" = passed
+test "$("$BIRDCAST_EURO_PYTHON" -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "$BIRDCAST_EURO_ERA5_FIDELITY")" = passed
 module load jaspy/3.12/v20250704
 "$BIRDCAST_EURO_PYTHON" "$BIRDCAST_EURO_ROOT/scripts/merge_europe_era5_site_features.py" \
   --feature-root "$BIRDCAST_EURO_SITE_ERA5_ROOT" --output "$BIRDCAST_EURO_SITE_ERA5_TABLE" \
@@ -51,4 +53,5 @@ module load jaspy/3.12/v20250704
 "$BIRDCAST_EURO_PYTHON" "$BIRDCAST_EURO_ROOT/scripts/prepare_europe_model_spec.py" \
   --model-spec "$BIRDCAST_EURO_MODEL_SPEC" --training-csv "$BIRDCAST_EURO_TRAINING_CSV" \
   --validation-csv "$BIRDCAST_EURO_TRANSFER_CSV" --training-fidelity "$BIRDCAST_EURO_TRAINING_FIDELITY" \
-  --source-fidelity "$BIRDCAST_EURO_SOURCE_FIDELITY" --output "$BIRDCAST_EURO_RUNTIME_MODEL_SPEC"
+  --source-fidelity "$BIRDCAST_EURO_SOURCE_FIDELITY" --era5-fidelity "$BIRDCAST_EURO_ERA5_FIDELITY" \
+  --output "$BIRDCAST_EURO_RUNTIME_MODEL_SPEC"
