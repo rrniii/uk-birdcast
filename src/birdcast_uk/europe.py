@@ -453,6 +453,7 @@ def publish_europe_predictions(
     uk_sp_radar_count: int,
     validation_url: str,
     radars_json: Path | None = None,
+    release_status: str = "research-preview",
 ) -> dict[str, Any]:
     """Publish a fixed grid and immutable daily assets for the Europe page."""
 
@@ -533,6 +534,7 @@ def publish_europe_predictions(
         daily_asset_template=f"archive/reanalysis/{model_id}/{{date}}.json",
         validation_url=validation_url,
         output=latest / "reanalysis.json",
+        release_status=release_status,
         radar_asset=radar_asset,
     )
     return {

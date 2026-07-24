@@ -236,6 +236,7 @@ def test_prediction_publication_writes_fixed_grid_and_daily_assets(tmp_path: Pat
     )
 
     assert result["day_count"] == 1
+    assert result["manifest"]["release_status"] == "research-preview"
     day = json.loads((tmp_path / "out/archive/reanalysis/euro-v1/2026-07-01.json").read_text())
     assert len(day["frames"]) == 2
     assert day["frames"][0]["mtr_birds_km_h"] == [5.0]

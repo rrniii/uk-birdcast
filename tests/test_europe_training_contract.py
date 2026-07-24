@@ -4,6 +4,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 
 def _load(name: str):
     path = Path(__file__).parents[1] / "scripts" / name
@@ -44,3 +46,15 @@ def test_runtime_spec_requires_passed_fidelity(tmp_path: Path) -> None:
     )
     assert payload["training_csv"] == str(training)
     assert payload["frozen_input_sha256"]["training_csv"]
+
+
+def test_publication_denies_unpassed_model_validation(tmp_path: Path) -> None:
+    module = _load("validate_europe_publication.py")
+    source = tmp_path / "source.json"
+    training = tmp_path / "training.json"
+    model = tmp_path / "model.json"
+    for path in (source, training):
+        path.write_text(json.dumps({"status": "passed"}), encoding="utf-8")
+    model.write_text(json.dumps({"release_passed": False}), encoding="utf-8")
+    with pytest.raises(ValueError, match="model validation"):
+        module.validate(tmp_path / "missing.csv", tmp_path, source, training, model, tmp_path / "out.json")

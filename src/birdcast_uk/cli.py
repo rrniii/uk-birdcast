@@ -184,6 +184,7 @@ def cmd_europe_publish(args: argparse.Namespace) -> int:
         uk_sp_radar_count=args.uk_sp_radar_count,
         validation_url=args.validation_url,
         radars_json=Path(args.radars) if args.radars else None,
+        release_status=args.release_status,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
@@ -736,6 +737,7 @@ def build_parser() -> argparse.ArgumentParser:
     europe_publish.add_argument("--uk-sp-radar-count", required=True, type=int)
     europe_publish.add_argument("--validation-url", required=True)
     europe_publish.add_argument("--radars")
+    europe_publish.add_argument("--release-status", default="research-preview")
     europe_publish.set_defaults(func=cmd_europe_publish)
 
     radars_parser = subparsers.add_parser("radars")
