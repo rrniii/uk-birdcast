@@ -334,6 +334,9 @@ def test_europe_batch_jobs_pin_the_declared_release_and_bound_streaming() -> Non
 
     stream = (slurm_dir / "birdcast-euro-aloft-stream.sbatch").read_text(encoding="utf-8")
     assert "timeout --kill-after=60s 50m" in stream
+    gamm = (slurm_dir / "birdcast-euro-gamm.sbatch").read_text(encoding="utf-8")
+    assert "#SBATCH --cpus-per-task=1" in gamm
+    assert "#SBATCH --mem=128G" in gamm
 
 
 def load_script(name: str):

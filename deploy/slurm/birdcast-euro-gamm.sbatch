@@ -5,8 +5,11 @@
 #SBATCH --qos=long
 #SBATCH --partition=standard
 #SBATCH --time=48:00:00
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=192G
+# The ncas_radar long QoS currently permits one CPU per job and up to 128 GB.
+# mgcv uses a single R process here; retaining the complete fold set is more
+# important than requesting unschedulable parallel CPUs.
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=128G
 #SBATCH --output=logs/birdcast-euro-gamm-%j.out
 #SBATCH --error=logs/birdcast-euro-gamm-%j.err
 
