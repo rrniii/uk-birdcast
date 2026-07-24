@@ -23,10 +23,16 @@ def merge(manifest: Path, reports_root: Path, output: Path, *, release_id: str) 
     unexpected = sorted(set(reports) - set(expected))
     failed = sorted(index for index, payload in reports.items() if payload.get("status") != "passed")
     stale = sorted(index for index, payload in reports.items() if payload.get("release_id") != release_id)
-    if missing or unexpected or failed or stale:
+    mismatched = sorted(
+        index
+        for index, payload in reports.items()
+        if _chunk_identity(payload.get("chunk")) != _chunk_identity(expected.get(index))
+    )
+    if missing or unexpected or failed or stale or mismatched:
         raise ValueError(
             f"Europe source fidelity is incomplete: missing={len(missing)}, "
-            f"unexpected={len(unexpected)}, failed={len(failed)}, stale={len(stale)}"
+            f"unexpected={len(unexpected)}, failed={len(failed)}, stale={len(stale)}, "
+            f"mismatched={len(mismatched)}"
         )
     payload = {
         "schema_version": "birdcast-euro-fidelity-source-summary-1.0",
@@ -43,6 +49,15 @@ def merge(manifest: Path, reports_root: Path, output: Path, *, release_id: str) 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return payload
+
+
+def _chunk_identity(payload: object) -> tuple[str, str, str, str, str] | None:
+    if not isinstance(payload, dict):
+        return None
+    required = ("source", "radar", "year", "month", "role")
+    if any(key not in payload for key in required):
+        return None
+    return tuple(str(payload[key]) for key in required)
 
 
 if __name__ == "__main__":
