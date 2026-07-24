@@ -107,6 +107,11 @@ is never imputed as zero migration. Any other source-read error remains fatal.
 Freeze `configs/gamm_europe_aloft_uk_sp.json` with an immutable training path
 and run identifier, then submit:
 
+The Europe GAMM uses the nine predictor fields shared by the immutable UK SP
+model-year table and the independently reconstructed Europe ERA5 site table.
+The UK release did not retain 925 or 700 hPa winds, so those optional fields
+are intentionally excluded rather than imputed or silently dropped per row.
+
 ```bash
 export BIRDCAST_EURO_ROOT=$PWD
 export BIRDCAST_EURO_RSCRIPT=/gws/smf/j04/ncas_radar/software/miniconda3_radar_group_20200519/envs/R_4_10_biorad_pyart_3_8/bin/Rscript

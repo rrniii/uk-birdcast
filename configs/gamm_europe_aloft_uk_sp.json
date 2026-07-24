@@ -18,14 +18,10 @@
     "total_cloud_cover_fraction",
     "boundary_layer_height_m",
     "hourly_precipitation_m",
-    "u_925_ms",
-    "v_925_ms",
     "temperature_850_k",
     "relative_humidity_850_percent",
     "u_850_ms",
-    "v_850_ms",
-    "u_700_ms",
-    "v_700_ms"
+    "v_850_ms"
   ],
   "intensity_targets": [
     "mtr_birds_km_h",

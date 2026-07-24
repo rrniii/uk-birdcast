@@ -31,6 +31,22 @@ def test_training_contract_freezes_common_predictors(tmp_path: Path) -> None:
     assert payload["feature_ranges"]["u_850_ms"]["upper"] == 4
 
 
+def test_europe_model_spec_uses_the_frozen_uk_core_predictors() -> None:
+    spec_path = Path(__file__).parents[1] / "configs" / "gamm_europe_aloft_uk_sp.json"
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    assert spec["predictors"] == [
+        "surface_pressure_pa",
+        "mean_sea_level_pressure_pa",
+        "total_cloud_cover_fraction",
+        "boundary_layer_height_m",
+        "hourly_precipitation_m",
+        "temperature_850_k",
+        "relative_humidity_850_percent",
+        "u_850_ms",
+        "v_850_ms",
+    ]
+
+
 def test_runtime_spec_requires_passed_fidelity(tmp_path: Path) -> None:
     spec = tmp_path / "spec.json"
     spec.write_text(json.dumps({"model_id": "test", "predictors": ["u_850_ms"]}), encoding="utf-8")
