@@ -2,7 +2,7 @@
 # Run only after the full re-stream fidelity array completes successfully.
 #SBATCH --job-name=birdcast-euro-fidelity-merge
 #SBATCH --account=ncas_radar
-#SBATCH --qos=short-serial
+#SBATCH --qos=standard
 #SBATCH --partition=standard
 #SBATCH --time=00:15:00
 #SBATCH --cpus-per-task=1
