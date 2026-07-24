@@ -5,7 +5,7 @@
 #SBATCH --qos=standard
 #SBATCH --partition=standard
 #SBATCH --time=04:00:00
-#SBATCH --cpus-per-task=2
+#SBATCH --cpus-per-task=1
 #SBATCH --mem=32G
 #SBATCH --output=logs/birdcast-euro-grid-merge-%j.out
 #SBATCH --error=logs/birdcast-euro-grid-merge-%j.err

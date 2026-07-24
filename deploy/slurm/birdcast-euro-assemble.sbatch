@@ -5,7 +5,7 @@
 #SBATCH --qos=standard
 #SBATCH --partition=standard
 #SBATCH --time=02:00:00
-#SBATCH --cpus-per-task=2
+#SBATCH --cpus-per-task=1
 #SBATCH --mem=24G
 #SBATCH --output=logs/birdcast-euro-assemble-%j.out
 #SBATCH --error=logs/birdcast-euro-assemble-%j.err
