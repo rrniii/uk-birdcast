@@ -109,6 +109,7 @@ and run identifier, then submit:
 
 ```bash
 export BIRDCAST_EURO_ROOT=$PWD
+export BIRDCAST_EURO_RSCRIPT=/gws/smf/j04/ncas_radar/software/miniconda3_radar_group_20200519/envs/R_4_10_biorad_pyart_3_8/bin/Rscript
 export BIRDCAST_EURO_MODEL_SPEC=$PWD/artifacts/europe/run/model-spec.json
 export BIRDCAST_EURO_GRID_TABLE=$PWD/artifacts/europe/era5/grid.csv
 export BIRDCAST_EURO_RUN_DIR=$PWD/artifacts/europe/run/europe-gamm-v1
