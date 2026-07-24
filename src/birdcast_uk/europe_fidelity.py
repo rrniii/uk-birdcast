@@ -44,7 +44,10 @@ def verify_aloft_chunk(
         import pyarrow.parquet as pq
     except ImportError as exc:  # pragma: no cover - deployment dependency
         raise RuntimeError("pyarrow is required for Europe fidelity checks") from exc
-    persisted = pq.read_table(derived).to_pylist()
+    # Read the file directly: its Hive partition directories intentionally use
+    # the same names as provenance columns (for example ``source=baltrad``).
+    # Dataset inference would attempt to merge those two schemas.
+    persisted = pq.ParquetFile(derived).read().to_pylist()
     persisted_by_day = _rows_by_day(persisted)
     audit_by_day = {str(item["day"]): item for item in manifest.get("audits", [])}
     expected_days = [str(day) for day in chunk.get("days", [])]
