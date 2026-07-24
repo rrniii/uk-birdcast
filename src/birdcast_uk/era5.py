@@ -347,6 +347,18 @@ def extract_grid_features(
                     "northing_m": northing,
                 }
                 row.update(_grid_weather_values(single_point, pressure_point, latitude_name, longitude_name, latitude, longitude))
+                row["nearest_radar_km"] = round(
+                    min(
+                        _great_circle_km(
+                            latitude,
+                            longitude,
+                            radar.latitude,
+                            radar.longitude,
+                        )
+                        for radar in radars
+                    ),
+                    6,
+                )
                 row["support"] = round(_support_score(latitude, longitude, row, radars, ranges), 6)
                 rows.append(row)
     finally:

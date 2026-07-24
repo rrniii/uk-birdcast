@@ -1,0 +1,52 @@
+{
+  "schema_version": "birdcast-euro-gamm-spec-1.0",
+  "model_id": "europe-gamm-aloft-uk-sp-v1",
+  "training_csv": "artifacts/europe/training/europe_hourly_era5.csv",
+  "validation_csv": "artifacts/europe/training/europe_transfer_validation_hourly_era5.csv",
+  "reference_source": "aloft-baltrad",
+  "input_policy": {
+    "aloft": "HTTP streamed BALTRAD VPTS; raw rows are not persisted",
+    "uk": "read-only JASMIN VPTS archive; SP only",
+    "altitude_m": [200, 4000],
+    "cadence": "hourly UTC",
+    "phenology_filter": "none",
+    "daylight_filter": "none"
+  },
+  "predictors": [
+    "surface_pressure_pa",
+    "mean_sea_level_pressure_pa",
+    "total_cloud_cover_fraction",
+    "boundary_layer_height_m",
+    "temperature_925_k",
+    "relative_humidity_925_percent",
+    "u_925_ms",
+    "v_925_ms",
+    "temperature_850_k",
+    "relative_humidity_850_percent",
+    "u_850_ms",
+    "v_850_ms",
+    "temperature_700_k",
+    "relative_humidity_700_percent",
+    "u_700_ms",
+    "v_700_ms"
+  ],
+  "intensity_targets": [
+    "mtr_birds_km_h",
+    "vid_birds_per_km2"
+  ],
+  "vector_targets": [
+    "bird_u_ms",
+    "bird_v_ms"
+  ],
+  "targets": [
+    "mtr_birds_km_h",
+    "vid_birds_per_km2",
+    "bird_u_ms",
+    "bird_v_ms"
+  ],
+  "spatial_k": 40,
+  "covariate_k": 8,
+  "max_radar_folds": 187,
+  "interpolation_distance_km": 150,
+  "maximum_support_distance_km": 250
+}

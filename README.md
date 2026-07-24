@@ -135,3 +135,12 @@ Deployment files for the JASMIN Cloud host are under `deploy/`.
 The canonical web route is `/live-uk-bird-maps/`; `/birdcast-uk/` is retained
 as a permanent compatibility redirect. The Object Store prefix remains
 `birdcast-uk/`.
+
+## Europe branch
+
+The `birdcast_euro` branch adds a separate Europe-wide, source-aware GAMM and
+dashboard. Aloft BALTRAD VPTS are streamed directly from the public object
+store; only provenance-linked hourly Parquet is retained. The UK contribution
+is SP-only and continues to read the immutable JASMIN archive. See
+[`docs/EUROPE_GAMM.md`](docs/EUROPE_GAMM.md) for the complete workflow,
+release gates and JASMIN commands.

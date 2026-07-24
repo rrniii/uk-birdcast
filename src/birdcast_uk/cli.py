@@ -24,6 +24,7 @@ from .config import (
     DEFAULT_BUCKET,
     DEFAULT_INTERNAL_ENDPOINT,
     DEFAULT_PUBLIC_BASE_URL,
+    EUROPE_MIN_TRAINING_DAYS,
     FORECAST_ENSEMBLE_SIZE,
     OBJECT_PREFIX,
     UKMO_PVOL_CATALOG_URL,
@@ -35,6 +36,19 @@ from .config import (
 )
 from .era5 import build_day, build_period, cds_readiness, download_request, extract_grid_features, extract_site_features, extract_zip_archive, validate_day, write_request
 from .ecmwf import archive_cycle
+from .europe import (
+    build_aloft_cohort,
+    build_europe_manifest,
+    install_europe_static_site,
+    iter_aloft_coverage,
+    publish_europe_predictions,
+    read_jsonl_record,
+    stream_aloft_chunk,
+    stream_aloft_hourly,
+    write_aloft_chunk_manifest,
+    write_aloft_cohort,
+    write_hourly_parquet,
+)
 from .external_validation import validate_external_vpts_csv
 from .forecast import build_forecast
 from .historical import NATURAL_EARTH_10M_COUNTRIES_URL, build_historical_products, write_boundary
@@ -45,6 +59,101 @@ from .radars import radars_from_pvol_catalog, write_radars
 from .reanalysis import build_prediction_frames, compare_models, prepare_training_table, publish_reanalysis, publish_wide_reanalysis, write_model_spec
 from .static_artifacts import build_static_artifacts, install_static_site, write_json
 from .vpts import build_catalog_inventory, build_historical_inventory, validate_manifest
+
+
+def cmd_europe_cohort(args: argparse.Namespace) -> int:
+    entries = build_aloft_cohort(
+        iter_aloft_coverage(
+            coverage_url=args.coverage_url,
+            public_base_url=args.public_base_url,
+            source="baltrad",
+        ),
+        minimum_training_days=args.minimum_training_days,
+    )
+    payload = write_aloft_cohort(entries, Path(args.output))
+    print(json.dumps({key: value for key, value in payload.items() if key != "entries"}, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_europe_stream_day(args: argparse.Namespace) -> int:
+    day = args.day.replace("-", "")
+    obj = VptsObject(
+        source="baltrad",
+        radar=args.radar.lower(),
+        day=day,
+        url=(
+            f"{args.public_base_url.rstrip('/')}/baltrad/daily/{args.radar.lower()}/"
+            f"{day[:4]}/{args.radar.lower()}_vpts_{day}.csv"
+        ),
+    )
+    rows, audit = stream_aloft_hourly(obj)
+    result = write_hourly_parquet(rows, Path(args.output), audit=audit)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_europe_chunk_manifest(args: argparse.Namespace) -> int:
+    cohort = json.loads(Path(args.cohort).read_text(encoding="utf-8"))
+    result = write_aloft_chunk_manifest(
+        iter_aloft_coverage(
+            coverage_url=args.coverage_url,
+            public_base_url=args.public_base_url,
+            source="baltrad",
+        ),
+        cohort=cohort,
+        output=Path(args.output),
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_europe_stream_chunk(args: argparse.Namespace) -> int:
+    chunk = read_jsonl_record(Path(args.manifest), args.index)
+    result = stream_aloft_chunk(
+        chunk,
+        output_root=Path(args.output_root),
+        public_base_url=args.public_base_url,
+    )
+    print(json.dumps({key: value for key, value in result.items() if key != "audits"}, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_europe_manifest(args: argparse.Namespace) -> int:
+    payload = build_europe_manifest(
+        model_id=args.model_id,
+        first_time_utc=args.first_time_utc,
+        latest_time_utc=args.latest_time_utc,
+        aloft_radar_count=args.aloft_radar_count,
+        uk_sp_radar_count=args.uk_sp_radar_count,
+        grid_asset=args.grid_asset,
+        daily_asset_template=args.daily_asset_template,
+        validation_url=args.validation_url,
+        output=Path(args.output),
+        release_status=args.release_status,
+        radar_asset=args.radar_asset,
+    )
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_europe_static_install(args: argparse.Namespace) -> int:
+    result = install_europe_static_site(Path(args.site_root))
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_europe_publish(args: argparse.Namespace) -> int:
+    result = publish_europe_predictions(
+        predictions_csv=Path(args.predictions),
+        output_root=Path(args.output_root),
+        model_id=args.model_id,
+        aloft_radar_count=args.aloft_radar_count,
+        uk_sp_radar_count=args.uk_sp_radar_count,
+        validation_url=args.validation_url,
+        radars_json=Path(args.radars) if args.radars else None,
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
 
 
 def cmd_static_build(args: argparse.Namespace) -> int:
@@ -526,6 +635,58 @@ def build_parser() -> argparse.ArgumentParser:
     static_install.add_argument("--data-base-url", default="/birdcast-uk/data")
     static_install.add_argument("--object-prefix", default=OBJECT_PREFIX)
     static_install.set_defaults(func=cmd_static_install)
+
+    europe_parser = subparsers.add_parser("europe")
+    europe_sub = europe_parser.add_subparsers(required=True)
+    europe_cohort = europe_sub.add_parser("cohort")
+    europe_cohort.add_argument("--coverage-url", default=ALOFT_COVERAGE_URL)
+    europe_cohort.add_argument("--public-base-url", default=ALOFT_PUBLIC_BASE_URL)
+    europe_cohort.add_argument("--minimum-training-days", type=int, default=EUROPE_MIN_TRAINING_DAYS)
+    europe_cohort.add_argument("--output", required=True)
+    europe_cohort.set_defaults(func=cmd_europe_cohort)
+    europe_stream = europe_sub.add_parser("stream-day")
+    europe_stream.add_argument("--radar", required=True)
+    europe_stream.add_argument("--day", required=True)
+    europe_stream.add_argument("--public-base-url", default=ALOFT_PUBLIC_BASE_URL)
+    europe_stream.add_argument("--output", required=True)
+    europe_stream.set_defaults(func=cmd_europe_stream_day)
+    europe_chunks = europe_sub.add_parser("chunk-manifest")
+    europe_chunks.add_argument("--cohort", required=True)
+    europe_chunks.add_argument("--coverage-url", default=ALOFT_COVERAGE_URL)
+    europe_chunks.add_argument("--public-base-url", default=ALOFT_PUBLIC_BASE_URL)
+    europe_chunks.add_argument("--output", required=True)
+    europe_chunks.set_defaults(func=cmd_europe_chunk_manifest)
+    europe_chunk = europe_sub.add_parser("stream-chunk")
+    europe_chunk.add_argument("--manifest", required=True)
+    europe_chunk.add_argument("--index", required=True, type=int)
+    europe_chunk.add_argument("--output-root", required=True)
+    europe_chunk.add_argument("--public-base-url", default=ALOFT_PUBLIC_BASE_URL)
+    europe_chunk.set_defaults(func=cmd_europe_stream_chunk)
+    europe_manifest = europe_sub.add_parser("manifest")
+    europe_manifest.add_argument("--model-id", required=True)
+    europe_manifest.add_argument("--first-time-utc", required=True)
+    europe_manifest.add_argument("--latest-time-utc", required=True)
+    europe_manifest.add_argument("--aloft-radar-count", required=True, type=int)
+    europe_manifest.add_argument("--uk-sp-radar-count", required=True, type=int)
+    europe_manifest.add_argument("--grid-asset", required=True)
+    europe_manifest.add_argument("--daily-asset-template", required=True)
+    europe_manifest.add_argument("--validation-url", required=True)
+    europe_manifest.add_argument("--radar-asset")
+    europe_manifest.add_argument("--release-status", default="research-preview")
+    europe_manifest.add_argument("--output", required=True)
+    europe_manifest.set_defaults(func=cmd_europe_manifest)
+    europe_static = europe_sub.add_parser("install-site")
+    europe_static.add_argument("--site-root", required=True)
+    europe_static.set_defaults(func=cmd_europe_static_install)
+    europe_publish = europe_sub.add_parser("publish")
+    europe_publish.add_argument("--predictions", required=True)
+    europe_publish.add_argument("--output-root", required=True)
+    europe_publish.add_argument("--model-id", required=True)
+    europe_publish.add_argument("--aloft-radar-count", required=True, type=int)
+    europe_publish.add_argument("--uk-sp-radar-count", required=True, type=int)
+    europe_publish.add_argument("--validation-url", required=True)
+    europe_publish.add_argument("--radars")
+    europe_publish.set_defaults(func=cmd_europe_publish)
 
     radars_parser = subparsers.add_parser("radars")
     radars_sub = radars_parser.add_subparsers(required=True)

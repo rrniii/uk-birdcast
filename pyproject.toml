@@ -17,6 +17,7 @@ dependencies = []
 [project.optional-dependencies]
 birdcast = [
   "earthkit-data>=1.0.2,<2",
+  "duckdb>=1.0,<2",
   "ecmwf-opendata>=0.3.20",
   "h5netcdf>=1.3",
   "netCDF4>=1.6",
@@ -44,7 +45,7 @@ birdcast-uk = "birdcast_uk.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-birdcast_uk = ["static/*"]
+birdcast_uk = ["static/*", "static_europe/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
