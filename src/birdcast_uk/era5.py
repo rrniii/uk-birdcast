@@ -242,13 +242,27 @@ def extract_site_features(
     radars = load_radars(radars_path)
     rows: list[dict[str, object]] = []
     skipped = []
+    available_radars = []
+    for radar in radars:
+        if radar.latitude is None or radar.longitude is None:
+            skipped.append({"radar": radar.slug, "reason": "missing latitude/longitude"})
+            continue
+        available_radars.append(radar)
     datasets = _open_datasets(single_levels, pressure_levels)
     try:
-        for radar in radars:
-            if radar.latitude is None or radar.longitude is None:
-                skipped.append({"radar": radar.slug, "reason": "missing latitude/longitude"})
-                continue
-            rows.extend(_features_for_radar(radar, datasets))
+        for dataset_index, dataset in enumerate(datasets):
+            # Point-select every radar together and load that small subset once.
+            # The former radar-by-radar path repeatedly read the same monthly
+            # NetCDF chunks, making a model-year reconstruction impractical.
+            selected = _select_radar_sites(dataset, available_radars)
+            for site_index, radar in enumerate(available_radars):
+                rows.extend(
+                    _features_for_selected_radar(
+                        radar,
+                        selected.isel(radar_site=site_index),
+                        dataset_index,
+                    )
+                )
     finally:
         for dataset in datasets:
             close = getattr(dataset, "close", None)
@@ -803,28 +817,56 @@ def _features_for_radar(radar: BirdcastRadar, datasets: Iterable[object]) -> lis
     rows: list[dict[str, object]] = []
     for dataset_index, dataset in enumerate(datasets):
         selected = dataset.sel(latitude=radar.latitude, longitude=radar.longitude, method="nearest")  # type: ignore[attr-defined]
-        time_name = "valid_time" if "valid_time" in selected.coords else "time"
-        for time_value, point in _time_points(selected, time_name):
-            base: dict[str, object] = {
-                "radar": radar.slug,
-                "radar_num": radar.radar_num,
-                "latitude": radar.latitude,
-                "longitude": radar.longitude,
-                "dataset_index": dataset_index,
-                "time_utc": str(time_value) if time_value is not None else "",
-            }
-            for name in point.data_vars:
-                value = point[name]
-                if getattr(value, "ndim", 0) == 0:
-                    base[str(name)] = _scalar(value.values)
-                elif getattr(value, "ndim", 0) == 1:
-                    dim = str(value.dims[0])
-                    coords = value[dim].values.tolist() if dim in value.coords else list(range(value.shape[0]))
-                    if not isinstance(coords, list):
-                        coords = [coords]
-                    for coord, cell in zip(coords, value.values.tolist()):
-                        base[f"{name}_{dim}_{coord}"] = _scalar(cell)
-            rows.append(base)
+        rows.extend(_features_for_selected_radar(radar, selected, dataset_index))
+    return rows
+
+
+def _select_radar_sites(dataset: object, radars: list[BirdcastRadar]) -> object:
+    """Select all radar locations in one xarray operation and eagerly load it."""
+
+    if not radars:
+        return dataset.isel({})  # type: ignore[attr-defined]
+    try:
+        import xarray as xr
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("xarray is required for ERA5 feature extraction") from exc
+    latitude_name = _coordinate_name(dataset, ("latitude", "lat"))
+    longitude_name = _coordinate_name(dataset, ("longitude", "lon"))
+    radar_site = "radar_site"
+    selected = dataset.sel(  # type: ignore[attr-defined]
+        {
+            latitude_name: xr.DataArray([float(radar.latitude) for radar in radars], dims=radar_site),
+            longitude_name: xr.DataArray([float(radar.longitude) for radar in radars], dims=radar_site),
+        },
+        method="nearest",
+    )
+    return selected.load()
+
+
+def _features_for_selected_radar(radar: BirdcastRadar, selected: object, dataset_index: int) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    time_name = "valid_time" if "valid_time" in selected.coords else "time"
+    for time_value, point in _time_points(selected, time_name):
+        base: dict[str, object] = {
+            "radar": radar.slug,
+            "radar_num": radar.radar_num,
+            "latitude": radar.latitude,
+            "longitude": radar.longitude,
+            "dataset_index": dataset_index,
+            "time_utc": str(time_value) if time_value is not None else "",
+        }
+        for name in point.data_vars:
+            value = point[name]
+            if getattr(value, "ndim", 0) == 0:
+                base[str(name)] = _scalar(value.values)
+            elif getattr(value, "ndim", 0) == 1:
+                dim = str(value.dims[0])
+                coords = value[dim].values.tolist() if dim in value.coords else list(range(value.shape[0]))
+                if not isinstance(coords, list):
+                    coords = [coords]
+                for coord, cell in zip(coords, value.values.tolist()):
+                    base[f"{name}_{dim}_{coord}"] = _scalar(cell)
+        rows.append(base)
     return rows
 
 

@@ -8,7 +8,9 @@ from types import ModuleType
 from birdcast_uk.era5 import (
     EARTHKIT_BACKEND,
     _features_for_radar,
+    _features_for_selected_radar,
     _open_datasets,
+    _select_radar_sites,
     _support_score,
     build_day,
     build_period_request,
@@ -379,6 +381,32 @@ def test_era5_features_iterate_time_dimension_positionally() -> None:
 
     assert isel_calls == [{"valid_time": 0}, {"valid_time": 1}]
     assert [row["time_utc"] for row in rows] == ["2026-07-09T00:00:00", "2026-07-09T01:00:00"]
+
+
+def test_era5_vectorized_radar_selection_preserves_per_site_features() -> None:
+    import numpy as np
+    import xarray as xr
+
+    dataset = xr.Dataset(
+        {"sp": (("valid_time", "latitude", "longitude"), np.array([[[1, 2], [3, 4]], [[5, 6], [7, 8]]]))},
+        coords={
+            "valid_time": [np.datetime64("2026-07-09T00:00"), np.datetime64("2026-07-09T01:00")],
+            "latitude": [50.0, 51.0],
+            "longitude": [0.0, 1.0],
+        },
+    )
+    radars = [
+        BirdcastRadar("west", "01", "West", latitude=50.1, longitude=0.1),
+        BirdcastRadar("east", "02", "East", latitude=50.9, longitude=0.9),
+    ]
+
+    selected = _select_radar_sites(dataset, radars)
+    west = _features_for_selected_radar(radars[0], selected.isel(radar_site=0), 0)
+    east = _features_for_selected_radar(radars[1], selected.isel(radar_site=1), 0)
+
+    assert selected.sizes["radar_site"] == 2
+    assert [row["sp"] for row in west] == [1, 5]
+    assert [row["sp"] for row in east] == [4, 8]
 
 
 def test_era5_build_status_identifies_earthkit_without_download(tmp_path: Path) -> None:
