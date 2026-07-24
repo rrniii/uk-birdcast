@@ -55,6 +55,11 @@ Run the Europe-specific ERA5 flow over the area in `birdcast_uk.config`,
 extracting hourly features at each radar and on the fixed 0.25 degree grid.
 The grid includes land and water and retains cells up to 250 km from a radar.
 
+Every daily site-feature file is independently reconstructed from its two
+immutable daily ERA5 NetCDF files and compared cell-for-cell. GAMM assembly is
+blocked unless all 365 raw-ERA5 reconstruction audits pass; status files alone
+are not accepted as evidence.
+
 Assemble the harmonised hourly table:
 
 ```bash
@@ -93,7 +98,7 @@ birdcast-uk europe verify-training \
 The policy check fails on any raw-data persistence declaration, changed source
 hash or derived value, unapproved source, UK LP row, transfer-radar leakage,
 or missing ERA5 predictor. The GAMM job must not be submitted until every
-chunk audit and the training-policy report pass.
+chunk audit, ERA5 reconstruction audit, and the training-policy report pass.
 
 An advertised VP day whose companion public VPTS object returns HTTP 404 is
 written as `unavailable` in its audit, contributes no hourly observation, and
@@ -141,3 +146,9 @@ birdcast-uk europe install-site --site-root /opt/birdcast-euro/site
 The dashboard distinguishes interpolation (within 150 km), extrapolation
 (150-250 km), and unsupported cells. Country coastlines are context layers
 only and never mask predictions.
+
+Before the manifest may use `release_status: published`, the release job
+reconciles every supported prediction with the fixed grid and daily JSON
+frames, then checks the passed source, ERA5, training, and held-out model
+validation reports. Missing, duplicate, unsupported, or altered map cells
+deny publication.
