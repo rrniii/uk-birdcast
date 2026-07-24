@@ -174,7 +174,7 @@ def _row_key(row: dict[str, Any]) -> tuple[str, str, str]:
 
 
 def _assert_audit_equal(actual: dict[str, Any], expected: dict[str, Any], day: str) -> None:
-    for key in ("source", "radar", "day", "url", "bytes_read", "row_count", "profile_count", "hourly_row_count", "sha256"):
+    for key in ("source", "radar", "day", "url", "bytes_read", "row_count", "profile_count", "hourly_row_count", "sha256", "availability", "unavailable_reason"):
         if actual.get(key) != expected.get(key):
             raise ValueError(f"source audit mismatch for {day}: {key}")
 

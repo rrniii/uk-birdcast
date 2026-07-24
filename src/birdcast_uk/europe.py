@@ -18,6 +18,7 @@ from pathlib import Path
 import shutil
 from typing import Any, BinaryIO, Callable, Iterable, Iterator
 from urllib.request import urlopen
+from urllib.error import HTTPError
 
 from .archive import VptsObject
 from .config import (
@@ -62,6 +63,8 @@ class StreamAudit:
     profile_count: int = 0
     hourly_row_count: int = 0
     sha256: str = ""
+    availability: str = "available"
+    unavailable_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -157,7 +160,14 @@ def stream_aloft_hourly(
     """Stream one daily VPTS object and return only derived hourly rows."""
 
     audit = StreamAudit(obj.source, obj.radar, obj.day, obj.url)
-    response = _open(opener, obj.url, timeout_seconds)
+    try:
+        response = _open(opener, obj.url, timeout_seconds)
+    except HTTPError as exc:
+        if exc.code != 404:
+            raise
+        audit.availability = "unavailable"
+        audit.unavailable_reason = "source_vpts_object_not_found"
+        return [], audit
     headers = getattr(response, "headers", {})
     audit.etag = _header(headers, "ETag")
     audit.last_modified = _header(headers, "Last-Modified")

@@ -83,6 +83,22 @@ def test_daily_vpts_is_streamed_to_hourly_rows_without_raw_persistence() -> None
     assert audit.profile_count == 2
     assert audit.hourly_row_count == 1
     assert len(audit.sha256) == 64
+    assert audit.availability == "available"
+
+
+def test_missing_advertised_vpts_is_recorded_as_unavailable_not_zero() -> None:
+    from urllib.error import HTTPError
+
+    def missing(_url: str, **_kwargs):
+        raise HTTPError(_url, 404, "missing", None, None)
+
+    rows, audit = stream_aloft_hourly(
+        VptsObject("baltrad", "bejab", "20260701", "https://example/missing.csv"), opener=missing
+    )
+
+    assert rows == []
+    assert audit.availability == "unavailable"
+    assert audit.unavailable_reason == "source_vpts_object_not_found"
 
 
 def test_month_chunks_are_restartable_derived_partitions(tmp_path: Path) -> None:

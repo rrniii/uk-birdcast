@@ -95,6 +95,10 @@ hash or derived value, unapproved source, UK LP row, transfer-radar leakage,
 or missing ERA5 predictor. The GAMM job must not be submitted until every
 chunk audit and the training-policy report pass.
 
+An advertised VP day whose companion public VPTS object returns HTTP 404 is
+written as `unavailable` in its audit, contributes no hourly observation, and
+is never imputed as zero migration. Any other source-read error remains fatal.
+
 Freeze `configs/gamm_europe_aloft_uk_sp.json` with an immutable training path
 and run identifier, then submit:
 
