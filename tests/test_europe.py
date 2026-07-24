@@ -296,6 +296,21 @@ def test_europe_fitter_has_source_and_transfer_controls() -> None:
     ).read_text()
 
 
+def test_europe_batch_jobs_pin_the_declared_release_and_bound_streaming() -> None:
+    slurm_dir = Path(__file__).parents[1] / "deploy/slurm"
+    scripts = list(slurm_dir.glob("birdcast-euro-*.sbatch"))
+    assert scripts
+    for script in scripts:
+        content = script.read_text(encoding="utf-8")
+        assert 'BIRDCAST_EURO_ROOT:?' in content, script.name
+        assert 'BIRDCAST_EURO_PYTHON:?' in content, script.name
+        if "-m birdcast_uk.cli" in content:
+            assert 'export PYTHONPATH="$BIRDCAST_EURO_ROOT/src' in content, script.name
+
+    stream = (slurm_dir / "birdcast-euro-aloft-stream.sbatch").read_text(encoding="utf-8")
+    assert "timeout --kill-after=60s 50m" in stream
+
+
 def load_script(name: str):
     path = Path(__file__).parents[1] / "scripts" / name
     spec = importlib.util.spec_from_file_location(name.replace(".", "_"), path)

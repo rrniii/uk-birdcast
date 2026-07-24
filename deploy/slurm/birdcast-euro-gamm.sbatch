@@ -16,6 +16,7 @@ set -eo pipefail
 set -u
 
 : "${BIRDCAST_EURO_ROOT:?Set the birdcast_euro checkout}"
+: "${BIRDCAST_EURO_PYTHON:?Set the branch Python executable}"
 : "${BIRDCAST_EURO_MODEL_SPEC:?Set the frozen Europe model spec}"
 : "${BIRDCAST_EURO_GRID_TABLE:?Set the European ERA5 prediction grid CSV}"
 : "${BIRDCAST_EURO_RUN_DIR:?Set an immutable run directory}"
@@ -27,7 +28,7 @@ Rscript "$BIRDCAST_EURO_ROOT/scripts/fit_europe_gamm.R" \
   "$BIRDCAST_EURO_RUN_DIR" \
   "$BIRDCAST_EURO_GRID_TABLE"
 
-python3 "$BIRDCAST_EURO_ROOT/scripts/validate_europe_gamm.py" \
+"$BIRDCAST_EURO_PYTHON" "$BIRDCAST_EURO_ROOT/scripts/validate_europe_gamm.py" \
   --metrics "$BIRDCAST_EURO_RUN_DIR/metrics.json" \
   --output "$BIRDCAST_EURO_RUN_DIR/validation.json" \
   --require-pass

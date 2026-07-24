@@ -16,13 +16,17 @@ set -eo pipefail
 . /etc/profile.d/zz-modules.sh
 set -u
 
+: "${BIRDCAST_EURO_ROOT:?Set the immutable Europe release checkout}"
 : "${BIRDCAST_EURO_PYTHON:?Set the branch Python executable}"
 : "${BIRDCAST_EURO_CHUNK_MANIFEST:?Set the radar-month JSONL manifest}"
 : "${BIRDCAST_EURO_HOURLY_ROOT:?Set the derived hourly output root}"
 : "${SLURM_ARRAY_TASK_ID:?Submit this job as an array}"
 
 module load jaspy/3.12/v20250704
-"$BIRDCAST_EURO_PYTHON" -m birdcast_uk.cli europe stream-chunk \
+export PYTHONPATH="$BIRDCAST_EURO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+# Bound the entire task if a C extension or an NFS operation evades the
+# per-object Python deadline.
+timeout --kill-after=60s 50m "$BIRDCAST_EURO_PYTHON" -m birdcast_uk.cli europe stream-chunk \
   --manifest "$BIRDCAST_EURO_CHUNK_MANIFEST" \
   --index "$SLURM_ARRAY_TASK_ID" \
   --output-root "$BIRDCAST_EURO_HOURLY_ROOT"

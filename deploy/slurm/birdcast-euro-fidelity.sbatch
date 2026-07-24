@@ -17,6 +17,7 @@ set -eo pipefail
 . /etc/profile.d/zz-modules.sh
 set -u
 
+: "${BIRDCAST_EURO_ROOT:?Set the immutable Europe release checkout}"
 : "${BIRDCAST_EURO_PYTHON:?Set the branch Python executable}"
 : "${BIRDCAST_EURO_CHUNK_MANIFEST:?Set the radar-month JSONL manifest}"
 : "${BIRDCAST_EURO_HOURLY_ROOT:?Set the derived hourly output root}"
@@ -24,6 +25,7 @@ set -u
 : "${SLURM_ARRAY_TASK_ID:?Submit this job as an array}"
 
 module load jaspy/3.12/v20250704
+export PYTHONPATH="$BIRDCAST_EURO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 mkdir -p "$BIRDCAST_EURO_FIDELITY_ROOT"
 "$BIRDCAST_EURO_PYTHON" -m birdcast_uk.cli europe verify-chunk \
   --manifest "$BIRDCAST_EURO_CHUNK_MANIFEST" \

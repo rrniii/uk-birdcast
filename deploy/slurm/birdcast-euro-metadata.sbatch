@@ -13,6 +13,7 @@
 set -euo pipefail
 : "${BIRDCAST_EURO_ROOT:?Set the immutable Europe release checkout}"
 : "${BIRDCAST_EURO_PYTHON:?Set the branch Python executable}"
+export PYTHONPATH="$BIRDCAST_EURO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 : "${BIRDCAST_EURO_HOURLY_ROOT:?Set the derived hourly output root}"
 : "${BIRDCAST_EURO_UK_RADARS:?Set the read-only UK radar metadata}"
 : "${BIRDCAST_EURO_RADARS:?Set the Europe radar metadata output}"

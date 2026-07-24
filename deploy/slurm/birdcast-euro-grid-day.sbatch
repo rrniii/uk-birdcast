@@ -14,6 +14,7 @@ set -eo pipefail
 . /etc/profile.d/modules.sh
 . /etc/profile.d/zz-modules.sh
 set -u
+: "${BIRDCAST_EURO_ROOT:?Set the immutable Europe release checkout}"
 : "${BIRDCAST_EURO_PYTHON:?Set the branch Python executable}"
 : "${BIRDCAST_EURO_RAW_ERA5_ROOT:?Set the Europe ERA5 raw root}"
 : "${BIRDCAST_EURO_RADARS:?Set the Europe radar metadata}"
@@ -27,6 +28,7 @@ if [ "$SLURM_ARRAY_TASK_ID" -lt 0 ] || [ "$SLURM_ARRAY_TASK_ID" -gt 364 ]; then
 fi
 
 module load jaspy/3.12/v20250704
+export PYTHONPATH="$BIRDCAST_EURO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 day="$(date -u -d "2025-07-14 + ${SLURM_ARRAY_TASK_ID} day" +%F)"
 stamp="${day//-/}"
 mkdir -p "$BIRDCAST_EURO_GRID_DAILY_ROOT"

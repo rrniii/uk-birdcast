@@ -15,6 +15,7 @@ set -eo pipefail
 . /etc/profile.d/modules.sh
 . /etc/profile.d/zz-modules.sh
 set -u
+: "${BIRDCAST_EURO_ROOT:?Set the immutable Europe release checkout}"
 : "${BIRDCAST_EURO_PYTHON:?Set the branch Python executable}"
 : "${BIRDCAST_EURO_RAW_ERA5_ROOT:?Set the Europe ERA5 raw root}"
 : "${BIRDCAST_EURO_SITE_ERA5_ROOT:?Set the Europe ERA5 site-feature root}"
@@ -22,6 +23,7 @@ set -u
 : "${SLURM_ARRAY_TASK_ID:?Submit as an array from 0 to 12}"
 
 module load jaspy/3.12/v20250704
+export PYTHONPATH="$BIRDCAST_EURO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 index="$SLURM_ARRAY_TASK_ID"
 if [ "$index" -gt 12 ]; then
   echo "Europe ERA5 array index must be in 0..12" >&2

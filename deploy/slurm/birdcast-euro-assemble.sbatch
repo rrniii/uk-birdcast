@@ -16,6 +16,7 @@ set -eo pipefail
 set -u
 : "${BIRDCAST_EURO_ROOT:?Set the immutable Europe release checkout}"
 : "${BIRDCAST_EURO_PYTHON:?Set the branch Python executable}"
+export PYTHONPATH="$BIRDCAST_EURO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 : "${BIRDCAST_EURO_SOURCE_FIDELITY:?Set the passed source fidelity summary}"
 : "${BIRDCAST_EURO_ERA5_FIDELITY:?Set the passed ERA5 fidelity summary}"
 : "${BIRDCAST_EURO_HOURLY_ROOT:?Set the derived hourly root}"
