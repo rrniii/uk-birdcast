@@ -239,6 +239,8 @@ def write_aloft_chunk_manifest(
     *,
     cohort: dict[str, Any],
     output: Path,
+    start_day: str | None = None,
+    end_day: str | None = None,
 ) -> dict[str, Any]:
     roles = {
         (str(entry["source"]), str(entry["radar"])): str(entry["role"])
@@ -246,6 +248,10 @@ def write_aloft_chunk_manifest(
     }
     chunks: dict[tuple[str, str, str, str], list[str]] = defaultdict(list)
     for obj in objects:
+        if start_day is not None and obj.day < start_day.replace("-", ""):
+            continue
+        if end_day is not None and obj.day > end_day.replace("-", ""):
+            continue
         role = roles.get((obj.source, obj.radar))
         if role is None:
             continue
@@ -272,6 +278,8 @@ def write_aloft_chunk_manifest(
         "schema_version": "birdcast-euro-stream-chunks-1.0",
         "chunk_count": len(chunks),
         "source_object_count": sum(len(set(days)) for days in chunks.values()),
+        "start_day": start_day,
+        "end_day": end_day,
         "output": str(output),
     }
 

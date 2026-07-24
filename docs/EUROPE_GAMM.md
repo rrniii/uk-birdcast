@@ -36,7 +36,7 @@ writes one restartable compressed hourly partition. Set the upper bound to
 `chunk_count - 1`:
 
 ```bash
-sbatch --array=0-13698%200 deploy/slurm/birdcast-euro-aloft-stream.sbatch
+sbatch --array=0-<model-year-chunk-count-minus-one>%40 deploy/slurm/birdcast-euro-aloft-stream.sbatch
 ```
 
 Generate model metadata from the derived partitions. The two-letter OPERA

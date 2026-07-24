@@ -99,6 +99,22 @@ def test_month_chunks_are_restartable_derived_partitions(tmp_path: Path) -> None
     assert chunk["role"] == "training"
 
 
+def test_chunk_manifest_can_be_limited_to_the_published_model_year(tmp_path: Path) -> None:
+    objects = [
+        VptsObject("baltrad", "bejab", "20250713", "https://example/old.csv"),
+        VptsObject("baltrad", "bejab", "20250714", "https://example/first.csv"),
+        VptsObject("baltrad", "bejab", "20260713", "https://example/last.csv"),
+        VptsObject("baltrad", "bejab", "20260714", "https://example/new.csv"),
+    ]
+    cohort = {"entries": [{"source": "baltrad", "radar": "bejab", "role": "training"}]}
+    result = write_aloft_chunk_manifest(
+        objects, cohort=cohort, output=tmp_path / "chunks.jsonl", start_day="2025-07-14", end_day="2026-07-13"
+    )
+
+    assert result["source_object_count"] == 2
+    assert [record["days"] for record in [read_jsonl_record(tmp_path / "chunks.jsonl", 0), read_jsonl_record(tmp_path / "chunks.jsonl", 1)]] == [["20250714"], ["20260713"]]
+
+
 def test_fidelity_restreams_chunk_and_rejects_a_changed_derivative(tmp_path: Path) -> None:
     source = (
         "radar,datetime,height,ff,dd,gap,dens,dbz,radar_latitude,radar_longitude\n"

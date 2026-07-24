@@ -108,6 +108,8 @@ def cmd_europe_chunk_manifest(args: argparse.Namespace) -> int:
         ),
         cohort=cohort,
         output=Path(args.output),
+        start_day=args.start_day,
+        end_day=args.end_day,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
@@ -686,6 +688,8 @@ def build_parser() -> argparse.ArgumentParser:
     europe_chunks.add_argument("--cohort", required=True)
     europe_chunks.add_argument("--coverage-url", default=ALOFT_COVERAGE_URL)
     europe_chunks.add_argument("--public-base-url", default=ALOFT_PUBLIC_BASE_URL)
+    europe_chunks.add_argument("--start-day")
+    europe_chunks.add_argument("--end-day")
     europe_chunks.add_argument("--output", required=True)
     europe_chunks.set_defaults(func=cmd_europe_chunk_manifest)
     europe_chunk = europe_sub.add_parser("stream-chunk")
