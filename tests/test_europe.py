@@ -349,6 +349,7 @@ def test_europe_fitter_has_source_and_transfer_controls() -> None:
     assert "leave_one_" in script
     assert "transfer_validation" in script
     assert "transfer_validation_radar_count" in script
+    assert "frame$.row_id <- seq_len(nrow(frame))" in script
     assert 'model_time_terms = "none"' in script
     assert 'data$pulse == "lp"' in script
     sbatch = (Path(__file__).parents[1] / "deploy/slurm/birdcast-euro-aloft-stream.sbatch").read_text()

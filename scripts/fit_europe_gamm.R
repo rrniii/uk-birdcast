@@ -181,6 +181,7 @@ prepare_external <- function(frame) {
   frame$radar <- factor(frame$radar)
   frame$network <- factor(frame$network)
   frame$country <- factor(frame$country)
+  frame$.row_id <- seq_len(nrow(frame))
   frame
 }
 if (!is.null(transfer_validation)) {
