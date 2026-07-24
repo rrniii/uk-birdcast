@@ -59,6 +59,37 @@ The site is then available at:
 http://130.246.212.190/live-uk-bird-maps/
 ```
 
+## JASMIN Cloud Public Ingress
+
+The JASMIN Cloud security group attached to the web server must allow inbound
+IPv4 TCP port 80 from `0.0.0.0/0`. The host firewall does not replace this
+OpenStack-level rule.
+
+Current public endpoint:
+
+```text
+Instance: uk-birdcast-workstation-ssh
+Instance UUID: 6fba7cb3-6212-436f-a18c-cbff2d4c6bdb
+Public IP: 130.246.212.190
+Network port: c0d30fbf-dedf-46a8-a46a-b55fc68634a6
+Ingress: IPv4 TCP 80 from 0.0.0.0/0
+```
+
+Verify from a host outside the cloud instance:
+
+```bash
+curl --connect-timeout 8 -I \
+  http://130.246.212.190/live-uk-bird-maps/
+```
+
+The expected response is HTTP 200. Port 443 remains closed until TLS is
+configured.
+
+To roll back public access without changing or stopping the application,
+remove the TCP port 80 ingress rule from the security group attached to the
+network port above. Tailscale and SSH administration remain separate from the
+public web rule.
+
 ## Web-Only systemd Timer
 
 ```bash
