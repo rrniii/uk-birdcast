@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 from functools import lru_cache
+import hashlib
 from importlib.metadata import PackageNotFoundError, version
 import json
 import os
@@ -279,10 +280,19 @@ def extract_site_features(
         "row_count": len(rows),
         "skipped_count": len(skipped),
         "skipped": skipped,
+        "radars_sha256": _file_sha256(radars_path) if radars_path and radars_path.is_file() else None,
     }
     status_path = output.with_suffix(output.suffix + ".status.json")
     write_json(status_path, status)
     return status
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def extract_grid_features(

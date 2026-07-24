@@ -18,6 +18,16 @@ def _load() -> object:
 def test_era5_fidelity_merge_requires_every_day(tmp_path: Path) -> None:
     reports = tmp_path / "reports"
     reports.mkdir()
-    (reports / "20250714.json").write_text('{"status":"passed"}', encoding="utf-8")
+    (reports / "20250714.json").write_text('{"status":"passed","release_id":"release-a","radars_sha256":"abc"}', encoding="utf-8")
     with pytest.raises(ValueError, match="missing=1"):
-        _load().merge(reports, tmp_path / "summary.json", start_day="2025-07-14", end_day="2025-07-15")
+        _load().merge(
+            reports, tmp_path / "summary.json", start_day="2025-07-14", end_day="2025-07-15",
+            release_id="release-a", radars_sha256="abc",
+        )
+
+    (reports / "20250715.json").write_text('{"status":"passed","release_id":"other","radars_sha256":"abc"}', encoding="utf-8")
+    with pytest.raises(ValueError, match="stale=1"):
+        _load().merge(
+            reports, tmp_path / "summary.json", start_day="2025-07-14", end_day="2025-07-15",
+            release_id="release-a", radars_sha256="abc",
+        )

@@ -13,7 +13,15 @@ from tempfile import TemporaryDirectory
 from birdcast_uk.era5 import extract_site_features
 
 
-def verify(day: str, raw_dir: Path, radars: Path, feature_output: Path, output: Path) -> dict[str, object]:
+def verify(
+    day: str,
+    raw_dir: Path,
+    radars: Path,
+    feature_output: Path,
+    output: Path,
+    *,
+    release_id: str,
+) -> dict[str, object]:
     stamp = day.replace("-", "")
     single = raw_dir / f"era5_single_levels_{stamp}_uk.nc"
     pressure = raw_dir / f"era5_pressure_levels_{stamp}_uk.nc"
@@ -36,9 +44,17 @@ def verify(day: str, raw_dir: Path, radars: Path, feature_output: Path, output: 
     expected_rows = _normalise_rows(expected.get("rows"))
     if actual_rows != expected_rows:
         raise ValueError(f"Europe ERA5 site-feature reconstruction mismatch for {day}")
+    status_path = feature_output.with_suffix(feature_output.suffix + ".status.json")
+    if not status_path.is_file():
+        raise ValueError(f"Europe ERA5 feature provenance is missing for {day}")
+    feature_status = json.loads(status_path.read_text(encoding="utf-8"))
+    radars_sha256 = _sha256(radars)
+    if feature_status.get("radars_sha256") != radars_sha256:
+        raise ValueError(f"Europe ERA5 radar metadata provenance mismatch for {day}")
     payload = {
         "schema_version": "birdcast-euro-era5-fidelity-day-1.0",
         "status": "passed",
+        "release_id": release_id,
         "day": day,
         "single_levels": str(single),
         "pressure_levels": str(pressure),
@@ -46,6 +62,7 @@ def verify(day: str, raw_dir: Path, radars: Path, feature_output: Path, output: 
         "single_levels_sha256": _sha256(single),
         "pressure_levels_sha256": _sha256(pressure),
         "feature_sha256": _sha256(feature_output),
+        "radars_sha256": radars_sha256,
         "row_count": len(actual_rows),
         "raw_source_persisted": False,
     }
@@ -86,7 +103,9 @@ if __name__ == "__main__":
     parser.add_argument("--radars", required=True)
     parser.add_argument("--feature-output", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--release-id", required=True)
     args = parser.parse_args()
     print(json.dumps(verify(
-        args.day, Path(args.raw_dir), Path(args.radars), Path(args.feature_output), Path(args.output)
+        args.day, Path(args.raw_dir), Path(args.radars), Path(args.feature_output), Path(args.output),
+        release_id=args.release_id,
     ), indent=2))

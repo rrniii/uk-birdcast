@@ -15,6 +15,7 @@ set -eo pipefail
 . /etc/profile.d/zz-modules.sh
 set -u
 : "${BIRDCAST_EURO_ROOT:?Set the immutable Europe release checkout}"
+: "${BIRDCAST_EURO_RELEASE:?Set the immutable Europe release identifier}"
 : "${BIRDCAST_EURO_PYTHON:?Set the branch Python executable}"
 export PYTHONPATH="$BIRDCAST_EURO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 : "${BIRDCAST_EURO_RAW_ERA5_ROOT:?Set the Europe ERA5 raw root}"
@@ -34,4 +35,5 @@ mkdir -p "$BIRDCAST_EURO_ERA5_FIDELITY_ROOT"
 "$BIRDCAST_EURO_PYTHON" "$BIRDCAST_EURO_ROOT/scripts/verify_europe_era5_day.py" \
   --day "$day" --raw-dir "$BIRDCAST_EURO_RAW_ERA5_ROOT" --radars "$BIRDCAST_EURO_RADARS" \
   --feature-output "$BIRDCAST_EURO_SITE_ERA5_ROOT/era5_site_features_${stamp}.json" \
-  --output "$BIRDCAST_EURO_ERA5_FIDELITY_ROOT/${stamp}.json"
+  --output "$BIRDCAST_EURO_ERA5_FIDELITY_ROOT/${stamp}.json" \
+  --release-id "$BIRDCAST_EURO_RELEASE"
