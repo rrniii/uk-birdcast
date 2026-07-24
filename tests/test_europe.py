@@ -389,6 +389,8 @@ def test_europe_public_promotion_only_switches_a_complete_manifest() -> None:
     assert 'test -f "$stage/$grid"' in script
     assert 'mv -Tf "$BIRDCAST_EURO_ARTIFACT_ROOT.next"' in script
     assert "alias /opt/birdcast-euro/artifacts-current/;" in nginx
+    unit = (root / "deploy/systemd/birdcast-euro-object-store-pull.service").read_text(encoding="utf-8")
+    assert "EnvironmentFile=/etc/birdcast-uk/birdcast-euro.env" in unit
 
 
 def load_script(name: str):

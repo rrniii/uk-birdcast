@@ -8,6 +8,7 @@ Type=oneshot
 User=birdcast
 Group=birdcast
 EnvironmentFile=/etc/birdcast-uk/birdcast-uk.env
+EnvironmentFile=/etc/birdcast-uk/birdcast-euro.env
 ExecStart=/bin/sh /opt/birdcast-uk/repo/deploy/scripts/birdcast-euro-object-store-pull.sh
 
 NoNewPrivileges=true
