@@ -508,6 +508,19 @@ def test_slurm_scripts_initialise_jasmin_modules() -> None:
         assert content.index(". /etc/profile.d/modules.sh") < content.index("module load ")
 
 
+def test_static_refresh_imports_the_current_reversible_release() -> None:
+    service = (
+        Path(__file__).parents[1]
+        / "deploy"
+        / "systemd"
+        / "birdcast-uk-static-site-refresh.service"
+    ).read_text(encoding="utf-8")
+
+    assert "Environment=PYTHONPATH=/opt/birdcast-uk/repo/src" in service
+    assert "-m birdcast_uk.cli static build" in service
+    assert "-m birdcast_uk.cli static install-site" in service
+
+
 def test_grid_reconcile_validates_radar_range_status_not_legacy_land_mask_size() -> None:
     script = (
         Path(__file__).parents[1]
