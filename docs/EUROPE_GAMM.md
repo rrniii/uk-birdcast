@@ -71,6 +71,30 @@ Radars with at least 365 advertised days enter the fit. Shorter eligible
 records are written only to the transfer-validation table and are predicted
 after the final fit; they never contribute model weights or coefficients.
 
+## Fidelity And Data-Denial Gates
+
+Before assembling the training table, re-stream every locked radar-month with
+the same array range. The verifier compares every compact hourly row and the
+source SHA-256, byte count, profile count and hourly count with the immutable
+streaming manifest. It writes a compact audit JSON only; raw Aloft files are
+never retained.
+
+```bash
+sbatch --array=0-13698%40 deploy/slurm/birdcast-euro-fidelity.sbatch
+
+birdcast-uk europe verify-training \
+  --training-csv artifacts/europe/training/europe_hourly_era5.csv \
+  --transfer-csv artifacts/europe/training/europe_transfer_validation_hourly_era5.csv \
+  --cohort artifacts/europe/source/aloft-cohort.json \
+  --model-spec configs/gamm_europe_aloft_uk_sp.json \
+  --output artifacts/europe/fidelity/training-policy.json
+```
+
+The policy check fails on any raw-data persistence declaration, changed source
+hash or derived value, unapproved source, UK LP row, transfer-radar leakage,
+or missing ERA5 predictor. The GAMM job must not be submitted until every
+chunk audit and the training-policy report pass.
+
 Freeze `configs/gamm_europe_aloft_uk_sp.json` with an immutable training path
 and run identifier, then submit:
 

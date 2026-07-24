@@ -26,6 +26,7 @@
           <nav class="view-tabs" aria-label="Bird map view">
             <button type="button" class="active" data-view="observed">Radar observations</button>
             <button type="button" data-view="modelled">Modelled migration</button>
+            <button type="button" data-view="europe">European reanalysis</button>
           </nav>
           <div class="control-bar">
             <label>
@@ -144,6 +145,10 @@
           </div>
           <p id="archiveComparisonStatus" class="archive-comparison-status"></p>
           <crow-radar-detail id="crowRadarDetail"></crow-radar-detail>
+        </section>
+
+        <section id="europePanel" class="europe-panel" hidden aria-label="European historical bird migration reanalysis">
+          <iframe id="europeFrame" title="European Bird Maps" loading="lazy"></iframe>
         </section>
       </section>
 

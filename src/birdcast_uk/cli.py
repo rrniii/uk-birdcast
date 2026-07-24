@@ -24,6 +24,7 @@ from .config import (
     DEFAULT_BUCKET,
     DEFAULT_INTERNAL_ENDPOINT,
     DEFAULT_PUBLIC_BASE_URL,
+    EUROPE_ERA5_AREA,
     EUROPE_MIN_TRAINING_DAYS,
     FORECAST_ENSEMBLE_SIZE,
     OBJECT_PREFIX,
@@ -48,6 +49,11 @@ from .europe import (
     write_aloft_chunk_manifest,
     write_aloft_cohort,
     write_hourly_parquet,
+)
+from .europe_fidelity import (
+    verify_aloft_chunk,
+    verify_training_input_policy,
+    write_fidelity_report,
 )
 from .external_validation import validate_external_vpts_csv
 from .forecast import build_forecast
@@ -115,6 +121,31 @@ def cmd_europe_stream_chunk(args: argparse.Namespace) -> int:
         public_base_url=args.public_base_url,
     )
     print(json.dumps({key: value for key, value in result.items() if key != "audits"}, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_europe_verify_chunk(args: argparse.Namespace) -> int:
+    chunk = read_jsonl_record(Path(args.manifest), args.index)
+    payload = verify_aloft_chunk(
+        chunk,
+        hourly_root=Path(args.hourly_root),
+        public_base_url=args.public_base_url,
+    )
+    write_fidelity_report(payload, Path(args.output))
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_europe_verify_training(args: argparse.Namespace) -> int:
+    spec = json.loads(Path(args.model_spec).read_text(encoding="utf-8"))
+    payload = verify_training_input_policy(
+        Path(args.training_csv),
+        cohort_json=Path(args.cohort),
+        required_predictors=[str(item) for item in spec.get("predictors", [])],
+        transfer_csv=Path(args.transfer_csv) if args.transfer_csv else None,
+    )
+    write_fidelity_report(payload, Path(args.output))
+    print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
 
 
@@ -262,6 +293,7 @@ def cmd_era5_build_period(args: argparse.Namespace) -> int:
         raw_dir=Path(args.raw_dir),
         feature_dir=Path(args.feature_dir),
         radars_path=Path(args.radars) if args.radars else None,
+        area=EUROPE_ERA5_AREA if args.domain == "europe" else None,
         download=args.download,
         overwrite=args.overwrite,
     )
@@ -662,6 +694,20 @@ def build_parser() -> argparse.ArgumentParser:
     europe_chunk.add_argument("--output-root", required=True)
     europe_chunk.add_argument("--public-base-url", default=ALOFT_PUBLIC_BASE_URL)
     europe_chunk.set_defaults(func=cmd_europe_stream_chunk)
+    europe_verify_chunk = europe_sub.add_parser("verify-chunk")
+    europe_verify_chunk.add_argument("--manifest", required=True)
+    europe_verify_chunk.add_argument("--index", required=True, type=int)
+    europe_verify_chunk.add_argument("--hourly-root", required=True)
+    europe_verify_chunk.add_argument("--public-base-url", default=ALOFT_PUBLIC_BASE_URL)
+    europe_verify_chunk.add_argument("--output", required=True)
+    europe_verify_chunk.set_defaults(func=cmd_europe_verify_chunk)
+    europe_verify_training = europe_sub.add_parser("verify-training")
+    europe_verify_training.add_argument("--training-csv", required=True)
+    europe_verify_training.add_argument("--transfer-csv")
+    europe_verify_training.add_argument("--cohort", required=True)
+    europe_verify_training.add_argument("--model-spec", required=True)
+    europe_verify_training.add_argument("--output", required=True)
+    europe_verify_training.set_defaults(func=cmd_europe_verify_training)
     europe_manifest = europe_sub.add_parser("manifest")
     europe_manifest.add_argument("--model-id", required=True)
     europe_manifest.add_argument("--first-time-utc", required=True)
@@ -757,6 +803,7 @@ def build_parser() -> argparse.ArgumentParser:
     era5_build_period.add_argument("--raw-dir", required=True)
     era5_build_period.add_argument("--feature-dir", required=True)
     era5_build_period.add_argument("--radars")
+    era5_build_period.add_argument("--domain", choices=("uk", "europe"), default="uk")
     era5_build_period.add_argument("--download", action="store_true")
     era5_build_period.add_argument("--overwrite", action="store_true")
     era5_build_period.set_defaults(func=cmd_era5_build_period)

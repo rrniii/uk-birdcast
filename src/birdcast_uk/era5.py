@@ -528,6 +528,7 @@ def build_period(
     raw_dir: Path,
     feature_dir: Path,
     radars_path: Path | None,
+    area: dict[str, float] | None = None,
     download: bool = False,
     overwrite: bool = False,
 ) -> dict[str, object]:
@@ -541,7 +542,9 @@ def build_period(
     period_dir.mkdir(parents=True, exist_ok=True)
     feature_dir.mkdir(parents=True, exist_ok=True)
     period_stamp = f"{start:%Y%m%d}_{end:%Y%m%d}"
-    if radars_path is None and not download:
+    if area is not None:
+        request_area = area
+    elif radars_path is None and not download:
         # Keep request generation usable as a dependency/status probe. Actual
         # downloads and extraction require the published radar-range metadata.
         request_area = UK_ERA5_AREA

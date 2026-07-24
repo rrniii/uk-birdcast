@@ -23,6 +23,7 @@ from birdcast_uk.config import (
     ERA5_PRESSURE_LEVELS,
     ERA5_PRESSURE_LEVEL_VARIABLES,
     ERA5_SINGLE_LEVEL_VARIABLES,
+    EUROPE_ERA5_AREA,
 )
 from birdcast_uk.observed import build_observed_products
 from birdcast_uk.radars import BirdcastRadar, radars_from_pvol_catalog, write_radars
@@ -76,6 +77,14 @@ def test_radar_coverage_area_extends_in_all_directions() -> None:
     assert area["south"] <= 49.25
     assert area["west"] <= -4.0
     assert area["east"] >= 3.0
+
+
+def test_europe_era5_request_uses_the_explicit_wide_domain(tmp_path: Path) -> None:
+    request = build_period_request(
+        "2026-01-01", "2026-01-02", "single-levels", tmp_path / "era5.nc", area=EUROPE_ERA5_AREA
+    )
+
+    assert request.request["area"] == [72.0, -25.0, 33.0, 45.0]
 
 
 def test_observed_products_from_rows(tmp_path: Path) -> None:

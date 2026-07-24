@@ -19,6 +19,7 @@ from birdcast_uk.europe import (
     stream_aloft_hourly,
     write_aloft_chunk_manifest,
 )
+from birdcast_uk.europe_fidelity import verify_aloft_chunk, verify_training_input_policy
 
 
 class ChunkOnlyResponse(BytesIO):
@@ -96,6 +97,59 @@ def test_month_chunks_are_restartable_derived_partitions(tmp_path: Path) -> None
     assert result["chunk_count"] == 1
     assert chunk["days"] == ["20260701", "20260702"]
     assert chunk["role"] == "training"
+
+
+def test_fidelity_restreams_chunk_and_rejects_a_changed_derivative(tmp_path: Path) -> None:
+    source = (
+        "radar,datetime,height,ff,dd,gap,dens,dbz,radar_latitude,radar_longitude\n"
+        "bejab,2026-07-01T00:00:00Z,200,10,90,FALSE,2,-10,51.1,3.1\n"
+        "bejab,2026-07-01T00:00:00Z,400,10,90,FALSE,2,-10,51.1,3.1\n"
+    )
+    chunk = {"source": "baltrad", "radar": "bejab", "year": "2026", "month": "07", "role": "training", "days": ["20260701"]}
+    stream_aloft_chunk(chunk, output_root=tmp_path, public_base_url="https://example", opener=opener(source))
+
+    result = verify_aloft_chunk(chunk, hourly_root=tmp_path, public_base_url="https://example", opener=opener(source))
+    assert result["status"] == "passed"
+    assert result["raw_source_persisted"] is False
+
+    pyarrow = __import__("pyarrow")
+    parquet = __import__("pyarrow.parquet", fromlist=["read_table", "write_table"])
+    path = tmp_path / "source=baltrad" / "year=2026" / "month=07" / "bejab.parquet"
+    changed = parquet.read_table(path).to_pylist()
+    changed[0]["mean_vid_birds_per_km2"] = 999.0
+    parquet.write_table(pyarrow.Table.from_pylist(changed), path)
+    try:
+        verify_aloft_chunk(chunk, hourly_root=tmp_path, public_base_url="https://example", opener=opener(source))
+    except ValueError as error:
+        assert "hourly reconstruction mismatch" in str(error)
+    else:
+        raise AssertionError("changed hourly derivative must be denied")
+
+
+def test_training_fidelity_rejects_transfer_and_non_sp_uk_rows(tmp_path: Path) -> None:
+    cohort = tmp_path / "cohort.json"
+    cohort.write_text(json.dumps({"entries": [
+        {"source": "baltrad", "radar": "bejab", "role": "training"},
+        {"source": "baltrad", "radar": "nlhrw", "role": "transfer-validation"},
+    ]}), encoding="utf-8")
+    training = tmp_path / "training.csv"
+    training.write_text(
+        "radar,source,pulse,weather_x\nbejab,aloft-baltrad,aloft,1\nchenies,jasmin-uk-sp,sp,2\n",
+        encoding="utf-8",
+    )
+    result = verify_training_input_policy(training, cohort_json=cohort, required_predictors=["weather_x"])
+    assert result["status"] == "passed"
+
+    training.write_text(
+        "radar,source,pulse,weather_x\nnlhrw,aloft-baltrad,aloft,1\n",
+        encoding="utf-8",
+    )
+    try:
+        verify_training_input_policy(training, cohort_json=cohort, required_predictors=["weather_x"])
+    except ValueError as error:
+        assert "not permitted" in str(error)
+    else:
+        raise AssertionError("transfer radar leakage must be denied")
 
 
 def test_europe_manifest_is_source_explicit_and_not_land_clipped(tmp_path: Path) -> None:
