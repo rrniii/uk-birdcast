@@ -11,7 +11,9 @@ import csv
 import json
 import math
 from pathlib import Path
+import time
 from typing import Any, Callable
+from urllib.error import HTTPError, URLError
 
 from .archive import VptsObject
 from .config import ALOFT_PUBLIC_BASE_URL
@@ -26,8 +28,13 @@ def verify_aloft_chunk(
     public_base_url: str = ALOFT_PUBLIC_BASE_URL,
     opener: OpenUrl | None = None,
     release_id: str = "unversioned",
+    retry_attempts: int = 3,
+    retry_delay_seconds: float = 0.5,
 ) -> dict[str, Any]:
     """Reconstruct a derived radar-month partition and reject any difference."""
+
+    if retry_attempts < 1:
+        raise ValueError("retry_attempts must be at least one")
 
     source = str(chunk["source"])
     radar = str(chunk["radar"])
@@ -66,7 +73,20 @@ def verify_aloft_chunk(
             url=f"{public_base_url.rstrip('/')}/{source}/daily/{radar}/{year}/{radar}_vpts_{day}.csv",
         )
         kwargs = {"opener": opener} if opener is not None else {}
-        reconstructed, audit = stream_aloft_hourly(obj, **kwargs)
+        for attempt in range(retry_attempts):
+            try:
+                reconstructed, audit = stream_aloft_hourly(obj, **kwargs)
+                break
+            except HTTPError:
+                # Explicit non-404 HTTP errors are source failures, not
+                # transient transport conditions.
+                raise
+            except (TimeoutError, URLError, OSError) as error:
+                if attempt + 1 == retry_attempts:
+                    raise RuntimeError(
+                        f"Aloft VPTS fidelity re-stream failed after {retry_attempts} attempts for {obj.url}"
+                    ) from error
+                time.sleep(retry_delay_seconds * (attempt + 1))
         for row in reconstructed:
             row["cohort_role"] = chunk.get("role")
         _assert_row_sets_equal(persisted_by_day.get(day, []), reconstructed, day)

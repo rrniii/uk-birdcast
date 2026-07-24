@@ -211,6 +211,35 @@ def test_fidelity_restreams_chunk_and_rejects_a_changed_derivative(tmp_path: Pat
         raise AssertionError("changed hourly derivative must be denied")
 
 
+def test_fidelity_retries_transient_transport_errors_before_comparing(tmp_path: Path) -> None:
+    from urllib.error import URLError
+
+    source = (
+        "radar,datetime,height,ff,dd,gap,dens,dbz,radar_latitude,radar_longitude\n"
+        "bejab,2026-07-01T00:00:00Z,200,10,90,FALSE,2,-10,51.1,3.1\n"
+    )
+    chunk = {"source": "baltrad", "radar": "bejab", "year": "2026", "month": "07", "role": "training", "days": ["20260701"]}
+    stream_aloft_chunk(chunk, output_root=tmp_path, public_base_url="https://example", opener=opener(source))
+    calls = 0
+
+    def flaky(_url: str, **_kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise URLError("temporary TLS reset")
+        return ChunkOnlyResponse(source.encode())
+
+    result = verify_aloft_chunk(
+        chunk,
+        hourly_root=tmp_path,
+        public_base_url="https://example",
+        opener=flaky,
+        retry_delay_seconds=0,
+    )
+    assert result["status"] == "passed"
+    assert calls == 2
+
+
 def test_fidelity_reads_hive_partition_without_merging_source_column(tmp_path: Path) -> None:
     source = (
         "radar,datetime,height,ff,dd,gap,dens,dbz,radar_latitude,radar_longitude\n"
