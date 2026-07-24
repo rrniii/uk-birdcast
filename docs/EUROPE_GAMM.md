@@ -158,9 +158,9 @@ The public artifact tree also retains `validation/source-fidelity.json`,
 `validation/model-validation.json`; the manifest links directly to the final
 held-out model report.
 
-Publication is a two-stage promotion. The JASMIN job first uploads all
-validated assets to `birdcast-euro/data` in the Object Store, then uploads
-`latest/reanalysis.json` last. The web host only replaces its Nginx artifact
-symlink after it has pulled that manifest and verified `release_status`,
-`data_available`, and the referenced fixed grid. A failed model, audit, or
-incomplete transfer cannot alter the public Europe tab.
+Publication is an atomic host promotion. The JASMIN job transfers only after
+all validation gates pass; the public host then independently verifies
+`release_status`, `data_available`, and the referenced fixed grid before
+switching its Nginx artifact symlink. The optional Object Store pull performs
+the same checks and remains a no-op when its credentials are unavailable. A
+failed model, audit, or incomplete transfer cannot alter the public Europe tab.

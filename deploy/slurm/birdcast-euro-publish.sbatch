@@ -28,10 +28,9 @@ export PYTHONPATH="$BIRDCAST_EURO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 : "${BIRDCAST_EURO_TRAINING_FIDELITY:?Set the passed training fidelity report}"
 : "${BIRDCAST_EURO_MODEL_VALIDATION:?Set the passed GAMM validation report}"
 : "${BIRDCAST_EURO_PUBLICATION_FIDELITY:?Set publication fidelity report output}"
-: "${BIRDCAST_EURO_OBJECT_STORE_BUCKET:?Set the public Object Store bucket}"
-: "${BIRDCAST_EURO_OBJECT_STORE_ENDPOINT:?Set the public Object Store endpoint}"
-: "${BIRDCAST_EURO_AWS_PROFILE:?Set the Object Store AWS profile}"
-: "${BIRDCAST_EURO_OBJECT_PREFIX:?Set the public Object Store prefix}"
+: "${BIRDCAST_EURO_PUBLIC_HOST:?Set the public host address}"
+: "${BIRDCAST_EURO_PUBLIC_USER:?Set the public host SSH user}"
+: "${BIRDCAST_EURO_PUBLIC_STAGE_ROOT:?Set the public host release-stage root}"
 
 module load jaspy/3.12/v20250704
 mkdir -p "$BIRDCAST_EURO_ARTIFACT_ROOT/validation"
@@ -49,12 +48,11 @@ cp "$BIRDCAST_EURO_MODEL_VALIDATION" "$BIRDCAST_EURO_ARTIFACT_ROOT/validation/mo
   --source-fidelity "$BIRDCAST_EURO_SOURCE_FIDELITY" --training-fidelity "$BIRDCAST_EURO_TRAINING_FIDELITY" \
   --model-validation "$BIRDCAST_EURO_MODEL_VALIDATION" --output "$BIRDCAST_EURO_PUBLICATION_FIDELITY"
 
-# A public manifest is the promotion switch. All assets reach the Object Store
-# before it does, so a web host can never activate a partial release.
-target="s3://${BIRDCAST_EURO_OBJECT_STORE_BUCKET}/${BIRDCAST_EURO_OBJECT_PREFIX}"
-aws --profile "$BIRDCAST_EURO_AWS_PROFILE" --endpoint-url "$BIRDCAST_EURO_OBJECT_STORE_ENDPOINT" s3 sync \
-  "$BIRDCAST_EURO_ARTIFACT_ROOT" "$target" --acl public-read --only-show-errors \
-  --exclude "latest/reanalysis.json"
-aws --profile "$BIRDCAST_EURO_AWS_PROFILE" --endpoint-url "$BIRDCAST_EURO_OBJECT_STORE_ENDPOINT" s3 cp \
-  "$BIRDCAST_EURO_ARTIFACT_ROOT/latest/reanalysis.json" "$target/latest/reanalysis.json" \
-  --acl public-read --only-show-errors
+# Transfer only a release that has passed every preceding gate. The host-side
+# activator independently checks the manifest and switches its Nginx symlink.
+remote="${BIRDCAST_EURO_PUBLIC_USER}@${BIRDCAST_EURO_PUBLIC_HOST}"
+remote_stage="/tmp/${BIRDCAST_EURO_MODEL_ID}-${SLURM_JOB_ID}"
+rsync -a --delete -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes" \
+  "$BIRDCAST_EURO_ARTIFACT_ROOT/" "$remote:$remote_stage/"
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$remote" \
+  "sudo -n -u birdcast /bin/sh /opt/birdcast-uk/repo/deploy/scripts/birdcast-euro-activate.sh '$remote_stage' '$BIRDCAST_EURO_PUBLIC_STAGE_ROOT' /opt/birdcast-euro/artifacts-current"

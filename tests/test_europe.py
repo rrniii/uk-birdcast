@@ -375,8 +375,8 @@ def test_europe_batch_jobs_pin_the_declared_release_and_bound_streaming() -> Non
     assert "#SBATCH --cpus-per-task=1" in gamm
     assert "#SBATCH --mem=128G" in gamm
     publish = (slurm_dir / "birdcast-euro-publish.sbatch").read_text(encoding="utf-8")
-    assert '--exclude "latest/reanalysis.json"' in publish
-    assert '"$target/latest/reanalysis.json"' in publish
+    assert "BIRDCAST_EURO_PUBLIC_HOST" in publish
+    assert "birdcast-euro-activate.sh" in publish
 
 
 def test_europe_public_promotion_only_switches_a_complete_manifest() -> None:
@@ -391,6 +391,9 @@ def test_europe_public_promotion_only_switches_a_complete_manifest() -> None:
     assert "alias /opt/birdcast-euro/artifacts-current/;" in nginx
     unit = (root / "deploy/systemd/birdcast-euro-object-store-pull.service").read_text(encoding="utf-8")
     assert "EnvironmentFile=/etc/birdcast-uk/birdcast-euro.env" in unit
+    activate = (root / "deploy/scripts/birdcast-euro-activate.sh").read_text(encoding="utf-8")
+    assert 'manifest.get("release_status") != "published"' in activate
+    assert 'test -f "$source_root/$grid"' in activate
 
 
 def load_script(name: str):

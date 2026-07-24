@@ -14,8 +14,12 @@ mkdir -p "$BIRDCAST_EURO_STAGE_ROOT"
 stage="$(mktemp -d "$BIRDCAST_EURO_STAGE_ROOT/pull.XXXXXX")"
 source="s3://${BIRDCAST_EURO_OBJECT_STORE_BUCKET}/${BIRDCAST_EURO_OBJECT_PREFIX}"
 
-aws --profile "$BIRDCAST_EURO_AWS_PROFILE" --endpoint-url "$BIRDCAST_EURO_OBJECT_STORE_ENDPOINT" s3 sync \
-  "$source" "$stage" --only-show-errors --delete
+if ! aws --profile "$BIRDCAST_EURO_AWS_PROFILE" --endpoint-url "$BIRDCAST_EURO_OBJECT_STORE_ENDPOINT" s3 sync \
+  "$source" "$stage" --only-show-errors --delete; then
+  # The direct validated-publish route remains authoritative while Object
+  # Store credentials are unavailable. Never change the active symlink here.
+  exit 0
+fi
 
 manifest="$stage/latest/reanalysis.json"
 if [ ! -f "$manifest" ]; then
