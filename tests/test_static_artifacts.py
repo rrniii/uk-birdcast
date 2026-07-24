@@ -76,6 +76,13 @@ def test_install_static_site_uses_same_origin_data_url(tmp_path: Path) -> None:
     assert "105.27299,306.47299" in radar_marker
     assert "currentColor" in radar_marker
     assert (site_root / "crow-radar-detail.js").is_file()
+    crow_detail = (site_root / "crow-radar-detail.js").read_text(encoding="utf-8")
+    assert "drawTimeAxis" in crow_detail
+    assert 'intervalHours === 72 ? 6 : 3' in crow_detail
+    assert 'formatAxisHour' in crow_detail
+    assert 'formatAxisDate' in crow_detail
+    assert 'this.data.axisFirst = first.getTime()' in crow_detail
+    assert 'this.data.axisLast = plusDays(first, days.length).getTime()' in crow_detail
     assert (site_root / "regional-boundaries.geojson").is_file()
     assert "ukmo-nimrod/vpts/current_ci_le4" in config["vpts_object_url_template"]
     assert config["archive_sources"]["jasmin-uk"]["kind"] == "vpts"
