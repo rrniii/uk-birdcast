@@ -830,6 +830,9 @@ def _select_radar_sites(dataset: object, radars: list[BirdcastRadar]) -> object:
         import xarray as xr
     except ModuleNotFoundError as exc:
         raise RuntimeError("xarray is required for ERA5 feature extraction") from exc
+    # Daily files are small enough to hold in memory.  Loading before fancy
+    # point indexing avoids netCDF issuing one disk read per selected location.
+    dataset = dataset.load()  # type: ignore[attr-defined]
     latitude_name = _coordinate_name(dataset, ("latitude", "lat"))
     longitude_name = _coordinate_name(dataset, ("longitude", "lon"))
     radar_site = "radar_site"
