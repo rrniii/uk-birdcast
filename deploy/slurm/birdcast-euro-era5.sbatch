@@ -3,10 +3,10 @@
 # Submit 0-12: 14-31 Jul 2025, Aug 2025-Jun 2026, and 1-13 Jul 2026.
 #SBATCH --job-name=birdcast-euro-era5
 #SBATCH --account=ncas_radar
-#SBATCH --qos=long
+#SBATCH --qos=standard
 #SBATCH --partition=standard
-#SBATCH --time=48:00:00
-#SBATCH --cpus-per-task=2
+#SBATCH --time=12:00:00
+#SBATCH --cpus-per-task=1
 #SBATCH --mem=24G
 #SBATCH --output=logs/birdcast-euro-era5-%A_%a.out
 #SBATCH --error=logs/birdcast-euro-era5-%A_%a.err
