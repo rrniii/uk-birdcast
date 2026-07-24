@@ -70,6 +70,9 @@ def test_install_static_site_uses_same_origin_data_url(tmp_path: Path) -> None:
     assert (site_root / "index.html").is_file()
     assert (site_root / "live-uk-bird-maps-logo.jpg").is_file()
     assert (site_root / "live-uk-bird-maps-icon.svg").is_file()
+    html = (site_root / "index.html").read_text(encoding="utf-8")
+    assert 'href="live-uk-bird-maps-icon.svg?v=2" type="image/svg+xml"' in html
+    assert 'rel="icon" href="live-uk-bird-maps-logo.jpg"' not in html
     assert (site_root / "radar-marker.svg").is_file()
     radar_marker = (site_root / "radar-marker.svg").read_text(encoding="utf-8")
     assert 'viewBox="95 45 230 270"' in radar_marker
