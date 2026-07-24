@@ -22,11 +22,13 @@ def validate(
     predictions: Path,
     output_root: Path,
     source_fidelity: Path,
+    era5_fidelity: Path,
     training_fidelity: Path,
     model_validation: Path,
     output: Path,
 ) -> dict[str, object]:
     _passed(source_fidelity, "source fidelity")
+    _passed(era5_fidelity, "ERA5 fidelity")
     _passed(training_fidelity, "training fidelity")
     _passed(model_validation, "model validation", key="release_passed")
     manifest_path = output_root / "latest" / "reanalysis.json"
@@ -104,11 +106,12 @@ if __name__ == "__main__":
     parser.add_argument("--predictions", required=True)
     parser.add_argument("--output-root", required=True)
     parser.add_argument("--source-fidelity", required=True)
+    parser.add_argument("--era5-fidelity", required=True)
     parser.add_argument("--training-fidelity", required=True)
     parser.add_argument("--model-validation", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
     print(json.dumps(validate(
         Path(args.predictions), Path(args.output_root), Path(args.source_fidelity),
-        Path(args.training_fidelity), Path(args.model_validation), Path(args.output),
+        Path(args.era5_fidelity), Path(args.training_fidelity), Path(args.model_validation), Path(args.output),
     ), indent=2))

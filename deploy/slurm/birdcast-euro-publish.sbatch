@@ -45,7 +45,8 @@ cp "$BIRDCAST_EURO_MODEL_VALIDATION" "$BIRDCAST_EURO_ARTIFACT_ROOT/validation/mo
   --radars "$BIRDCAST_EURO_RADARS" --release-status published
 "$BIRDCAST_EURO_PYTHON" "$BIRDCAST_EURO_ROOT/scripts/validate_europe_publication.py" \
   --predictions "$BIRDCAST_EURO_PREDICTIONS" --output-root "$BIRDCAST_EURO_ARTIFACT_ROOT" \
-  --source-fidelity "$BIRDCAST_EURO_SOURCE_FIDELITY" --training-fidelity "$BIRDCAST_EURO_TRAINING_FIDELITY" \
+  --source-fidelity "$BIRDCAST_EURO_SOURCE_FIDELITY" --era5-fidelity "$BIRDCAST_EURO_ERA5_FIDELITY" \
+  --training-fidelity "$BIRDCAST_EURO_TRAINING_FIDELITY" \
   --model-validation "$BIRDCAST_EURO_MODEL_VALIDATION" --output "$BIRDCAST_EURO_PUBLICATION_FIDELITY"
 
 # Transfer only a release that has passed every preceding gate. The host-side

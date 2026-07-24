@@ -55,13 +55,14 @@ def test_runtime_spec_requires_passed_fidelity(tmp_path: Path) -> None:
 def test_publication_denies_unpassed_model_validation(tmp_path: Path) -> None:
     module = _load("validate_europe_publication.py")
     source = tmp_path / "source.json"
+    era5 = tmp_path / "era5.json"
     training = tmp_path / "training.json"
     model = tmp_path / "model.json"
-    for path in (source, training):
+    for path in (source, era5, training):
         path.write_text(json.dumps({"status": "passed"}), encoding="utf-8")
     model.write_text(json.dumps({"release_passed": False}), encoding="utf-8")
     with pytest.raises(ValueError, match="model validation"):
-        module.validate(tmp_path / "missing.csv", tmp_path, source, training, model, tmp_path / "out.json")
+        module.validate(tmp_path / "missing.csv", tmp_path, source, era5, training, model, tmp_path / "out.json")
 
 
 def test_publication_reconciles_every_supported_prediction_cell(tmp_path: Path) -> None:
@@ -78,13 +79,15 @@ def test_publication_reconciles_every_supported_prediction_cell(tmp_path: Path) 
     )
     (root / "validation.json").write_text(json.dumps({"release_passed": True}), encoding="utf-8")
     source = tmp_path / "source.json"
+    era5 = tmp_path / "era5.json"
     training = tmp_path / "training.json"
     model = tmp_path / "model.json"
     source.write_text(json.dumps({"status": "passed"}), encoding="utf-8")
+    era5.write_text(json.dumps({"status": "passed"}), encoding="utf-8")
     training.write_text(json.dumps({"status": "passed"}), encoding="utf-8")
     model.write_text(json.dumps({"release_passed": True}), encoding="utf-8")
     result = _load("validate_europe_publication.py").validate(
-        predictions, root, source, training, model, tmp_path / "publication.json"
+        predictions, root, source, era5, training, model, tmp_path / "publication.json"
     )
     assert result["status"] == "passed"
     assert result["published_frame_cell_count"] == 1
@@ -92,5 +95,19 @@ def test_publication_reconciles_every_supported_prediction_cell(tmp_path: Path) 
     (root / "validation.json").unlink()
     with pytest.raises(ValueError, match="validation asset is missing"):
         _load("validate_europe_publication.py").validate(
-            predictions, root, source, training, model, tmp_path / "publication-recheck.json"
+            predictions, root, source, era5, training, model, tmp_path / "publication-recheck.json"
         )
+
+
+def test_publication_denies_unpassed_era5_fidelity(tmp_path: Path) -> None:
+    module = _load("validate_europe_publication.py")
+    source = tmp_path / "source.json"
+    era5 = tmp_path / "era5.json"
+    training = tmp_path / "training.json"
+    model = tmp_path / "model.json"
+    source.write_text(json.dumps({"status": "passed"}), encoding="utf-8")
+    era5.write_text(json.dumps({"status": "failed"}), encoding="utf-8")
+    training.write_text(json.dumps({"status": "passed"}), encoding="utf-8")
+    model.write_text(json.dumps({"release_passed": True}), encoding="utf-8")
+    with pytest.raises(ValueError, match="ERA5 fidelity"):
+        module.validate(tmp_path / "missing.csv", tmp_path, source, era5, training, model, tmp_path / "out.json")
