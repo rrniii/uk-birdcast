@@ -33,7 +33,12 @@ PY
 )"
 test -f "$source_root/$grid"
 
-release="$stage_root/$model_id"
+# A model identifier may be retried after a transport failure.  Key the host
+# release by the verified manifest content as well, so a retry can never alter
+# the directory currently served by Nginx before the symlink is replaced.
+manifest_sha="$(sha256sum "$manifest" | awk '{print $1}')"
+release="$stage_root/$model_id-${manifest_sha%${manifest_sha#????????????}}"
+test ! -e "$release"
 mkdir -p "$release"
 rsync -a --delete "$source_root/" "$release/"
 ln -s "$release" "$current_link.next"

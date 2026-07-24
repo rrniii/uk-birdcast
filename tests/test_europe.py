@@ -394,6 +394,8 @@ def test_europe_public_promotion_only_switches_a_complete_manifest() -> None:
     activate = (root / "deploy/scripts/birdcast-euro-activate.sh").read_text(encoding="utf-8")
     assert 'manifest.get("release_status") != "published"' in activate
     assert 'test -f "$source_root/$grid"' in activate
+    assert 'sha256sum "$manifest"' in activate
+    assert 'test ! -e "$release"' in activate
 
 
 def load_script(name: str):
