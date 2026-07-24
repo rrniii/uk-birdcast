@@ -117,6 +117,43 @@ def test_stream_deadline_prevents_a_stuck_source_read() -> None:
         )
 
 
+def test_chunk_retries_transient_transport_errors_but_denies_a_persistent_one(tmp_path: Path) -> None:
+    from urllib.error import URLError
+
+    source = (
+        "radar,datetime,height,ff,dd,gap,dens,dbz,radar_latitude,radar_longitude\n"
+        "bejab,2026-07-01T00:00:00Z,200,10,90,FALSE,2,-10,51.1,3.1\n"
+    )
+    chunk = {"source": "baltrad", "radar": "bejab", "year": "2026", "month": "07", "role": "training", "days": ["20260701"]}
+    calls = 0
+
+    def flaky(_url: str, **_kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise URLError("temporary TLS failure")
+        return ChunkOnlyResponse(source.encode())
+
+    result = stream_aloft_chunk(
+        chunk, output_root=tmp_path, public_base_url="https://example", opener=flaky, retry_delay_seconds=0
+    )
+    assert result["hourly_row_count"] == 1
+    assert calls == 2
+
+    def permanently_unreachable(_url: str, **_kwargs):
+        raise URLError("still unavailable")
+
+    with pytest.raises(RuntimeError, match="failed after 2 attempts"):
+        stream_aloft_chunk(
+            chunk,
+            output_root=tmp_path / "failed",
+            public_base_url="https://example",
+            opener=permanently_unreachable,
+            retry_attempts=2,
+            retry_delay_seconds=0,
+        )
+
+
 def test_month_chunks_are_restartable_derived_partitions(tmp_path: Path) -> None:
     objects = [
         VptsObject("baltrad", "bejab", "20260701", "https://example/1.csv"),

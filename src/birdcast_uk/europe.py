@@ -17,9 +17,10 @@ import math
 from pathlib import Path
 import shutil
 import signal
+import time
 from typing import Any, BinaryIO, Callable, Iterable, Iterator
 from urllib.request import urlopen
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 from .archive import VptsObject
 from .config import (
@@ -303,6 +304,8 @@ def stream_aloft_chunk(
     public_base_url: str = ALOFT_PUBLIC_BASE_URL,
     opener: OpenUrl = urlopen,
     release_id: str = "unversioned",
+    retry_attempts: int = 3,
+    retry_delay_seconds: float = 2.0,
 ) -> dict[str, Any]:
     source = str(chunk["source"])
     radar = str(chunk["radar"])
@@ -314,6 +317,8 @@ def stream_aloft_chunk(
         existing = json.loads(manifest_path.read_text(encoding="utf-8"))
         if existing.get("status") == "complete" and existing.get("release_id") == release_id:
             return {**existing, "skipped": True}
+    if retry_attempts < 1:
+        raise ValueError("retry_attempts must be at least one")
     rows: list[dict[str, Any]] = []
     audits: list[dict[str, Any]] = []
     for day in chunk.get("days", []):
@@ -326,7 +331,20 @@ def stream_aloft_chunk(
                 f"{radar}_vpts_{day}.csv"
             ),
         )
-        hourly, audit = stream_aloft_hourly(obj, opener=opener)
+        for attempt in range(retry_attempts):
+            try:
+                hourly, audit = stream_aloft_hourly(obj, opener=opener)
+                break
+            except HTTPError:
+                # A non-404 response is an explicit source failure, never an
+                # unavailable observation or a transient retry candidate.
+                raise
+            except (TimeoutError, URLError, OSError) as error:
+                if attempt + 1 == retry_attempts:
+                    raise RuntimeError(
+                        f"Aloft VPTS stream failed after {retry_attempts} attempts for {obj.url}"
+                    ) from error
+                time.sleep(retry_delay_seconds * (attempt + 1))
         for row in hourly:
             row["cohort_role"] = chunk.get("role")
         rows.extend(hourly)
