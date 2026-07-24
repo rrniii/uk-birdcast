@@ -77,10 +77,17 @@ def verify_aloft_chunk(
             try:
                 reconstructed, audit = stream_aloft_hourly(obj, **kwargs)
                 break
-            except HTTPError:
-                # Explicit non-404 HTTP errors are source failures, not
-                # transient transport conditions.
-                raise
+            except HTTPError as error:
+                # Aloft can briefly throttle or return a gateway error under
+                # parallel audit load.  Retrying those responses preserves the
+                # source check; all semantic HTTP errors still fail closed.
+                if error.code not in {408, 429, 500, 501, 502, 503, 504}:
+                    raise
+                if attempt + 1 == retry_attempts:
+                    raise RuntimeError(
+                        f"Aloft VPTS fidelity re-stream failed after {retry_attempts} attempts for {obj.url}"
+                    ) from error
+                time.sleep(retry_delay_seconds * (attempt + 1))
             except (TimeoutError, URLError, OSError) as error:
                 if attempt + 1 == retry_attempts:
                     raise RuntimeError(
