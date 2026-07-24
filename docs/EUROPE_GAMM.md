@@ -152,3 +152,8 @@ reconciles every supported prediction with the fixed grid and daily JSON
 frames, then checks the passed source, ERA5, training, and held-out model
 validation reports. Missing, duplicate, unsupported, or altered map cells
 deny publication.
+
+The public artifact tree also retains `validation/source-fidelity.json`,
+`validation/era5-fidelity.json`, `validation/training-fidelity.json`, and
+`validation/model-validation.json`; the manifest links directly to the final
+held-out model report.

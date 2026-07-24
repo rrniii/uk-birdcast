@@ -33,6 +33,11 @@ def validate(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest.get("data_available") is not True or manifest.get("release_status") != "published":
         raise ValueError("Europe manifest is not a published, data-bearing release")
+    validation_asset = str(manifest.get("assets", {}).get("validation") or "")
+    if not validation_asset or validation_asset.startswith(("http://", "https://")):
+        raise ValueError("Europe manifest must retain a local validation asset")
+    if not (output_root / validation_asset).is_file():
+        raise ValueError("Europe manifest validation asset is missing")
     grid_path = output_root / str(manifest["assets"]["grid"])
     grid = json.loads(grid_path.read_text(encoding="utf-8"))
     coordinates = [(float(cell["longitude"]), float(cell["latitude"])) for cell in grid.get("cells", [])]
@@ -80,6 +85,7 @@ def validate(
         "grid_cell_count": len(coordinates),
         "published_frame_cell_count": len(seen),
         "release_status": manifest.get("release_status"),
+        "validation_asset": validation_asset,
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

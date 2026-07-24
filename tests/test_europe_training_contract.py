@@ -76,6 +76,7 @@ def test_publication_reconciles_every_supported_prediction_cell(tmp_path: Path) 
         predictions_csv=predictions, output_root=root, model_id="euro-test", aloft_radar_count=1,
         uk_sp_radar_count=1, validation_url="validation.json", release_status="published",
     )
+    (root / "validation.json").write_text(json.dumps({"release_passed": True}), encoding="utf-8")
     source = tmp_path / "source.json"
     training = tmp_path / "training.json"
     model = tmp_path / "model.json"
@@ -87,3 +88,9 @@ def test_publication_reconciles_every_supported_prediction_cell(tmp_path: Path) 
     )
     assert result["status"] == "passed"
     assert result["published_frame_cell_count"] == 1
+
+    (root / "validation.json").unlink()
+    with pytest.raises(ValueError, match="validation asset is missing"):
+        _load("validate_europe_publication.py").validate(
+            predictions, root, source, training, model, tmp_path / "publication-recheck.json"
+        )
