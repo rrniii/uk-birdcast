@@ -5,6 +5,9 @@ import csv
 import importlib.util
 import json
 from pathlib import Path
+import time
+
+import pytest
 
 from birdcast_uk.archive import VptsObject
 from birdcast_uk.cli import build_parser
@@ -99,6 +102,19 @@ def test_missing_advertised_vpts_is_recorded_as_unavailable_not_zero() -> None:
     assert rows == []
     assert audit.availability == "unavailable"
     assert audit.unavailable_reason == "source_vpts_object_not_found"
+
+
+def test_stream_deadline_prevents_a_stuck_source_read() -> None:
+    def slow(_url: str, **_kwargs):
+        time.sleep(0.05)
+        return ChunkOnlyResponse(b"")
+
+    with pytest.raises(TimeoutError, match="wall-clock deadline"):
+        stream_aloft_hourly(
+            VptsObject("baltrad", "bejab", "20260701", "https://example/slow.csv"),
+            opener=slow,
+            timeout_seconds=0.01,
+        )
 
 
 def test_month_chunks_are_restartable_derived_partitions(tmp_path: Path) -> None:

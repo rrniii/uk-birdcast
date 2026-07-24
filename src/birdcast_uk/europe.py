@@ -16,6 +16,7 @@ import json
 import math
 from pathlib import Path
 import shutil
+import signal
 from typing import Any, BinaryIO, Callable, Iterable, Iterator
 from urllib.request import urlopen
 from urllib.error import HTTPError
@@ -161,31 +162,32 @@ def stream_aloft_hourly(
 
     audit = StreamAudit(obj.source, obj.radar, obj.day, obj.url)
     try:
-        response = _open(opener, obj.url, timeout_seconds)
+        with _stream_deadline(timeout_seconds):
+            response = _open(opener, obj.url, timeout_seconds)
+            headers = getattr(response, "headers", {})
+            audit.etag = _header(headers, "ETag")
+            audit.last_modified = _header(headers, "Last-Modified")
+            audit.content_length = _integer(_header(headers, "Content-Length"))
+            hashing = _HashingReader(response)
+            profiles_by_time: dict[str, list[dict[str, Any]]] = defaultdict(list)
+            with response:
+                text = io.TextIOWrapper(io.BufferedReader(hashing), encoding="utf-8", newline="")
+                for row in csv.DictReader(text):
+                    audit.row_count += 1
+                    timestamp = str(row.get("datetime") or "")
+                    if not timestamp:
+                        continue
+                    row["radar"] = obj.radar
+                    row["pulse"] = "aloft"
+                    row["source"] = f"aloft-{obj.source}"
+                    row["source_url"] = obj.url
+                    profiles_by_time[timestamp].append(row)
     except HTTPError as exc:
         if exc.code != 404:
             raise
         audit.availability = "unavailable"
         audit.unavailable_reason = "source_vpts_object_not_found"
         return [], audit
-    headers = getattr(response, "headers", {})
-    audit.etag = _header(headers, "ETag")
-    audit.last_modified = _header(headers, "Last-Modified")
-    audit.content_length = _integer(_header(headers, "Content-Length"))
-    hashing = _HashingReader(response)
-    profiles_by_time: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    with response:
-        text = io.TextIOWrapper(io.BufferedReader(hashing), encoding="utf-8", newline="")
-        for row in csv.DictReader(text):
-            audit.row_count += 1
-            timestamp = str(row.get("datetime") or "")
-            if not timestamp:
-                continue
-            row["radar"] = obj.radar
-            row["pulse"] = "aloft"
-            row["source"] = f"aloft-{obj.source}"
-            row["source_url"] = obj.url
-            profiles_by_time[timestamp].append(row)
     audit.bytes_read = hashing.bytes_read
     audit.sha256 = hashing.digest.hexdigest()
 
@@ -571,6 +573,31 @@ def _open(opener: OpenUrl, url: str, timeout_seconds: float) -> BinaryIO:
         return opener(url, timeout=timeout_seconds)
     except TypeError:
         return opener(url)
+
+
+class _StreamDeadline:
+    def __init__(self, seconds: float):
+        self.seconds = seconds
+        self.previous_handler: Any = None
+
+    def __enter__(self) -> None:
+        if self.seconds <= 0:
+            raise ValueError("Aloft stream timeout must be positive")
+        self.previous_handler = signal.getsignal(signal.SIGALRM)
+        signal.signal(signal.SIGALRM, self._expired)
+        signal.setitimer(signal.ITIMER_REAL, self.seconds)
+
+    def __exit__(self, _type: object, _value: object, _traceback: object) -> None:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, self.previous_handler)
+
+    @staticmethod
+    def _expired(_signum: int, _frame: object) -> None:
+        raise TimeoutError("Aloft VPTS stream exceeded its wall-clock deadline")
+
+
+def _stream_deadline(seconds: float) -> _StreamDeadline:
+    return _StreamDeadline(seconds)
 
 
 def _header(headers: Any, name: str) -> str | None:
