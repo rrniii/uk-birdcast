@@ -69,9 +69,11 @@ def test_install_static_site_uses_same_origin_data_url(tmp_path: Path) -> None:
     assert config["data_base_url"] == "/birdcast-uk/data"
     assert (site_root / "index.html").is_file()
     assert (site_root / "live-uk-bird-maps-logo.jpg").is_file()
-    assert (site_root / "live-uk-bird-maps-icon.svg").is_file()
+    favicon = (site_root / "live-uk-bird-maps-favicon.png").read_bytes()
+    assert favicon.startswith(b"\x89PNG\r\n\x1a\n")
+    assert favicon[25] == 6  # RGBA, preserving transparency outside the round logo.
     html = (site_root / "index.html").read_text(encoding="utf-8")
-    assert 'href="live-uk-bird-maps-icon.svg?v=2" type="image/svg+xml"' in html
+    assert 'href="live-uk-bird-maps-favicon.png?v=3" type="image/png"' in html
     assert 'rel="icon" href="live-uk-bird-maps-logo.jpg"' not in html
     assert (site_root / "radar-marker.svg").is_file()
     radar_marker = (site_root / "radar-marker.svg").read_text(encoding="utf-8")
