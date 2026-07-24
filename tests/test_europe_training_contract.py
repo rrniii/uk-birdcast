@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from birdcast_uk.europe import publish_europe_predictions
+from birdcast_uk.europe_fidelity import verify_training_input_policy
 
 
 def _load(name: str):
@@ -45,6 +46,24 @@ def test_europe_model_spec_uses_the_frozen_uk_core_predictors() -> None:
         "u_850_ms",
         "v_850_ms",
     ]
+
+
+def test_training_policy_denies_missing_aloft_training_and_transfer_rows(tmp_path: Path) -> None:
+    cohort = tmp_path / "cohort.json"
+    cohort.write_text(json.dumps({"entries": [
+        {"source": "baltrad", "radar": "train", "role": "training"},
+        {"source": "baltrad", "radar": "holdout", "role": "transfer-validation"},
+    ]}), encoding="utf-8")
+    training = tmp_path / "training.csv"
+    training.write_text(
+        "source,radar,pulse,u_850_ms\njasmin-uk-sp,uk,sp,1\n", encoding="utf-8"
+    )
+    transfer = tmp_path / "transfer.csv"
+    transfer.write_text("source,radar,pulse,u_850_ms\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="no approved Aloft training"):
+        verify_training_input_policy(
+            training, cohort_json=cohort, required_predictors=["u_850_ms"], transfer_csv=transfer
+        )
 
 
 def test_runtime_spec_requires_passed_fidelity(tmp_path: Path) -> None:

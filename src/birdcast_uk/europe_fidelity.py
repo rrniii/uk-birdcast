@@ -149,6 +149,8 @@ def verify_training_input_policy(
                 raise ValueError(f"Aloft radar {radar} is not permitted in the training cohort")
             training_aloft_radars.add(radar)
     transfer_radars = {radar for radar, role in roles.items() if role == "transfer-validation"}
+    if not training_aloft_radars:
+        raise ValueError("Europe training table contains no approved Aloft training observations")
     if training_aloft_radars & transfer_radars:
         raise ValueError("transfer-validation Aloft radars leaked into the training table")
 
@@ -157,6 +159,8 @@ def verify_training_input_policy(
         radar = str(row.get("radar") or "").lower()
         if str(row.get("source") or "") != "aloft-baltrad" or roles.get(radar) != "transfer-validation":
             raise ValueError(f"transfer-validation table contains non-transfer radar {radar}")
+    if transfer_csv is not None and not transfer_rows:
+        raise ValueError("Europe transfer-validation table contains no approved Aloft observations")
 
     return {
         "schema_version": "birdcast-euro-fidelity-training-1.0",

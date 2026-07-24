@@ -623,8 +623,10 @@ def test_training_assembler_keeps_transfer_radars_out_of_fit(tmp_path: Path) -> 
     parquet.write_table(
         pyarrow.Table.from_pylist(
             [
-                {"radar": "bejab", "time_utc": "2026-01-01T00:00:00Z", "weather_x": 1.0},
-                {"radar": "nlhrw", "time_utc": "2026-01-01T00:00:00Z", "weather_x": 2.0},
+                # ERA5 Parquet emits UTC timestamps with fractional seconds;
+                # the Aloft derivatives use canonical trailing-Z strings.
+                {"radar": "bejab", "time_utc": "2026-01-01T00:00:00.000000000", "weather_x": 1.0},
+                {"radar": "nlhrw", "time_utc": "2026-01-01T00:00:00.000000000", "weather_x": 2.0},
             ]
         ),
         era5,

@@ -64,7 +64,10 @@ def assemble(args: argparse.Namespace) -> None:
         con.execute(
             f"""
             CREATE VIEW era5 AS
-            SELECT * FROM read_parquet({era5_path}, hive_partitioning=true, union_by_name=true)
+            SELECT
+              * EXCLUDE (time_utc),
+              strftime(CAST(time_utc AS TIMESTAMPTZ) AT TIME ZONE 'UTC', '%Y-%m-%dT%H:%M:%SZ') AS time_utc
+            FROM read_parquet({era5_path}, hive_partitioning=true, union_by_name=true)
             """
         )
         con.execute(
