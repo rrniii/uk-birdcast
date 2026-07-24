@@ -158,6 +158,7 @@ evaluate_groups <- function(target, group_name, max_groups = Inf) {
     )
     if (group_name == "radar" && target %in% spec$vector_targets) {
       vector_fold_rows[[length(vector_fold_rows) + 1]] <<- data.frame(
+        validation = paste0("leave_one_", group_name, "_out"),
         row_id = test$.row_id,
         radar = as.character(test$radar),
         time_utc = test$time_utc,
@@ -231,6 +232,17 @@ for (target in spec$targets) {
         list(target = target, validation = "transfer_validation", held_out = held),
         score(test[[target]], external_prediction)
       )
+      if (target %in% spec$vector_targets) {
+        vector_fold_rows[[length(vector_fold_rows) + 1]] <- data.frame(
+          validation = "transfer_validation",
+          row_id = test$.row_id,
+          radar = as.character(test$radar),
+          time_utc = test$time_utc,
+          target = target,
+          observed = test[[target]],
+          predicted = external_prediction
+        )
+      }
     }
   }
   model_file <- file.path(output_dir, sprintf("gamm_europe_%s.rds", target))
@@ -272,7 +284,10 @@ jsonlite::write_json(
     heldout_radar_vectors = if (file.exists(vector_fold_path)) vector_fold_path else NULL,
     model_files = model_files,
     predictors = spec$predictors,
-    targets = spec$targets
+    targets = spec$targets,
+    transfer_validation_radar_count = if (!is.null(transfer_validation)) {
+      length(unique(as.character(transfer_validation$radar)))
+    } else 0
   ),
   file.path(output_dir, "metrics.json"),
   auto_unbox = TRUE,

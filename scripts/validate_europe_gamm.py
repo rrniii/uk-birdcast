@@ -24,10 +24,12 @@ def circular_error(u_obs: float, v_obs: float, u_pred: float, v_pred: float) -> 
     return abs((predicted - observed + 180) % 360 - 180)
 
 
-def direction_summary(path: Path) -> dict[str, object]:
+def direction_summary(path: Path, *, validation: str) -> dict[str, object]:
     paired: dict[tuple[str, str], dict[str, tuple[float, float]]] = {}
     with path.open(newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
+            if row.get("validation") != validation:
+                continue
             if row["target"] not in {"bird_u_ms", "bird_v_ms"}:
                 continue
             key = (row["radar"], row["row_id"])
@@ -55,25 +57,41 @@ def validate(metrics_path: Path, output: Path) -> dict[str, object]:
     metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
     folds = [
         row for row in metrics.get("folds", [])
-        if row.get("validation") == "leave_one_radar_out" and row.get("target") in INTENSITY_TARGETS
+        if row.get("validation") == "transfer_validation" and row.get("target") in INTENSITY_TARGETS
     ]
     log_skill = finite(row.get("log1p_r_squared") for row in folds)
     f1 = finite(row.get("top_decile_f1") for row in folds)
     direction_path = metrics.get("heldout_radar_vectors")
     direction = (
-        direction_summary(Path(direction_path))
+        direction_summary(Path(direction_path), validation="transfer_validation")
         if direction_path and Path(direction_path).is_file()
         else {"matched_vector_rows": 0, "site_count": 0, "median_site_direction_error_deg": None}
     )
     direction_error = direction["median_site_direction_error_deg"]
+    expected_transfer_radars = int(metrics.get("transfer_validation_radar_count") or 0)
+    transfer_sites_by_target = {
+        target: {
+            str(row.get("held_out"))
+            for row in folds
+            if row.get("target") == target and int(row.get("row_count") or 0) >= 30
+        }
+        for target in INTENSITY_TARGETS
+    }
     gates = {
+        "external_transfer_radars_available": expected_transfer_radars > 0,
+        "all_transfer_radars_scored_for_each_intensity_target": bool(
+            expected_transfer_radars
+            and all(len(sites) == expected_transfer_radars for sites in transfer_sites_by_target.values())
+        ),
         "median_site_log1p_skill_positive": bool(log_skill and median(log_skill) > 0),
         "positive_site_fraction_at_least_0_75": bool(
             log_skill and sum(value > 0 for value in log_skill) / len(log_skill) >= 0.75
         ),
         "median_top_decile_f1_at_least_0_50": bool(f1 and median(f1) >= 0.50),
         "median_direction_error_at_most_30_deg": bool(
-            direction_error is not None and float(direction_error) <= 30
+            direction_error is not None
+            and int(direction["site_count"]) == expected_transfer_radars
+            and float(direction_error) <= 30
         ),
     }
     passed = all(gates.values())
@@ -84,6 +102,10 @@ def validate(metrics_path: Path, output: Path) -> dict[str, object]:
         "release_passed": passed,
         "site_equal_metrics": {
             "intensity_fold_count": len(folds),
+            "expected_transfer_radar_count": expected_transfer_radars,
+            "scored_transfer_radars_by_target": {
+                target: sorted(sites) for target, sites in transfer_sites_by_target.items()
+            },
             "median_log1p_r_squared": median(log_skill) if log_skill else None,
             "positive_log1p_skill_fraction": (
                 sum(value > 0 for value in log_skill) / len(log_skill) if log_skill else None

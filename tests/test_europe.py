@@ -348,6 +348,7 @@ def test_europe_fitter_has_source_and_transfer_controls() -> None:
     assert "site_equal_weight" in script
     assert "leave_one_" in script
     assert "transfer_validation" in script
+    assert "transfer_validation_radar_count" in script
     assert 'model_time_terms = "none"' in script
     assert 'data$pulse == "lp"' in script
     sbatch = (Path(__file__).parents[1] / "deploy/slurm/birdcast-euro-aloft-stream.sbatch").read_text()
@@ -412,16 +413,16 @@ def test_validation_uses_site_metrics_and_paired_vector_direction(tmp_path: Path
     with vectors.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(
             handle,
-            fieldnames=["row_id", "radar", "time_utc", "target", "observed", "predicted"],
+            fieldnames=["validation", "row_id", "radar", "time_utc", "target", "observed", "predicted"],
         )
         writer.writeheader()
         for radar, row_id in (("bejab", "1"), ("nlhrw", "2")):
             writer.writerow(
-                {"row_id": row_id, "radar": radar, "time_utc": "2026-01-01T00:00:00Z",
+                {"validation": "transfer_validation", "row_id": row_id, "radar": radar, "time_utc": "2026-01-01T00:00:00Z",
                  "target": "bird_u_ms", "observed": 1, "predicted": 1}
             )
             writer.writerow(
-                {"row_id": row_id, "radar": radar, "time_utc": "2026-01-01T00:00:00Z",
+                {"validation": "transfer_validation", "row_id": row_id, "radar": radar, "time_utc": "2026-01-01T00:00:00Z",
                  "target": "bird_v_ms", "observed": 1, "predicted": 1}
             )
     folds = []
@@ -430,8 +431,9 @@ def test_validation_uses_site_metrics_and_paired_vector_direction(tmp_path: Path
             folds.append(
                 {
                     "target": target,
-                    "validation": "leave_one_radar_out",
+                    "validation": "transfer_validation",
                     "held_out": radar,
+                    "row_count": 30,
                     "log1p_r_squared": 0.4,
                     "top_decile_f1": 0.7,
                 }
@@ -443,6 +445,7 @@ def test_validation_uses_site_metrics_and_paired_vector_direction(tmp_path: Path
                 "model_id": "euro-v1",
                 "folds": folds,
                 "heldout_radar_vectors": str(vectors),
+                "transfer_validation_radar_count": 2,
             }
         ),
         encoding="utf-8",
