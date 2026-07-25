@@ -1,0 +1,47 @@
+#!/usr/bin/env Rscript
+
+# Test a candidate continuous UTC smooth resolution on the untouched Aloft cohort.
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) != 4) stop("usage: probe_europe_time_resolution.R SPEC.json TIME_K OUTPUT.json TARGET")
+if (!requireNamespace("mgcv", quietly = TRUE) || !requireNamespace("jsonlite", quietly = TRUE)) stop("mgcv and jsonlite are required")
+library(mgcv)
+spec <- jsonlite::fromJSON(args[[1]], simplifyVector = TRUE)
+time_k <- as.integer(args[[2]])
+target <- args[[4]]
+training <- utils::read.csv(spec$training_csv, check.names=FALSE)
+transfer <- utils::read.csv(spec$validation_csv, check.names=FALSE)
+origin <- min(as.POSIXct(training$time_utc, format="%Y-%m-%dT%H:%M:%OSZ", tz="UTC"))
+prepare <- function(frame, levels_frame=NULL) {
+  stamps <- as.POSIXct(frame$time_utc, format="%Y-%m-%dT%H:%M:%OSZ", tz="UTC")
+  frame$time_index_hours <- as.numeric(difftime(stamps, origin, units="hours"))
+  frame$utc_hour <- as.integer(format(stamps, "%H", tz="UTC"))
+  frame$source <- factor(frame$source, levels=if (is.null(levels_frame)) unique(training$source) else levels(levels_frame$source))
+  frame$country <- factor(frame$country, levels=if (is.null(levels_frame)) unique(training$country) else levels(levels_frame$country))
+  frame$network <- factor(frame$network, levels=if (is.null(levels_frame)) unique(training$network) else levels(levels_frame$network))
+  frame$radar <- factor(frame$radar, levels=if (is.null(levels_frame)) unique(training$radar) else levels(levels_frame$radar))
+  frame
+}
+training <- prepare(training)
+transfer <- prepare(transfer, training)
+counts <- table(training$radar); training$w <- 1/as.numeric(counts[training$radar]); training$w <- training$w/mean(training$w)
+complete <- complete.cases(training[,c("easting_m","northing_m",spec$predictors,"time_index_hours","utc_hour",target)])
+training <- training[complete,]
+training$response <- log1p(pmax(training[[target]],0))
+formula <- as.formula(paste("response ~ source + s(easting_m,northing_m,bs='tp',k=40) +", paste(sprintf("s(%s,bs='tp',k=8)",spec$predictors),collapse=" + "),sprintf("+ s(time_index_hours,bs='cr',k=%d) + s(utc_hour,bs='cc',k=12) + s(country,bs='re') + s(network,bs='re') + s(radar,bs='re')",time_k)))
+fit <- bam(formula,data=training,weights=w,method="fREML",discrete=TRUE,nthreads=1)
+radar_id <- as.character(transfer$radar)
+transfer$source <- factor(spec$reference_source,levels=levels(training$source))
+transfer$country <- factor(levels(training$country)[1],levels=levels(training$country))
+transfer$network <- factor(levels(training$network)[1],levels=levels(training$network))
+transfer$radar <- factor(levels(training$radar)[1],levels=levels(training$radar))
+prediction <- pmax(expm1(predict(fit,newdata=transfer,exclude=c("s(country)","s(network)","s(radar)"))),0)
+rows <- lapply(sort(unique(radar_id)), function(radar) {
+  i <- radar_id==radar & is.finite(transfer[[target]])
+  o <- transfer[[target]][i]; p <- prediction[i]
+  if (sum(i)<30) return(NULL)
+  log_r2 <- 1-sum((log1p(p)-log1p(o))^2)/sum((log1p(o)-mean(log1p(o)))^2)
+  oe <- o>=quantile(o,.9); pe <- p>=quantile(p,.9); tp <- sum(oe&pe); prec <- tp/sum(pe); rec <- tp/sum(oe)
+  list(radar=radar,row_count=sum(i),log1p_r_squared=log_r2,top_decile_f1=if(prec+rec>0)2*prec*rec/(prec+rec) else 0)
+})
+rows <- Filter(Negate(is.null),rows)
+jsonlite::write_json(list(target=target,time_k=time_k,site_count=length(rows),median_log1p_r_squared=median(sapply(rows,`[[`,"log1p_r_squared")),median_top_decile_f1=median(sapply(rows,`[[`,"top_decile_f1")),sites=rows),args[[3]],auto_unbox=TRUE,pretty=TRUE)
