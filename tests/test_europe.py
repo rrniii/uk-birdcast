@@ -478,6 +478,9 @@ def test_europe_fitter_has_source_and_transfer_controls() -> None:
     assert 'model_time_terms = if (!is.null(spec$time_terms))' in script
     assert "time_index_hours" in script
     assert 'data$pulse == "lp"' in script
+    assert "observed_threshold <-" in script
+    assert "predicted_threshold <-" in script
+    assert "predicted_event <- predicted >= predicted_threshold" in script
     sbatch = (Path(__file__).parents[1] / "deploy/slurm/birdcast-euro-aloft-stream.sbatch").read_text()
     assert "stream-chunk" in sbatch
     assert "radar-month" in sbatch

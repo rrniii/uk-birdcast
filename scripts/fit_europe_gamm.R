@@ -59,9 +59,13 @@ score <- function(observed, predicted) {
   predicted <- predicted[keep]
   if (!length(observed)) return(list(row_count = 0))
   residual <- predicted - observed
-  threshold <- as.numeric(stats::quantile(observed, .9, na.rm = TRUE, names = FALSE))
-  observed_event <- observed >= threshold
-  predicted_event <- predicted >= threshold
+  # Event skill is a ranking measure.  Define each series' upper decile from
+  # its own distribution so a radar-specific absolute-density offset cannot
+  # turn every model event into a false negative.
+  observed_threshold <- as.numeric(stats::quantile(observed, .9, na.rm = TRUE, names = FALSE))
+  predicted_threshold <- as.numeric(stats::quantile(predicted, .9, na.rm = TRUE, names = FALSE))
+  observed_event <- observed >= observed_threshold
+  predicted_event <- predicted >= predicted_threshold
   tp <- sum(observed_event & predicted_event)
   precision <- if (sum(predicted_event)) tp / sum(predicted_event) else 0
   recall <- if (sum(observed_event)) tp / sum(observed_event) else 0

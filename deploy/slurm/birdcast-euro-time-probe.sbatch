@@ -19,6 +19,6 @@ set -euo pipefail
 : "${BIRDCAST_EURO_PROBE_OUTPUT:?Set probe output JSON}"
 : "${BIRDCAST_EURO_PROBE_TARGET:?Set target response}"
 mkdir -p "$(dirname "$BIRDCAST_EURO_PROBE_OUTPUT")"
-"$BIRDCAST_EURO_RSCRIPT" "$BIRDCAST_EURO_ROOT/scripts/probe_europe_time_resolution.R" \
-  "$BIRDCAST_EURO_MODEL_SPEC" "$BIRDCAST_EURO_TIME_K" \
-  "$BIRDCAST_EURO_PROBE_OUTPUT" "$BIRDCAST_EURO_PROBE_TARGET"
+probe_args=("$BIRDCAST_EURO_MODEL_SPEC" "$BIRDCAST_EURO_TIME_K" "$BIRDCAST_EURO_PROBE_OUTPUT" "$BIRDCAST_EURO_PROBE_TARGET")
+if [ -n "${BIRDCAST_EURO_SPACE_TIME_K:-}" ]; then probe_args+=("$BIRDCAST_EURO_SPACE_TIME_K"); fi
+"$BIRDCAST_EURO_RSCRIPT" "$BIRDCAST_EURO_ROOT/scripts/probe_europe_time_resolution.R" "${probe_args[@]}"

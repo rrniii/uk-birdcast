@@ -2,12 +2,13 @@
 
 # Test a candidate continuous UTC smooth resolution on the untouched Aloft cohort.
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) != 4) stop("usage: probe_europe_time_resolution.R SPEC.json TIME_K OUTPUT.json TARGET")
+if (length(args) < 4 || length(args) > 5) stop("usage: probe_europe_time_resolution.R SPEC.json TIME_K OUTPUT.json TARGET [SPACE_TIME_K]")
 if (!requireNamespace("mgcv", quietly = TRUE) || !requireNamespace("jsonlite", quietly = TRUE)) stop("mgcv and jsonlite are required")
 library(mgcv)
 spec <- jsonlite::fromJSON(args[[1]], simplifyVector = TRUE)
 time_k <- as.integer(args[[2]])
 target <- args[[4]]
+space_time_k <- if (length(args) == 5) as.integer(args[[5]]) else 0L
 training <- utils::read.csv(spec$training_csv, check.names=FALSE)
 transfer <- utils::read.csv(spec$validation_csv, check.names=FALSE)
 transfer_radar_id <- as.character(transfer$radar)
@@ -29,6 +30,7 @@ complete <- complete.cases(training[,c("easting_m","northing_m",spec$predictors,
 training <- training[complete,]
 training$response <- log1p(pmax(training[[target]],0))
 terms <- c("s(easting_m,northing_m,bs='tp',k=40)", sprintf("s(%s,bs='tp',k=8)",spec$predictors), sprintf("s(time_index_hours,bs='cr',k=%d)",time_k), "s(utc_hour,bs='cc',k=12)")
+if (space_time_k > 0) terms <- c(terms, sprintf("ti(easting_m,northing_m,time_index_hours,bs=c('tp','tp','cr'),k=c(8,8,%d))",space_time_k))
 if (length(unique(training$source)) > 1) terms <- c("source", terms)
 random_exclude <- character()
 for (name in c("country", "network", "radar")) if (length(unique(training[[name]])) > 1) {
@@ -63,6 +65,7 @@ rows <- lapply(sort(unique(radar_id)), function(radar) {
 })
 rows <- Filter(Negate(is.null),rows)
 jsonlite::write_json(list(target=target,time_k=time_k,site_count=length(rows),
+  space_time_k=space_time_k,
   raw_median_log1p_r_squared=median(sapply(rows,function(x)x$raw$log1p_r_squared)),
   raw_median_top_decile_f1=median(sapply(rows,function(x)x$raw$top_decile_f1)),
   calibrated_median_log1p_r_squared=median(sapply(rows,function(x)x$post_calibration$log1p_r_squared)),
