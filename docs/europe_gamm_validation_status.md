@@ -74,6 +74,34 @@ non-discretised `mgcv` formulation is too expensive to be a credible release
 candidate, and the lower-rank version had already degraded held-out transfer
 materially.
 
+## Romania-excluded sensitivity analysis
+
+Romanian radars are not part of the GAMM training table: all seven were in the
+untouched transfer cohort. A declared sensitivity experiment therefore keeps
+the same 887,323 training rows and excludes only 28,248 Romanian validation
+rows (`robar`, `robob`, `robuc`, `rocra`, `romed`, `roora`, `rotim`). The
+remaining external cohort has 81,275 rows at 17 radars.
+
+| MTR `k=800` site-equal metric | Full cohort, 24 radars | Excluding Romania, 17 radars |
+| --- | ---: | ---: |
+| Median raw `log1p` R-squared | -0.2700 | -0.1086 |
+| Positive-skill radars | 25.0% | 35.3% (6/17) |
+| Median top-decile event F1 | 0.2346 | 0.2537 |
+| Median first-quarter calibrated `log1p` R-squared | 0.0346 | 0.0115 |
+| Median first-quarter calibrated event F1 | 0.2408 | 0.2598 |
+
+The experiment confirms that the Romanian cluster materially worsens the
+pooled result, but the non-Romanian cohort still fails all predeclared
+absolute-MTR release gates: raw median skill is negative, fewer than 75% of
+sites have positive skill, and event F1 is below 0.50. The calibration number
+is descriptive only; it uses each held-out site’s first chronological quarter
+and cannot establish a transferable Europe-wide absolute scale.
+
+The derived, hash-locked cohort audit and result are at
+`artifacts/europe/runs/44b1520-utc-cadence/non-ro-k800/`. Its contract marks
+`publication_eligible: false`; Romanian geography must remain unsupported by
+any future restricted-domain product unless separately validated.
+
 ## Interpretation
 
 The limiting issue is site and processing dependence in the observed Aloft MTR
