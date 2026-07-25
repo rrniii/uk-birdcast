@@ -7,6 +7,7 @@ derivatives and provenance manifests may be persisted by this module.
 from __future__ import annotations
 
 import csv
+import gzip
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timezone
@@ -567,6 +568,164 @@ def publish_europe_predictions(
         "latest_time_utc": latest_time,
         "manifest": manifest,
     }
+
+
+def publish_europe_prediction_partitions(
+    *,
+    predictions_root: Path,
+    output_root: Path,
+    model_id: str,
+    aloft_radar_count: int,
+    uk_sp_radar_count: int,
+    validation_url: str,
+    radars_json: Path | None = None,
+    release_status: str = "research-preview",
+) -> dict[str, Any]:
+    """Publish day-partitioned predictions without materialising a model year.
+
+    Each input file must contain every supported cell at every UTC hour for its
+    day.  The strict per-frame reconciliation prevents a partitioned storage
+    layout from concealing dropped or shifted model values.
+    """
+
+    paths = sorted(
+        path for path in predictions_root.glob("prediction_*.csv*")
+        if path.is_file() and path.stat().st_size
+    )
+    if not paths:
+        raise ValueError("Europe prediction partition root has no daily CSV files")
+    coordinates = _prediction_coordinates(paths[0])
+    if not coordinates:
+        raise ValueError("Europe prediction partitions have no valid coordinates")
+    cell_index = {coordinate: index for index, coordinate in enumerate(coordinates)}
+    assets = output_root / "archive" / "reanalysis" / model_id
+    latest = output_root / "latest"
+    assets.mkdir(parents=True, exist_ok=True)
+    latest.mkdir(parents=True, exist_ok=True)
+    _write_compact_json(
+        assets / "grid.json",
+        {
+            "schema_version": "birdcast-euro-grid-1.0",
+            "crs": "EPSG:4326",
+            "cells": [{"longitude": lon, "latitude": lat} for lon, lat in coordinates],
+        },
+    )
+    radar_asset = None
+    if radars_json is not None:
+        _write_compact_json(assets / "radars.json", json.loads(radars_json.read_text(encoding="utf-8")))
+        radar_asset = f"archive/reanalysis/{model_id}/radars.json"
+
+    first_time: str | None = None
+    latest_time: str | None = None
+    frame_count = 0
+    row_count = 0
+    published_days: set[str] = set()
+    for path in paths:
+        day, frames, rows = _prediction_day_frames(path, cell_index)
+        if day in published_days:
+            raise ValueError(f"duplicate Europe prediction day: {day}")
+        published_days.add(day)
+        _write_compact_json(
+            assets / f"{day}.json",
+            {"schema_version": "birdcast-euro-daily-1.0", "date": day, "frames": frames},
+        )
+        frame_count += len(frames)
+        row_count += rows
+        times = [str(frame["time_utc"]) for frame in frames]
+        first_time = min([first_time, *times] if first_time else times)
+        latest_time = max([latest_time, *times] if latest_time else times)
+    if first_time is None or latest_time is None:
+        raise ValueError("Europe prediction partitions have no UTC frames")
+    manifest = build_europe_manifest(
+        model_id=model_id,
+        first_time_utc=first_time,
+        latest_time_utc=latest_time,
+        aloft_radar_count=aloft_radar_count,
+        uk_sp_radar_count=uk_sp_radar_count,
+        grid_asset=f"archive/reanalysis/{model_id}/grid.json",
+        daily_asset_template=f"archive/reanalysis/{model_id}/{{date}}.json",
+        validation_url=validation_url,
+        output=latest / "reanalysis.json",
+        release_status=release_status,
+        radar_asset=radar_asset,
+    )
+    return {
+        "ok": True,
+        "day_count": len(published_days),
+        "frame_count": frame_count,
+        "prediction_row_count": row_count,
+        "cell_count": len(coordinates),
+        "first_time_utc": first_time,
+        "latest_time_utc": latest_time,
+        "manifest": manifest,
+    }
+
+
+def _prediction_coordinates(path: Path) -> list[tuple[float, float]]:
+    coordinates: set[tuple[float, float]] = set()
+    with _prediction_text(path) as handle:
+        for row in csv.DictReader(handle):
+            coordinate = (_number(row.get("longitude")), _number(row.get("latitude")))
+            if not _finite(*coordinate):
+                raise ValueError(f"invalid Europe prediction coordinate in {path}")
+            coordinates.add(coordinate)
+    return sorted(coordinates)
+
+
+def _prediction_day_frames(
+    path: Path,
+    cell_index: dict[tuple[float, float], int],
+) -> tuple[str, list[dict[str, Any]], int]:
+    frames: dict[str, dict[str, Any]] = {}
+    seen: dict[str, set[int]] = defaultdict(set)
+    row_count = 0
+    with _prediction_text(path) as handle:
+        for row in csv.DictReader(handle):
+            timestamp = str(row.get("time_utc") or "")
+            if len(timestamp) < 10:
+                raise ValueError(f"Europe prediction row has no UTC timestamp in {path}")
+            day = timestamp[:10]
+            coordinate = (_number(row.get("longitude")), _number(row.get("latitude")))
+            index = cell_index.get(coordinate)
+            if index is None:
+                raise ValueError(f"Europe prediction coordinate is inconsistent: {coordinate}")
+            if str(row.get("prediction_class") or "") == "unsupported":
+                raise ValueError("unsupported Europe prediction leaked into a daily partition")
+            if index in seen[timestamp]:
+                raise ValueError(f"duplicate Europe prediction cell: {timestamp} {coordinate}")
+            seen[timestamp].add(index)
+            frame = frames.setdefault(timestamp, _empty_prediction_frame(timestamp, len(cell_index)))
+            for field in ("mtr_birds_km_h", "vid_birds_per_km2", "bird_u_ms", "bird_v_ms", "nearest_radar_km"):
+                frame[field][index] = _optional_number(row.get(field))
+            frame["uncertainty"][index] = _optional_number(
+                row.get("uncertainty_mtr_birds_km_h") or row.get("uncertainty_vid_birds_per_km2")
+            )
+            frame["support"][index] = str(row.get("prediction_class") or row.get("support") or "")
+            row_count += 1
+    days = {timestamp[:10] for timestamp in frames}
+    if len(days) != 1:
+        raise ValueError(f"Europe prediction partition must contain exactly one UTC day: {path}")
+    for timestamp, values in seen.items():
+        if len(values) != len(cell_index):
+            raise ValueError(f"Europe prediction frame is incomplete: {timestamp}")
+    return next(iter(days)), [frames[key] for key in sorted(frames)], row_count
+
+
+def _empty_prediction_frame(timestamp: str, size: int) -> dict[str, Any]:
+    return {
+        "time_utc": timestamp,
+        "mtr_birds_km_h": [None] * size,
+        "vid_birds_per_km2": [None] * size,
+        "bird_u_ms": [None] * size,
+        "bird_v_ms": [None] * size,
+        "uncertainty": [None] * size,
+        "support": [None] * size,
+        "nearest_radar_km": [None] * size,
+    }
+
+
+def _prediction_text(path: Path):
+    return gzip.open(path, "rt", newline="") if path.suffix == ".gz" else path.open(newline="", encoding="utf-8")
 
 
 def install_europe_static_site(site_root: Path) -> dict[str, Any]:

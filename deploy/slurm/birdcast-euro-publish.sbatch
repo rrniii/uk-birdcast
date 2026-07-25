@@ -17,7 +17,7 @@ set -u
 : "${BIRDCAST_EURO_ROOT:?Set the immutable Europe release checkout}"
 : "${BIRDCAST_EURO_PYTHON:?Set the branch Python executable}"
 export PYTHONPATH="$BIRDCAST_EURO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
-: "${BIRDCAST_EURO_PREDICTIONS:?Set the passed model predictions CSV}"
+: "${BIRDCAST_EURO_PREDICTIONS_ROOT:?Set the passed daily prediction partition root}"
 : "${BIRDCAST_EURO_ARTIFACT_ROOT:?Set the staged Europe public artifact root}"
 : "${BIRDCAST_EURO_MODEL_ID:?Set the Europe model ID}"
 : "${BIRDCAST_EURO_ALOFT_RADAR_COUNT:?Set the Aloft training radar count}"
@@ -39,12 +39,12 @@ cp "$BIRDCAST_EURO_ERA5_FIDELITY" "$BIRDCAST_EURO_ARTIFACT_ROOT/validation/era5-
 cp "$BIRDCAST_EURO_TRAINING_FIDELITY" "$BIRDCAST_EURO_ARTIFACT_ROOT/validation/training-fidelity.json"
 cp "$BIRDCAST_EURO_MODEL_VALIDATION" "$BIRDCAST_EURO_ARTIFACT_ROOT/validation/model-validation.json"
 "$BIRDCAST_EURO_PYTHON" -m birdcast_uk.cli europe publish \
-  --predictions "$BIRDCAST_EURO_PREDICTIONS" --output-root "$BIRDCAST_EURO_ARTIFACT_ROOT" \
+  --predictions-root "$BIRDCAST_EURO_PREDICTIONS_ROOT" --output-root "$BIRDCAST_EURO_ARTIFACT_ROOT" \
   --model-id "$BIRDCAST_EURO_MODEL_ID" --aloft-radar-count "$BIRDCAST_EURO_ALOFT_RADAR_COUNT" \
   --uk-sp-radar-count "$BIRDCAST_EURO_UK_SP_RADAR_COUNT" --validation-url "validation/model-validation.json" \
   --radars "$BIRDCAST_EURO_RADARS" --release-status published
 "$BIRDCAST_EURO_PYTHON" "$BIRDCAST_EURO_ROOT/scripts/validate_europe_publication.py" \
-  --predictions "$BIRDCAST_EURO_PREDICTIONS" --output-root "$BIRDCAST_EURO_ARTIFACT_ROOT" \
+  --predictions-root "$BIRDCAST_EURO_PREDICTIONS_ROOT" --output-root "$BIRDCAST_EURO_ARTIFACT_ROOT" \
   --source-fidelity "$BIRDCAST_EURO_SOURCE_FIDELITY" --era5-fidelity "$BIRDCAST_EURO_ERA5_FIDELITY" \
   --training-fidelity "$BIRDCAST_EURO_TRAINING_FIDELITY" \
   --model-validation "$BIRDCAST_EURO_MODEL_VALIDATION" --output "$BIRDCAST_EURO_PUBLICATION_FIDELITY"

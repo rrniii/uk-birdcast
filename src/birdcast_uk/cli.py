@@ -42,6 +42,7 @@ from .europe import (
     build_europe_manifest,
     install_europe_static_site,
     iter_aloft_coverage,
+    publish_europe_prediction_partitions,
     publish_europe_predictions,
     read_jsonl_record,
     stream_aloft_chunk,
@@ -178,8 +179,8 @@ def cmd_europe_static_install(args: argparse.Namespace) -> int:
 
 
 def cmd_europe_publish(args: argparse.Namespace) -> int:
-    result = publish_europe_predictions(
-        predictions_csv=Path(args.predictions),
+    publish = publish_europe_prediction_partitions if args.predictions_root else publish_europe_predictions
+    common = dict(
         output_root=Path(args.output_root),
         model_id=args.model_id,
         aloft_radar_count=args.aloft_radar_count,
@@ -187,6 +188,10 @@ def cmd_europe_publish(args: argparse.Namespace) -> int:
         validation_url=args.validation_url,
         radars_json=Path(args.radars) if args.radars else None,
         release_status=args.release_status,
+    )
+    result = publish(
+        **({"predictions_root": Path(args.predictions_root)} if args.predictions_root else {"predictions_csv": Path(args.predictions)}),
+        **common,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
@@ -734,7 +739,9 @@ def build_parser() -> argparse.ArgumentParser:
     europe_static.add_argument("--site-root", required=True)
     europe_static.set_defaults(func=cmd_europe_static_install)
     europe_publish = europe_sub.add_parser("publish")
-    europe_publish.add_argument("--predictions", required=True)
+    prediction_input = europe_publish.add_mutually_exclusive_group(required=True)
+    prediction_input.add_argument("--predictions")
+    prediction_input.add_argument("--predictions-root")
     europe_publish.add_argument("--output-root", required=True)
     europe_publish.add_argument("--model-id", required=True)
     europe_publish.add_argument("--aloft-radar-count", required=True, type=int)

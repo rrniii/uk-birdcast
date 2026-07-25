@@ -17,6 +17,7 @@ from birdcast_uk.europe import (
     install_europe_static_site,
     iter_aloft_coverage,
     publish_europe_predictions,
+    publish_europe_prediction_partitions,
     read_jsonl_record,
     stream_aloft_chunk,
     stream_aloft_hourly,
@@ -405,6 +406,43 @@ def test_prediction_publication_writes_fixed_grid_and_daily_assets(tmp_path: Pat
     day = json.loads((tmp_path / "out/archive/reanalysis/euro-v1/2026-07-01.json").read_text())
     assert len(day["frames"]) == 2
     assert day["frames"][0]["mtr_birds_km_h"] == [5.0]
+
+
+def test_partitioned_prediction_publication_reconciles_every_daily_cell(tmp_path: Path) -> None:
+    root = tmp_path / "predictions"
+    root.mkdir()
+    (root / "prediction_20260701.csv").write_text(
+        "time_utc,longitude,latitude,prediction_class,mtr_birds_km_h,vid_birds_per_km2,bird_u_ms,bird_v_ms\n"
+        "2026-07-01T00:00:00Z,3,51,interpolation,5,2,1,2\n"
+        "2026-07-01T01:00:00Z,3,51,interpolation,6,3,2,1\n",
+        encoding="utf-8",
+    )
+    result = publish_europe_prediction_partitions(
+        predictions_root=root,
+        output_root=tmp_path / "out",
+        model_id="euro-v1",
+        aloft_radar_count=1,
+        uk_sp_radar_count=1,
+        validation_url="validation.json",
+    )
+    assert result["prediction_row_count"] == 2
+    assert result["frame_count"] == 2
+    assert result["cell_count"] == 1
+
+    (root / "prediction_20260702.csv").write_text(
+        "time_utc,longitude,latitude,prediction_class,mtr_birds_km_h\n"
+        "2026-07-02T00:00:00Z,4,51,interpolation,5\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="inconsistent"):
+        publish_europe_prediction_partitions(
+            predictions_root=root,
+            output_root=tmp_path / "retry",
+            model_id="euro-v1",
+            aloft_radar_count=1,
+            uk_sp_radar_count=1,
+            validation_url="validation.json",
+        )
 
 
 def test_europe_page_is_separate_and_installable(tmp_path: Path) -> None:
