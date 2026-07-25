@@ -247,7 +247,10 @@ for (target in spec$targets) {
     }
   }
   model_file <- file.path(output_dir, sprintf("gamm_europe_%s.rds", target))
-  saveRDS(final$model, model_file)
+  # Retain the complete fit contract, not only the mgcv object.  Daily grid
+  # prediction is deliberately separate from fitting so the 365-day domain is
+  # never materialised as one multi-gigabyte R data frame.
+  saveRDS(final, model_file)
   model_files[[target]] <- model_file
   if (!is.null(grid)) {
     grid$source <- spec$reference_source

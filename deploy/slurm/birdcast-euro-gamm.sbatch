@@ -22,14 +22,17 @@ set -u
 : "${BIRDCAST_EURO_PYTHON:?Set the branch Python executable}"
 : "${BIRDCAST_EURO_RSCRIPT:?Set the pinned JASMIN Rscript executable}"
 : "${BIRDCAST_EURO_MODEL_SPEC:?Set the frozen Europe model spec}"
-: "${BIRDCAST_EURO_GRID_TABLE:?Set the European ERA5 prediction grid CSV}"
 : "${BIRDCAST_EURO_RUN_DIR:?Set an immutable run directory}"
 
 mkdir -p "$BIRDCAST_EURO_RUN_DIR"
-"$BIRDCAST_EURO_RSCRIPT" "$BIRDCAST_EURO_ROOT/scripts/fit_europe_gamm.R" \
-  "$BIRDCAST_EURO_MODEL_SPEC" \
-  "$BIRDCAST_EURO_RUN_DIR" \
-  "$BIRDCAST_EURO_GRID_TABLE"
+fit_args=(
+  "$BIRDCAST_EURO_MODEL_SPEC"
+  "$BIRDCAST_EURO_RUN_DIR"
+)
+if [ -n "${BIRDCAST_EURO_GRID_TABLE:-}" ]; then
+  fit_args+=("$BIRDCAST_EURO_GRID_TABLE")
+fi
+"$BIRDCAST_EURO_RSCRIPT" "$BIRDCAST_EURO_ROOT/scripts/fit_europe_gamm.R" "${fit_args[@]}"
 
 "$BIRDCAST_EURO_PYTHON" "$BIRDCAST_EURO_ROOT/scripts/validate_europe_gamm.py" \
   --metrics "$BIRDCAST_EURO_RUN_DIR/metrics.json" \
