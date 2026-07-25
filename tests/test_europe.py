@@ -764,3 +764,42 @@ def test_country_exclusion_writes_a_declared_validation_sensitivity_cohort(tmp_p
     restricted = json.loads(output_spec.read_text(encoding="utf-8"))
     assert restricted["cohort_restriction"]["publication_eligible"] is False
     assert restricted["cohort_restriction"]["validation_radars_removed"] == ["robar"]
+
+
+def test_country_inclusion_restricts_both_gamm_inputs(tmp_path: Path) -> None:
+    training = tmp_path / "training.csv"
+    training.write_text(
+        "radar,country,mtr_birds_km_h\nbejab,BE,1\nromed,RO,30\nchenies,GBR,2\n",
+        encoding="utf-8",
+    )
+    validation = tmp_path / "validation.csv"
+    validation.write_text(
+        "radar,country,mtr_birds_km_h\ndksam,DK,3\nrobar,RO,30\nesgld,ES,2\n",
+        encoding="utf-8",
+    )
+    base_spec = tmp_path / "model-spec.json"
+    base_spec.write_text(
+        json.dumps({
+            "model_id": "europe-baseline",
+            "training_csv": str(training),
+            "validation_csv": str(validation),
+        }),
+        encoding="utf-8",
+    )
+    module = load_script("prepare_europe_country_exclusion.py")
+    output_training = tmp_path / "regional-training.csv"
+    output_validation = tmp_path / "regional-validation.csv"
+    audit = module.prepare_inclusion(
+        model_spec=base_spec,
+        included_country={"BE", "DK", "ES", "GBR"},
+        output_training_csv=output_training,
+        output_validation_csv=output_validation,
+        output_spec=tmp_path / "regional-spec.json",
+        output_audit=tmp_path / "audit.json",
+        model_id="regional-v1",
+    )
+
+    assert "romed" not in output_training.read_text(encoding="utf-8")
+    assert "robar" not in output_validation.read_text(encoding="utf-8")
+    assert audit["training_rows_retained"] == 2
+    assert audit["validation_radars_retained"] == ["dksam", "esgld"]
