@@ -11,6 +11,7 @@ before making any claims about a GAMM or the biological signal.
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import io
 import json
@@ -33,6 +34,24 @@ SELECTED_ATTRIBUTES = {
     "enddate", "endtime", "date", "time", "source", "radar",
 }
 DYNAMIC_ATTRIBUTES = {"date", "time", "startdate", "starttime", "enddate", "endtime"}
+VP_TO_VPTS_FIELDS = {
+    "HGHT": "height",
+    "u": "u",
+    "v": "v",
+    "w": "w",
+    "ff": "ff",
+    "dd": "dd",
+    "sd_vvp": "sd_vvp",
+    "gap": "gap",
+    "eta": "eta",
+    "dens": "dens",
+    "dbz": "dbz",
+    "DBZH": "dbz_all",
+    "n": "n",
+    "n_dbz": "n_dbz",
+    "n_all": "n_all",
+    "n_dbz_all": "n_dbz_all",
+}
 
 
 def normalise_attribute(value: Any) -> Any:
@@ -178,12 +197,19 @@ def inspect_hdf5(payload: bytes) -> dict[str, Any]:
     }
 
 
-def fetch_and_inspect(*, public_base: str, key: str, timeout_seconds: float) -> dict[str, Any]:
+def fetch_and_inspect(
+    *,
+    public_base: str,
+    key: str,
+    timeout_seconds: float,
+    vpts_rows: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
     url = f"{public_base.rstrip('/')}/{key}"
     with urlopen(url, timeout=timeout_seconds) as response:
         payload = response.read()
         headers = response.headers
     result = inspect_hdf5(payload)
+    vpts_comparison = compare_vp_to_vpts(payload, vpts_rows) if vpts_rows is not None else None
     return {
         "url": url,
         "key": key,
@@ -192,6 +218,130 @@ def fetch_and_inspect(*, public_base: str, key: str, timeout_seconds: float) -> 
         "last_modified": headers.get("Last-Modified"),
         "sha256": hashlib.sha256(payload).hexdigest(),
         **result,
+        **({"vpts_reconstruction": vpts_comparison} if vpts_comparison is not None else {}),
+    }
+
+
+def vpts_url(*, public_base: str, radar: str, day: str) -> str:
+    return f"{public_base.rstrip('/')}/baltrad/daily/{radar.lower()}/{day[:4]}/{radar.lower()}_vpts_{day}.csv"
+
+
+def vpts_rows_by_source(*, public_base: str, radar: str, day: str, timeout_seconds: float) -> tuple[str, dict[str, list[dict[str, str]]]]:
+    """Stream one daily VPTS CSV and index it by immutable source VP filename."""
+    url = vpts_url(public_base=public_base, radar=radar, day=day)
+    with urlopen(url, timeout=timeout_seconds) as response:
+        data = response.read()
+    rows: dict[str, list[dict[str, str]]] = {}
+    for row in csv.DictReader(io.StringIO(data.decode("utf-8"))):
+        source_file = row.get("source_file")
+        if source_file:
+            rows.setdefault(source_file, []).append(row)
+    return url, rows
+
+
+def float_or_none(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def vp_value(value: Any, metadata: dict[str, Any]) -> float | None:
+    parsed = float_or_none(value)
+    if parsed is None or parsed in {float_or_none(metadata.get("nodata")), float_or_none(metadata.get("undetect"))}:
+        return None
+    return parsed * float(metadata.get("gain", 1.0)) + float(metadata.get("offset", 0.0))
+
+
+def vpts_value(value: str | None, *, field: str) -> float | None:
+    if field == "gap":
+        if value == "TRUE":
+            return 1.0
+        if value == "FALSE":
+            return 0.0
+    return float_or_none(value)
+
+
+def compare_vp_to_vpts(payload: bytes, rows: list[dict[str, str]] | None) -> dict[str, Any]:
+    """Compare one in-memory VP with VPTS rows that name it as source_file.
+
+    The report contains only mismatch counts and numerical error summaries; raw
+    VP/VPTS values are released as soon as this function returns.
+    """
+    if not rows:
+        return {"status": "missing_source_rows", "source_row_count": 0}
+    try:
+        import h5py
+        import numpy as np
+    except ImportError as error:  # pragma: no cover - deployment dependency
+        raise RuntimeError("h5py and numpy are required for VP/VPTS reconstruction auditing") from error
+
+    profiles: dict[str, tuple[dict[str, Any], Any]] = {}
+    with h5py.File(io.BytesIO(payload), "r") as handle:
+        def visitor(path: str, node: Any) -> None:
+            if not isinstance(node, h5py.Dataset) or not path.endswith("/data"):
+                return
+            parent = node.parent
+            what = parent.get("what")
+            if what is None or "quantity" not in what.attrs:
+                return
+            quantity = str(normalise_attribute(what.attrs["quantity"]))
+            profiles[quantity] = (selected_attributes(what.attrs), np.asarray(node[()]).reshape(-1))
+
+        handle.visititems(visitor)
+
+    heights = profiles.get("HGHT")
+    if heights is None:
+        return {"status": "missing_hght", "source_row_count": len(rows)}
+    height_metadata, height_values = heights
+    indexed_rows = {
+        round(value, 6): row
+        for row in rows
+        if (value := float_or_none(row.get("height"))) is not None
+    }
+    comparison: dict[str, dict[str, Any]] = {}
+    matched_heights = 0
+    for raw_height in height_values:
+        height = vp_value(raw_height, height_metadata)
+        if height is not None and round(height, 6) in indexed_rows:
+            matched_heights += 1
+
+    for quantity, vpts_field in VP_TO_VPTS_FIELDS.items():
+        profile = profiles.get(quantity)
+        if profile is None:
+            continue
+        metadata, values = profile
+        pairs: list[float] = []
+        matched_missing = 0
+        mismatched_missing = 0
+        for index, raw_height in enumerate(height_values):
+            height = vp_value(raw_height, height_metadata)
+            row = indexed_rows.get(round(height, 6)) if height is not None else None
+            if row is None or index >= len(values):
+                continue
+            expected = vp_value(values[index], metadata)
+            observed = vpts_value(row.get(vpts_field), field=vpts_field)
+            if expected is None and observed is None:
+                matched_missing += 1
+            elif expected is None or observed is None:
+                mismatched_missing += 1
+            else:
+                pairs.append(abs(expected - observed))
+        comparison[quantity] = {
+            "vpts_field": vpts_field,
+            "matched_value_count": len(pairs),
+            "matched_missing_count": matched_missing,
+            "mismatched_missing_count": mismatched_missing,
+            "mean_absolute_difference": mean(pairs) if pairs else None,
+            "max_absolute_difference": max(pairs) if pairs else None,
+            "within_1e-6_count": sum(delta <= 1e-6 for delta in pairs),
+        }
+    return {
+        "status": "compared",
+        "source_row_count": len(rows),
+        "matched_height_count": matched_heights,
+        "comparison": comparison,
     }
 
 
@@ -212,6 +362,27 @@ def summarise_radar(samples: Iterable[dict[str, Any]]) -> dict[str, Any]:
         }
         for quantity, values in sorted(quantity_stats.items())
     }
+    reconstruction_stats: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        reconstruction = row.get("vpts_reconstruction", {})
+        if reconstruction.get("status") != "compared":
+            continue
+        for quantity, metric in reconstruction.get("comparison", {}).items():
+            reconstruction_stats.setdefault(quantity, []).append(metric)
+    reconstruction_summary = {
+        quantity: {
+            "profile_count": len(metrics),
+            "matched_value_count": sum(int(metric["matched_value_count"]) for metric in metrics),
+            "matched_missing_count": sum(int(metric["matched_missing_count"]) for metric in metrics),
+            "mismatched_missing_count": sum(int(metric["mismatched_missing_count"]) for metric in metrics),
+            "max_absolute_difference": max(
+                (float(metric["max_absolute_difference"]) for metric in metrics if metric["max_absolute_difference"] is not None),
+                default=None,
+            ),
+            "within_1e-6_count": sum(int(metric["within_1e-6_count"]) for metric in metrics),
+        }
+        for quantity, metrics in sorted(reconstruction_stats.items())
+    }
     return {
         "sample_count": len(rows),
         "schema_fingerprint_count": len({row["schema_fingerprint_sha256"] for row in rows}),
@@ -219,11 +390,20 @@ def summarise_radar(samples: Iterable[dict[str, Any]]) -> dict[str, Any]:
         "quantity_values": sorted({value for row in rows for value in row["quantity_values"]}),
         "median_content_length_bytes": median([row["content_length"] for row in rows]) if rows else None,
         "quantity_summary": quantity_summary,
+        "vpts_reconstruction_summary": reconstruction_summary,
         "altitude_metadata": [row["altitude_metadata"] for row in rows],
     }
 
 
-def audit(*, radars: Iterable[str], days: Iterable[str], samples_per_day: int, public_base: str, timeout_seconds: float) -> dict[str, Any]:
+def audit(
+    *,
+    radars: Iterable[str],
+    days: Iterable[str],
+    samples_per_day: int,
+    public_base: str,
+    timeout_seconds: float,
+    compare_vpts: bool,
+) -> dict[str, Any]:
     results: dict[str, Any] = {}
     for radar in sorted({value.lower() for value in radars}):
         samples: list[dict[str, Any]] = []
@@ -233,11 +413,28 @@ def audit(*, radars: Iterable[str], days: Iterable[str], samples_per_day: int, p
             if not keys:
                 unavailable.append({"day": day, "reason": "no_public_vp_objects"})
                 continue
+            vpts_rows: dict[str, list[dict[str, str]]] | None = None
+            if compare_vpts:
+                try:
+                    _, vpts_rows = vpts_rows_by_source(
+                        public_base=public_base,
+                        radar=radar,
+                        day=day,
+                        timeout_seconds=timeout_seconds,
+                    )
+                except OSError as error:
+                    unavailable.append({"day": day, "reason": f"vpts_unavailable:{error.__class__.__name__}"})
             for key in sample_keys(keys, samples_per_day):
-                samples.append(fetch_and_inspect(public_base=public_base, key=key, timeout_seconds=timeout_seconds))
+                source_file = key.rsplit("/", 1)[-1]
+                samples.append(fetch_and_inspect(
+                    public_base=public_base,
+                    key=key,
+                    timeout_seconds=timeout_seconds,
+                    vpts_rows=vpts_rows.get(source_file, []) if vpts_rows is not None else None,
+                ))
         results[radar] = {"summary": summarise_radar(samples), "samples": samples, "unavailable": unavailable}
     return {
-        "schema_version": "birdcast-euro-aloft-vp-structure-audit-1.0",
+        "schema_version": "birdcast-euro-aloft-vp-structure-audit-1.1",
         "purpose": "Compare public VP schema and metadata at MTR scale outlier radars before modelling.",
         "raw_source_persisted": False,
         "source": "Aloft BALTRAD public hdf5 VP objects",
@@ -253,6 +450,7 @@ def main() -> None:
     parser.add_argument("--samples-per-day", type=int, default=3)
     parser.add_argument("--public-base", default=PUBLIC_BASE)
     parser.add_argument("--timeout-seconds", type=float, default=60.0)
+    parser.add_argument("--compare-vpts", action="store_true", help="Compare sampled VP profiles with same-source daily VPTS rows")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     report = audit(
@@ -261,6 +459,7 @@ def main() -> None:
         samples_per_day=args.samples_per_day,
         public_base=args.public_base,
         timeout_seconds=args.timeout_seconds,
+        compare_vpts=args.compare_vpts,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
