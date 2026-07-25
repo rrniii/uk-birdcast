@@ -102,6 +102,30 @@ The derived, hash-locked cohort audit and result are at
 `publication_eligible: false`; Romanian geography must remain unsupported by
 any future restricted-domain product unless separately validated.
 
+## UK, Atlantic and North Sea regional sensitivity analysis
+
+A second declared experiment retained only the requested countries: UK, Ireland,
+France, Belgium, Netherlands, Denmark, Germany, Norway, Spain, Portugal and
+Iceland. It refit the GAMM on 550,561 rows at 86 radars and evaluated it on
+56,366 rows at 11 independent radars in Denmark, Spain, Ireland, Iceland and
+Portugal. It excluded 336,762 training rows and 53,157 validation rows outside
+the declared regional cohort.
+
+| MTR `k=800` site-equal metric | Non-Romanian Europe, 17 radars | Regional cohort, 11 radars |
+| --- | ---: | ---: |
+| Median raw `log1p` R-squared | -0.1086 | -0.4634 |
+| Positive-skill radars | 35.3% (6/17) | 27.3% (3/11) |
+| Median top-decile event F1 | 0.2537 | 0.2679 |
+| Median first-quarter calibrated `log1p` R-squared | 0.0115 | 0.0202 |
+| Median first-quarter calibrated event F1 | 0.2598 | 0.2805 |
+
+The regional restriction does not improve transferable absolute MTR. Its
+event-ranking score rises slightly, but absolute skill degrades and the Danish
+transfer radar `dksam` has `log1p` R-squared -9.6762. This regional model is
+therefore not a candidate for either a quantitative regional map or a Europe
+release. The hash-locked evidence is at
+`artifacts/europe/runs/44b1520-utc-cadence/uk-atlantic-northsea-k800/`.
+
 ## Interpretation
 
 The limiting issue is site and processing dependence in the observed Aloft MTR
