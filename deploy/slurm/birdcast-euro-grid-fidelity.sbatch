@@ -10,9 +10,10 @@
 #SBATCH --output=logs/birdcast-euro-grid-fidelity-%A_%a.out
 #SBATCH --error=logs/birdcast-euro-grid-fidelity-%A_%a.err
 
-set -euo pipefail
+set -eo pipefail
 . /etc/profile.d/modules.sh
 . /etc/profile.d/zz-modules.sh
+set -u
 : "${BIRDCAST_EURO_ROOT:?Set immutable Europe release checkout}"
 : "${BIRDCAST_EURO_PYTHON:?Set branch Python executable}"
 : "${BIRDCAST_EURO_RELEASE:?Set Europe release identifier}"
