@@ -61,6 +61,17 @@ def assemble(args: argparse.Namespace) -> None:
         con.execute(
             f"CREATE VIEW radar_meta AS SELECT * FROM read_csv_auto({metadata_path}, header=true)"
         )
+        cohort = json.loads(Path(args.cohort).read_text(encoding="utf-8"))
+        entries = cohort.get("entries") if isinstance(cohort, dict) else None
+        if not isinstance(entries, list):
+            raise ValueError("Europe cohort has no entries")
+        cohort_csv = Path(temporary) / "cohort.csv"
+        with cohort_csv.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=["radar", "cohort_role"])
+            writer.writeheader()
+            for item in entries:
+                writer.writerow({"radar": str(item["radar"]).lower(), "cohort_role": item["role"]})
+        con.execute(f"CREATE VIEW cohort AS SELECT * FROM read_csv_auto({sql_literal(str(cohort_csv))}, header=true)")
         con.execute(
             f"""
             CREATE VIEW era5 AS
@@ -90,9 +101,10 @@ def assemble(args: argparse.Namespace) -> None:
               a.bird_v_ms,
               a.profile_count,
               a.rain_suspect_fraction,
-              a.cohort_role
+              c.cohort_role
             FROM read_parquet({aloft_path}, hive_partitioning=true, union_by_name=true) a
             JOIN radar_meta m ON lower(a.radar)=lower(m.radar)
+            JOIN cohort c ON lower(a.radar)=lower(c.radar)
             """
         )
         con.execute(
@@ -194,6 +206,7 @@ if __name__ == "__main__":
     parser.add_argument("--uk-training-csv", required=True)
     parser.add_argument("--era5-parquet", required=True, help="DuckDB glob for European site ERA5 features")
     parser.add_argument("--radar-metadata", required=True)
+    parser.add_argument("--cohort", required=True)
     parser.add_argument("--validation-output")
     parser.add_argument("--output", required=True)
     assemble(parser.parse_args())

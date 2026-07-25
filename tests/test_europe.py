@@ -52,7 +52,7 @@ def test_coverage_is_streamed_and_cohort_is_locked_before_scoring() -> None:
         "baltrad/hdf5/nlhrw/2025/01/01,288\n"
     )
     objects = list(iter_aloft_coverage(opener=opener(coverage)))
-    cohort = build_aloft_cohort(objects, minimum_training_days=2)
+    cohort = build_aloft_cohort(objects, minimum_training_days=2, minimum_transfer_days=1)
 
     assert [(obj.radar, obj.day) for obj in objects] == [
         ("bejab", "20250101"),
@@ -475,7 +475,8 @@ def test_europe_fitter_has_source_and_transfer_controls() -> None:
     assert "transfer_validation" in script
     assert "transfer_validation_radar_count" in script
     assert "frame$.row_id <- seq_len(nrow(frame))" in script
-    assert 'model_time_terms = "none"' in script
+    assert 'model_time_terms = if (!is.null(spec$time_terms))' in script
+    assert "time_index_hours" in script
     assert 'data$pulse == "lp"' in script
     sbatch = (Path(__file__).parents[1] / "deploy/slurm/birdcast-euro-aloft-stream.sbatch").read_text()
     assert "stream-chunk" in sbatch
@@ -705,7 +706,13 @@ def test_training_assembler_keeps_transfer_radars_out_of_fit(tmp_path: Path) -> 
             "validation_output": str(validation),
             "output": str(output),
         },
-    )()
+        )()
+    cohort = tmp_path / "cohort.json"
+    cohort.write_text(json.dumps({"entries": [
+        {"radar": "bejab", "role": "training"},
+        {"radar": "nlhrw", "role": "transfer-validation"},
+    ]}), encoding="utf-8")
+    args.cohort = str(cohort)
     assembler.assemble(args)
 
     assert "bejab" in output.read_text(encoding="utf-8")

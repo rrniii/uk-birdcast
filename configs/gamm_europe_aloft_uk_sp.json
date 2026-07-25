@@ -39,6 +39,13 @@
   ],
   "spatial_k": 40,
   "covariate_k": 8,
+  "time_terms": {
+    "policy": "empirical_utc_cadence_only",
+    "time_k": 120,
+    "utc_hour_k": 12,
+    "phenology_filter": "none",
+    "daylight_filter": "none"
+  },
   "max_radar_folds": 187,
   "interpolation_distance_km": 150,
   "maximum_support_distance_km": 250

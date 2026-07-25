@@ -30,6 +30,7 @@ from .config import (
     EUROPE_INTERPOLATION_DISTANCE_KM,
     EUROPE_MAX_SUPPORT_DISTANCE_KM,
     EUROPE_MIN_TRAINING_DAYS,
+    EUROPE_MIN_TRANSFER_DAYS,
     EUROPE_PROCESSING_VERSION,
     EUROPE_REFERENCE_SOURCE,
     VPTS_ALTITUDE_MAX_M,
@@ -129,6 +130,7 @@ def build_aloft_cohort(
     objects: Iterable[VptsObject],
     *,
     minimum_training_days: int = EUROPE_MIN_TRAINING_DAYS,
+    minimum_transfer_days: int = EUROPE_MIN_TRANSFER_DAYS,
 ) -> list[AloftCohortEntry]:
     """Classify radars before observations or model errors are inspected."""
 
@@ -146,7 +148,8 @@ def build_aloft_cohort(
                 advertised_day_count=count,
                 first_day=ordered[0],
                 last_day=ordered[-1],
-                role="training" if count >= minimum_training_days else "transfer-validation",
+                role=("training" if count >= minimum_training_days else "transfer-validation"
+                      if count >= minimum_transfer_days else "excluded-insufficient-coverage"),
             )
         )
     return entries
@@ -239,9 +242,11 @@ def write_aloft_cohort(entries: Iterable[AloftCohortEntry], output: Path) -> dic
         "processing_version": EUROPE_PROCESSING_VERSION,
         "selection_locked_before_scoring": True,
         "minimum_training_days": EUROPE_MIN_TRAINING_DAYS,
+        "minimum_transfer_days": EUROPE_MIN_TRANSFER_DAYS,
         "entry_count": len(records),
         "training_count": sum(row["role"] == "training" for row in records),
         "transfer_validation_count": sum(row["role"] == "transfer-validation" for row in records),
+        "excluded_insufficient_coverage_count": sum(row["role"] == "excluded-insufficient-coverage" for row in records),
         "entries": records,
     }
     write_json(output, payload)

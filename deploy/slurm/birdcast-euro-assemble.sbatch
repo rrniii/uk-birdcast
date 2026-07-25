@@ -43,6 +43,7 @@ module load jaspy/3.12/v20250704
   --uk-training-csv "$BIRDCAST_EURO_UK_SP_TRAINING" \
   --era5-parquet "$BIRDCAST_EURO_SITE_ERA5_TABLE" \
   --radar-metadata "$BIRDCAST_EURO_RADARS" \
+  --cohort "$BIRDCAST_EURO_COHORT" \
   --validation-output "$BIRDCAST_EURO_TRANSFER_CSV" --output "$BIRDCAST_EURO_TRAINING_CSV"
 "$BIRDCAST_EURO_PYTHON" -m birdcast_uk.cli europe verify-training \
   --training-csv "$BIRDCAST_EURO_TRAINING_CSV" --transfer-csv "$BIRDCAST_EURO_TRANSFER_CSV" \

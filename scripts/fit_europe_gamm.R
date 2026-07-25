@@ -40,6 +40,9 @@ data$country <- factor(data$country)
 data$.row_id <- seq_len(nrow(data))
 timestamps <- as.POSIXct(data$time_utc, format = "%Y-%m-%dT%H:%M:%OSZ", tz = "UTC")
 if (any(is.na(timestamps))) stop("training table contains invalid UTC timestamps")
+time_origin <- min(timestamps)
+data$time_index_hours <- as.numeric(difftime(timestamps, time_origin, units = "hours"))
+data$utc_hour <- as.integer(format(timestamps, "%H", tz = "UTC"))
 
 threads <- max(1L, as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", "1")))
 spatial_k <- if (!is.null(spec$spatial_k)) as.integer(spec$spatial_k) else 40L
@@ -88,6 +91,16 @@ model_formula <- function(frame) {
     sprintf("s(easting_m, northing_m, bs='tp', k=%d)", spatial_k),
     sprintf("s(%s, bs='tp', k=%d)", spec$predictors, covariate_k)
   )
+  time_terms <- spec$time_terms
+  if (!is.null(time_terms) && identical(time_terms$policy, "empirical_utc_cadence_only")) {
+    time_k <- if (!is.null(time_terms$time_k)) as.integer(time_terms$time_k) else 120L
+    hour_k <- if (!is.null(time_terms$utc_hour_k)) as.integer(time_terms$utc_hour_k) else 12L
+    terms <- c(
+      terms,
+      sprintf("s(time_index_hours, bs='cr', k=%d)", time_k),
+      sprintf("s(utc_hour, bs='cc', k=%d)", hour_k)
+    )
+  }
   if (length(unique(frame$source)) > 1) terms <- c("source", terms)
   random <- character()
   for (name in c("country", "network", "radar")) {
@@ -107,6 +120,10 @@ prediction_frame <- function(frame, training, reference_source = FALSE) {
   frame$country <- factor(levels(training$country)[1], levels = levels(training$country))
   frame$network <- factor(levels(training$network)[1], levels = levels(training$network))
   frame$radar <- factor(levels(training$radar)[1], levels = levels(training$radar))
+  timestamps <- as.POSIXct(frame$time_utc, format = "%Y-%m-%dT%H:%M:%OSZ", tz = "UTC")
+  if (any(is.na(timestamps))) stop("prediction frame contains invalid UTC timestamps")
+  frame$time_index_hours <- as.numeric(difftime(timestamps, time_origin, units = "hours"))
+  frame$utc_hour <- as.integer(format(timestamps, "%H", tz = "UTC"))
   frame
 }
 
@@ -182,6 +199,10 @@ prepare_external <- function(frame) {
   frame$network <- factor(frame$network)
   frame$country <- factor(frame$country)
   frame$.row_id <- seq_len(nrow(frame))
+  timestamps <- as.POSIXct(frame$time_utc, format = "%Y-%m-%dT%H:%M:%OSZ", tz = "UTC")
+  if (any(is.na(timestamps))) stop("transfer-validation table contains invalid UTC timestamps")
+  frame$time_index_hours <- as.numeric(difftime(timestamps, time_origin, units = "hours"))
+  frame$utc_hour <- as.integer(format(timestamps, "%H", tz = "UTC"))
   frame
 }
 if (!is.null(transfer_validation)) {
@@ -282,7 +303,8 @@ jsonlite::write_json(
     model_family = "source-aware-gamm",
     reference_source = spec$reference_source,
     sources = sort(unique(as.character(data$source))),
-    model_time_terms = "none",
+    model_time_terms = if (!is.null(spec$time_terms)) spec$time_terms else list(policy = "none"),
+    time_origin_utc = format(time_origin, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
     site_equal_weighting = TRUE,
     folds = fold_rows,
     heldout_radar_vectors = if (file.exists(vector_fold_path)) vector_fold_path else NULL,

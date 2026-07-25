@@ -15,6 +15,11 @@ required <- c("time_utc", "longitude", "latitude", "nearest_radar_km", metrics$p
 missing <- setdiff(required, names(grid))
 if (length(missing)) stop(sprintf("grid day is missing: %s", paste(missing, collapse = ", ")))
 if (!nrow(grid)) stop("grid day has no rows")
+origin <- as.POSIXct(metrics$time_origin_utc, format = "%Y-%m-%dT%H:%M:%OSZ", tz = "UTC")
+timestamps <- as.POSIXct(grid$time_utc, format = "%Y-%m-%dT%H:%M:%OSZ", tz = "UTC")
+if (is.na(origin) || any(is.na(timestamps))) stop("grid day contains invalid UTC timestamps")
+grid$time_index_hours <- as.numeric(difftime(timestamps, origin, units = "hours"))
+grid$utc_hour <- as.integer(format(timestamps, "%H", tz = "UTC"))
 
 prepare_frame <- function(frame, fit, reference_source) {
   training <- fit$data

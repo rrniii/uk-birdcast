@@ -26,6 +26,7 @@ from .config import (
     DEFAULT_PUBLIC_BASE_URL,
     EUROPE_ERA5_AREA,
     EUROPE_MIN_TRAINING_DAYS,
+    EUROPE_MIN_TRANSFER_DAYS,
     FORECAST_ENSEMBLE_SIZE,
     OBJECT_PREFIX,
     UKMO_PVOL_CATALOG_URL,
@@ -76,6 +77,7 @@ def cmd_europe_cohort(args: argparse.Namespace) -> int:
             source="baltrad",
         ),
         minimum_training_days=args.minimum_training_days,
+        minimum_transfer_days=args.minimum_transfer_days,
     )
     payload = write_aloft_cohort(entries, Path(args.output))
     print(json.dumps({key: value for key, value in payload.items() if key != "entries"}, indent=2, sort_keys=True))
@@ -684,6 +686,7 @@ def build_parser() -> argparse.ArgumentParser:
     europe_cohort.add_argument("--coverage-url", default=ALOFT_COVERAGE_URL)
     europe_cohort.add_argument("--public-base-url", default=ALOFT_PUBLIC_BASE_URL)
     europe_cohort.add_argument("--minimum-training-days", type=int, default=EUROPE_MIN_TRAINING_DAYS)
+    europe_cohort.add_argument("--minimum-transfer-days", type=int, default=EUROPE_MIN_TRANSFER_DAYS)
     europe_cohort.add_argument("--output", required=True)
     europe_cohort.set_defaults(func=cmd_europe_cohort)
     europe_stream = europe_sub.add_parser("stream-day")
