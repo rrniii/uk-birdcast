@@ -306,6 +306,7 @@ jsonlite::write_json(
     model_id = spec$model_id,
     model_family = "source-aware-gamm",
     reference_source = spec$reference_source,
+    cohort_restriction = if (!is.null(spec$cohort_restriction)) spec$cohort_restriction else NULL,
     sources = sort(unique(as.character(data$source))),
     model_time_terms = if (!is.null(spec$time_terms)) spec$time_terms else list(policy = "none"),
     time_origin_utc = format(time_origin, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),

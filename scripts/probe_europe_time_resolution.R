@@ -72,6 +72,7 @@ rows <- lapply(sort(unique(radar_id)), function(radar) {
 rows <- Filter(Negate(is.null),rows)
 jsonlite::write_json(list(target=target,time_k=time_k,site_count=length(rows),
   space_time_k=space_time_k,
+  cohort_restriction=if (!is.null(spec$cohort_restriction)) spec$cohort_restriction else NULL,
   raw_median_log1p_r_squared=median(sapply(rows,function(x)x$raw$log1p_r_squared)),
   raw_median_top_decile_f1=median(sapply(rows,function(x)x$raw$top_decile_f1)),
   calibrated_median_log1p_r_squared=median(sapply(rows,function(x)x$post_calibration$log1p_r_squared)),
