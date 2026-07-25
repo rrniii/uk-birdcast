@@ -12,6 +12,7 @@
 
 set -euo pipefail
 : "${BIRDCAST_EURO_ROOT:?Set the immutable Europe release checkout}"
+: "${BIRDCAST_EURO_PYTHON:?Set the branch Python executable}"
 : "${BIRDCAST_EURO_RSCRIPT:?Set the pinned JASMIN Rscript executable}"
 : "${BIRDCAST_EURO_MODEL_SPEC:?Set the passed Europe model specification}"
 : "${BIRDCAST_EURO_TIME_K:?Set candidate continuous UTC smooth dimension}"

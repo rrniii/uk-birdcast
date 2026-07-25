@@ -132,7 +132,11 @@ def assemble(args: argparse.Namespace) -> None:
         )
         aloft_columns = {row[0] for row in con.execute("DESCRIBE aloft_joined").fetchall()}
         uk_columns = {row[0] for row in con.execute("DESCRIBE uk_sp").fetchall()}
-        columns = sorted((aloft_columns - {"cohort_role"}) & uk_columns)
+        aloft_only = bool(getattr(args, "aloft_only", False))
+        columns = sorted(
+            aloft_columns - {"cohort_role"}
+            if aloft_only else (aloft_columns - {"cohort_role"}) & uk_columns
+        )
         preferred = [
             "radar", "pulse", "source", "network", "country", "time_utc",
             "latitude", "longitude", "easting_m", "northing_m",
@@ -142,15 +146,12 @@ def assemble(args: argparse.Namespace) -> None:
         ordered = [name for name in preferred if name in columns] + sorted(set(columns) - set(preferred))
         select = ", ".join(f'"{name}"' for name in ordered)
         destination = str(output).replace("'", "''")
-        con.execute(
-            f"""
-            COPY (
-              SELECT {select} FROM aloft_joined WHERE cohort_role='training'
-              UNION ALL BY NAME
-              SELECT {select} FROM uk_sp
-            ) TO '{destination}' (HEADER, DELIMITER ',')
-            """
+        training_query = (
+            f"SELECT {select} FROM aloft_joined WHERE cohort_role='training'"
+            if aloft_only else
+            f"SELECT {select} FROM aloft_joined WHERE cohort_role='training' UNION ALL BY NAME SELECT {select} FROM uk_sp"
         )
+        con.execute(f"COPY ({training_query}) TO '{destination}' (HEADER, DELIMITER ',')")
         validation_counts = []
         if args.validation_output:
             validation_output = Path(args.validation_output)
@@ -188,7 +189,7 @@ def assemble(args: argparse.Namespace) -> None:
         "transfer_validation_csv": args.validation_output,
         "transfer_validation_rows": validation_counts[0] if validation_counts else 0,
         "transfer_validation_radars": validation_counts[1] if validation_counts else 0,
-        "filters": {"aloft_source": "baltrad", "uk_pulse": "sp", "phenology": "none", "daylight": "none"},
+        "filters": {"aloft_source": "baltrad", "uk_pulse": "sp", "aloft_only": aloft_only, "phenology": "none", "daylight": "none"},
     }
     output.with_suffix(output.suffix + ".manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n",
@@ -207,6 +208,7 @@ if __name__ == "__main__":
     parser.add_argument("--era5-parquet", required=True, help="DuckDB glob for European site ERA5 features")
     parser.add_argument("--radar-metadata", required=True)
     parser.add_argument("--cohort", required=True)
+    parser.add_argument("--aloft-only", action="store_true")
     parser.add_argument("--validation-output")
     parser.add_argument("--output", required=True)
     assemble(parser.parse_args())

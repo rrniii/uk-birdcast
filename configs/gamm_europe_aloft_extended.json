@@ -1,0 +1,28 @@
+{
+  "schema_version": "birdcast-euro-gamm-spec-1.0",
+  "model_id": "europe-gamm-aloft-extended-v2",
+  "reference_source": "aloft-baltrad",
+  "input_policy": {
+    "aloft": "HTTP streamed BALTRAD VPTS; raw rows are not persisted",
+    "uk": "excluded because extended wind predictors are not present in the immutable UK SP table",
+    "altitude_m": [200, 4000],
+    "cadence": "hourly UTC",
+    "phenology_filter": "none",
+    "daylight_filter": "none"
+  },
+  "predictors": [
+    "surface_pressure_pa", "mean_sea_level_pressure_pa", "total_cloud_cover_fraction",
+    "boundary_layer_height_m", "hourly_precipitation_m", "temperature_850_k",
+    "relative_humidity_850_percent", "u_850_ms", "v_850_ms",
+    "u_925_ms", "v_925_ms", "u_700_ms", "v_700_ms"
+  ],
+  "intensity_targets": ["mtr_birds_km_h", "vid_birds_per_km2"],
+  "vector_targets": ["bird_u_ms", "bird_v_ms"],
+  "targets": ["mtr_birds_km_h", "vid_birds_per_km2", "bird_u_ms", "bird_v_ms"],
+  "spatial_k": 40,
+  "covariate_k": 8,
+  "time_terms": {"policy": "empirical_utc_cadence_only", "time_k": 800, "utc_hour_k": 12, "phenology_filter": "none", "daylight_filter": "none"},
+  "max_radar_folds": 187,
+  "interpolation_distance_km": 150,
+  "maximum_support_distance_km": 250
+}

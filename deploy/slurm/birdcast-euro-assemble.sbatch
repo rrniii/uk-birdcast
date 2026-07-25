@@ -38,13 +38,18 @@ module load jaspy/3.12/v20250704
 "$BIRDCAST_EURO_PYTHON" "$BIRDCAST_EURO_ROOT/scripts/merge_europe_era5_site_features.py" \
   --feature-root "$BIRDCAST_EURO_SITE_ERA5_ROOT" --output "$BIRDCAST_EURO_SITE_ERA5_TABLE" \
   --start-day 2025-07-14 --end-day 2026-07-13
-"$BIRDCAST_EURO_PYTHON" "$BIRDCAST_EURO_ROOT/scripts/assemble_europe_training.py" \
+assemble_args=(
   --aloft-parquet "$BIRDCAST_EURO_HOURLY_ROOT/**/*.parquet" \
   --uk-training-csv "$BIRDCAST_EURO_UK_SP_TRAINING" \
   --era5-parquet "$BIRDCAST_EURO_SITE_ERA5_TABLE" \
   --radar-metadata "$BIRDCAST_EURO_RADARS" \
   --cohort "$BIRDCAST_EURO_COHORT" \
   --validation-output "$BIRDCAST_EURO_TRANSFER_CSV" --output "$BIRDCAST_EURO_TRAINING_CSV"
+)
+if [ "${BIRDCAST_EURO_ALOFT_ONLY:-false}" = true ]; then
+  assemble_args+=(--aloft-only)
+fi
+"$BIRDCAST_EURO_PYTHON" "$BIRDCAST_EURO_ROOT/scripts/assemble_europe_training.py" "${assemble_args[@]}"
 "$BIRDCAST_EURO_PYTHON" -m birdcast_uk.cli europe verify-training \
   --training-csv "$BIRDCAST_EURO_TRAINING_CSV" --transfer-csv "$BIRDCAST_EURO_TRANSFER_CSV" \
   --cohort "$BIRDCAST_EURO_COHORT" --model-spec "$BIRDCAST_EURO_MODEL_SPEC" \
