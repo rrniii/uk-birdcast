@@ -81,7 +81,12 @@ def sample_keys(keys: list[str], count: int) -> list[str]:
     return [keys[index] for index in sorted(indices)]
 
 
-def numeric_summary(dataset: Any) -> dict[str, Any] | None:
+def numeric_summary(
+    dataset: Any,
+    *,
+    nodata: float | int | None = None,
+    undetect: float | int | None = None,
+) -> dict[str, Any] | None:
     """Calculate statistics in memory and discard the raw VP numeric array."""
     try:
         import numpy as np
@@ -91,7 +96,11 @@ def numeric_summary(dataset: Any) -> dict[str, Any] | None:
         return None
     if values.dtype.kind not in {"i", "u", "f"}:
         return None
-    finite = values[np.isfinite(values)] if values.dtype.kind == "f" else values.reshape(-1)
+    flat = values.reshape(-1)
+    finite = flat[np.isfinite(flat)] if values.dtype.kind == "f" else flat
+    for invalid in (nodata, undetect):
+        if invalid is not None:
+            finite = finite[finite != invalid]
     if not finite.size:
         return {"finite_count": 0, "min": None, "max": None, "mean": None}
     return {
@@ -111,6 +120,7 @@ def inspect_hdf5(payload: bytes) -> dict[str, Any]:
 
     groups: list[dict[str, Any]] = []
     datasets: list[dict[str, Any]] = []
+    dataset_nodes: list[tuple[dict[str, Any], Any]] = []
     with h5py.File(io.BytesIO(payload), "r") as handle:
         groups.append({"path": "/", "attribute_keys": sorted(map(str, handle.attrs.keys())), "metadata": selected_attributes(handle.attrs)})
 
@@ -125,12 +135,26 @@ def inspect_hdf5(payload: bytes) -> dict[str, Any]:
                 "attribute_keys": sorted(map(str, node.attrs.keys())),
                 "metadata": selected_attributes(node.attrs),
             }
-            summary = numeric_summary(node)
-            if summary is not None:
-                record["numeric_summary"] = summary
             datasets.append(record)
+            dataset_nodes.append((record, node))
 
         handle.visititems(visitor)
+        quantity_metadata = {
+            group["path"].removesuffix("/what"): group["metadata"]
+            for group in groups
+            if group["path"].endswith("/what") and group["metadata"].get("quantity") is not None
+        }
+        for record, node in dataset_nodes:
+            metadata = quantity_metadata.get(record["path"].rsplit("/", 1)[0], {})
+            record["quantity"] = metadata.get("quantity")
+            record["quantity_metadata"] = metadata
+            summary = numeric_summary(
+                node,
+                nodata=metadata.get("nodata"),
+                undetect=metadata.get("undetect"),
+            )
+            if summary is not None:
+                record["numeric_summary"] = summary
 
     fingerprint = {
         "groups": [{"path": group["path"], "attribute_keys": group["attribute_keys"], "metadata": selected_attributes(group["metadata"], include_dynamic=False)} for group in groups],
@@ -146,6 +170,11 @@ def inspect_hdf5(payload: bytes) -> dict[str, Any]:
             for record in [*groups, *datasets]
             if any(key in record["metadata"] for key in {"height", "height_min", "height_max", "levels", "interval", "nbins", "rscale"})
         ],
+        "quantity_summaries": {
+            str(record["quantity"]): record.get("numeric_summary")
+            for record in datasets
+            if record.get("quantity") is not None and record.get("numeric_summary") is not None
+        },
     }
 
 
