@@ -331,6 +331,13 @@ def extract_grid_features(
         raise ValueError("at least one ERA5 dataset is required")
     single = datasets[0] if single_levels is not None and single_levels.exists() else None
     pressure = datasets[-1] if pressure_levels is not None and pressure_levels.exists() else None
+    # Grid extraction probes many nearby ERA5 cells.  Daily fields are small;
+    # materialise each one before point selection to avoid a netCDF read for
+    # every cell and predictor.
+    if single is not None and hasattr(single, "load"):
+        single = single.load()
+    if pressure is not None and hasattr(pressure, "load"):
+        pressure = pressure.load()
     radars = _validated_coverage_radars(load_radars(radars_path))
     ranges = _training_feature_ranges(training_table)
     training_window = _training_window(training_table)
