@@ -197,12 +197,28 @@ def fetch_and_inspect(*, public_base: str, key: str, timeout_seconds: float) -> 
 
 def summarise_radar(samples: Iterable[dict[str, Any]]) -> dict[str, Any]:
     rows = list(samples)
+    quantity_stats: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        for quantity, summary in row.get("quantity_summaries", {}).items():
+            if summary and int(summary.get("finite_count") or 0) > 0:
+                quantity_stats.setdefault(quantity, []).append(summary)
+    quantity_summary = {
+        quantity: {
+            "sample_count": len(values),
+            "median_finite_count": median([int(value["finite_count"]) for value in values]),
+            "median_mean": median([float(value["mean"]) for value in values]),
+            "median_min": median([float(value["min"]) for value in values]),
+            "median_max": median([float(value["max"]) for value in values]),
+        }
+        for quantity, values in sorted(quantity_stats.items())
+    }
     return {
         "sample_count": len(rows),
         "schema_fingerprint_count": len({row["schema_fingerprint_sha256"] for row in rows}),
         "schema_fingerprints": sorted({row["schema_fingerprint_sha256"] for row in rows}),
         "quantity_values": sorted({value for row in rows for value in row["quantity_values"]}),
         "median_content_length_bytes": median([row["content_length"] for row in rows]) if rows else None,
+        "quantity_summary": quantity_summary,
         "altitude_metadata": [row["altitude_metadata"] for row in rows],
     }
 
