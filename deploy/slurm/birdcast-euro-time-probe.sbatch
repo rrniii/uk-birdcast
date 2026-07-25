@@ -4,9 +4,9 @@
 #SBATCH --account=ncas_radar
 #SBATCH --qos=standard
 #SBATCH --partition=standard
-#SBATCH --time=04:00:00
+#SBATCH --time=08:00:00
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=64G
+#SBATCH --mem=128G
 #SBATCH --output=logs/birdcast-euro-time-probe-%j.out
 #SBATCH --error=logs/birdcast-euro-time-probe-%j.err
 

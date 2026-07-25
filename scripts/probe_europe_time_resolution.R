@@ -38,7 +38,13 @@ for (name in c("country", "network", "radar")) if (length(unique(training[[name]
   random_exclude <- c(random_exclude, sprintf("s(%s)",name))
 }
 formula <- as.formula(paste("response ~",paste(terms,collapse=" + ")))
-fit <- bam(formula,data=training,weights=w,method="fREML",discrete=TRUE,nthreads=1)
+# mgcv cannot discretise this nested tensor product.  Keep the efficient
+# discretised path for ordinary time-smooth probes, but use the exact fREML
+# implementation when evaluating a spatiotemporal interaction.
+fit <- bam(
+  formula, data=training, weights=w, method="fREML",
+  discrete=space_time_k <= 0, nthreads=1
+)
 radar_id <- transfer_radar_id
 transfer$source <- factor(spec$reference_source,levels=levels(training$source))
 transfer$country <- factor(levels(training$country)[1],levels=levels(training$country))
