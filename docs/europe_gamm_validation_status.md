@@ -26,6 +26,32 @@ prove the model sees the intended VPTS-derived response and ERA5 predictors;
 they do not demonstrate that absolute MTR transfers between independently
 processed radar sites.
 
+## VP-to-VPTS reconstruction audit
+
+The five strongest MTR-scale outliers (`dksam`, `robuc`, `rocra`, `romed`, and
+`rotim`) expose BALTRAD VP HDF5 objects rather than PVOL objects. The public
+daily VPTS CSV records the immutable `source_file` VP filename for every
+profile. The audit samples three dates spanning the model year and compares
+each sampled VP directly with the rows that name that source file.
+
+| Check | Result |
+| --- | --- |
+| VP schema | 25 levels at 200 m spacing (0-4,800 m) at every sampled radar |
+| Profile variables | Matching height, density, reflectivity, velocity, quality and count fields |
+| Reconstruction samples | 30 VP profiles and 9,765 finite VP/VPTS field-height pairs |
+| Value and missingness agreement | Zero numerical difference; zero mismatched missing values |
+| Raw input retention | None; the VP HDF5 and daily VPTS files are streamed and discarded |
+
+Derived evidence is stored at
+`artifacts/vp-structure-audit/outlier-vp-vpts-reconstruction-20260725.json`.
+The runnable audit is `scripts/audit_aloft_vp_structure.py --compare-vpts`.
+
+This rules out daily VPTS assembly as the explanation for the outlier scale in
+the sampled objects. The scale difference already exists in the published VP
+`dens` and `eta` products. It remains unresolved whether that reflects genuine
+local migration, radar/network processing, or both; this audit does not treat
+the outlier radars as invalid.
+
 ## Held-out Aloft transfer results
 
 Every experiment used the same 24-radar untouched Aloft cohort and scores
