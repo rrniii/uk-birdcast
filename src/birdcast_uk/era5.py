@@ -358,6 +358,8 @@ def extract_grid_features(
             for longitude in longitudes
             if _point_in_radar_coverage(longitude, latitude, coverage_radars)
         ]
+        single_grid = _select_grid_points(single, latitude_name, longitude_name, grid_points)
+        pressure_grid = _select_grid_points(pressure, latitude_name, longitude_name, grid_points)
         for time_value, point in _time_points(reference, time_name):
             timestamp = str(time_value) if time_value is not None else ""
             if training_window is not None:
@@ -367,9 +369,10 @@ def extract_grid_features(
                     continue
                 if not training_window[0] <= selected_day <= training_window[1]:
                     continue
-            single_point = _select_time(single, time_name, time_value) if single is not None else None
-            pressure_point = _select_time(pressure, time_name, time_value) if pressure is not None else None
-            for latitude, longitude, easting, northing in grid_points:
+            single_point = _select_time(single_grid, time_name, time_value) if single_grid is not None else None
+            pressure_point = _select_time(pressure_grid, time_name, time_value) if pressure_grid is not None else None
+            weather_values = _grid_weather_values_bulk(single_point, pressure_point, len(grid_points))
+            for point_index, (latitude, longitude, easting, northing) in enumerate(grid_points):
                 row = {
                     "time_utc": timestamp,
                     "latitude": latitude,
@@ -377,7 +380,11 @@ def extract_grid_features(
                     "easting_m": easting,
                     "northing_m": northing,
                 }
-                row.update(_grid_weather_values(single_point, pressure_point, latitude_name, longitude_name, latitude, longitude))
+                row.update({
+                    name: values[point_index]
+                    for name, values in weather_values.items()
+                    if values[point_index] is not None
+                })
                 row["nearest_radar_km"] = round(
                     min(
                         _great_circle_km(
@@ -940,6 +947,94 @@ def _grid_weather_values(
             if value is not None:
                 values[f"{component}_{level}_ms"] = value
     return values
+
+
+def _select_grid_points(
+    dataset: object | None,
+    latitude_name: str,
+    longitude_name: str,
+    grid_points: list[tuple[float, float, float, float]],
+) -> object | None:
+    """Pairwise-select native ERA5 grid cells for every supported map point."""
+
+    if dataset is None:
+        return None
+    try:
+        import xarray as xr
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("xarray is required for ERA5 grid extraction") from exc
+    grid_point = "grid_point"
+    return dataset.sel(  # type: ignore[attr-defined]
+        {
+            latitude_name: xr.DataArray([point[0] for point in grid_points], dims=grid_point),
+            longitude_name: xr.DataArray([point[1] for point in grid_points], dims=grid_point),
+        },
+        method="nearest",
+    )
+
+
+def _grid_weather_values_bulk(
+    single: object | None,
+    pressure: object | None,
+    point_count: int,
+) -> dict[str, list[float | None]]:
+    """Return weather values for all pairwise-selected grid points at one time."""
+
+    values: dict[str, list[float | None]] = {}
+    for target, candidates in {
+        "surface_pressure_pa": ("sp", "surface_pressure"),
+        "mean_sea_level_pressure_pa": ("msl", "mean_sea_level_pressure"),
+        "total_cloud_cover_fraction": ("tcc", "total_cloud_cover"),
+        "boundary_layer_height_m": ("blh", "boundary_layer_height"),
+        "hourly_precipitation_m": ("tp", "total_precipitation"),
+    }.items():
+        values[target] = _grid_variable_values(single, candidates, point_count)
+    for target, candidates in {
+        "temperature_850_k": ("t", "temperature"),
+        "relative_humidity_850_percent": ("r", "relative_humidity"),
+        "u_850_ms": ("u", "u_component_of_wind"),
+        "v_850_ms": ("v", "v_component_of_wind"),
+    }.items():
+        values[target] = _grid_variable_values(pressure, candidates, point_count, pressure_level=850)
+    for level in (925, 700):
+        for component, candidates in {
+            "u": ("u", "u_component_of_wind"),
+            "v": ("v", "v_component_of_wind"),
+        }.items():
+            values[f"{component}_{level}_ms"] = _grid_variable_values(
+                pressure, candidates, point_count, pressure_level=level
+            )
+    return values
+
+
+def _grid_variable_values(
+    dataset: object | None,
+    candidates: tuple[str, ...],
+    point_count: int,
+    *,
+    pressure_level: int | None = None,
+) -> list[float | None]:
+    if dataset is None:
+        return [None] * point_count
+    variables = getattr(dataset, "data_vars", {})
+    name = next((candidate for candidate in candidates if candidate in variables), None)
+    if name is None:
+        return [None] * point_count
+    value = dataset[name]  # type: ignore[index]
+    if pressure_level is not None:
+        for dimension in ("pressure_level", "isobaricInhPa", "level"):
+            if dimension in getattr(value, "dims", ()):
+                value = value.sel({dimension: pressure_level}, method="nearest")
+                break
+    if getattr(value, "ndim", 0) == 0:
+        return [_as_float(getattr(value, "values", value))] * point_count
+    raw = getattr(value, "values", value)
+    items = raw.tolist() if hasattr(raw, "tolist") else list(raw)
+    if not isinstance(items, list):
+        items = [items]
+    if len(items) != point_count:
+        raise ValueError(f"ERA5 grid selection has {len(items)} values; expected {point_count}")
+    return [_as_float(item) for item in items]
 
 
 def _point_variable(

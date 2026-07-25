@@ -9,6 +9,7 @@ from birdcast_uk.era5 import (
     EARTHKIT_BACKEND,
     _features_for_radar,
     _features_for_selected_radar,
+    _grid_weather_values_bulk,
     _open_datasets,
     _select_radar_sites,
     _support_score,
@@ -407,6 +408,34 @@ def test_era5_vectorized_radar_selection_preserves_per_site_features() -> None:
     assert selected.sizes["radar_site"] == 2
     assert [row["sp"] for row in west] == [1, 5]
     assert [row["sp"] for row in east] == [4, 8]
+
+
+def test_era5_bulk_grid_weather_values_keep_grid_point_alignment() -> None:
+    import numpy as np
+    import xarray as xr
+
+    single = xr.Dataset(
+        {
+            "sp": (("grid_point",), np.array([100000.0, 100100.0])),
+            "msl": (("grid_point",), np.array([101000.0, 101100.0])),
+            "tcc": (("grid_point",), np.array([0.2, 0.8])),
+            "blh": (("grid_point",), np.array([300.0, 400.0])),
+            "tp": (("grid_point",), np.array([0.0, 0.001])),
+        }
+    )
+    pressure = xr.Dataset(
+        {
+            "t": (("pressure_level", "grid_point"), np.array([[280.0, 281.0], [270.0, 271.0], [260.0, 261.0]])),
+            "r": (("pressure_level", "grid_point"), np.array([[80.0, 81.0], [70.0, 71.0], [60.0, 61.0]])),
+            "u": (("pressure_level", "grid_point"), np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])),
+            "v": (("pressure_level", "grid_point"), np.array([[7.0, 8.0], [9.0, 10.0], [11.0, 12.0]])),
+        },
+        coords={"pressure_level": [925, 850, 700]},
+    )
+    values = _grid_weather_values_bulk(single, pressure, 2)
+    assert values["surface_pressure_pa"] == [100000.0, 100100.0]
+    assert values["u_925_ms"] == [1.0, 2.0]
+    assert values["v_700_ms"] == [11.0, 12.0]
 
 
 def test_era5_build_status_identifies_earthkit_without_download(tmp_path: Path) -> None:
