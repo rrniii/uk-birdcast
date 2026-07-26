@@ -465,6 +465,8 @@ def test_europe_cli_contracts_are_registered() -> None:
         ["europe", "stream-day", "--radar", "bejab", "--day", "2026-07-01", "--output", "day.parquet"]
     )
     assert args.radar == "bejab"
+    args = parser.parse_args(["coastal", "build-relative-flow", "--training-csv", "training.csv", "--cohort", "cohort.json", "--output-root", "out"])
+    assert args.training_csv == "training.csv"
 
 
 def test_europe_fitter_has_source_and_transfer_controls() -> None:

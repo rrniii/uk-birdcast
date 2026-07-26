@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#070a0b">
+    <title>UK Coastal Bird Flow | Relative activity</title>
+    <link rel="icon" href="live-uk-bird-maps-favicon.png" type="image/png">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="brand-bar">
+      <a class="brand" href="../live-uk-bird-maps/">
+        <img src="live-uk-bird-maps-logo.jpg" alt="">
+        <span><strong>UK Coastal Bird Flow</strong><small>Relative radar activity and observed flow</small></span>
+      </a>
+      <span id="statusBadge" class="badge">Loading archive</span>
+    </header>
+    <main>
+      <section class="toolbar" aria-label="Coastal activity controls">
+        <label><span>Date</span><input id="dateInput" type="date"></label>
+        <label><span>Colour scheme</span><select id="colourSelect"><option value="atlantic">Atlantic blue</option><option value="viridis">Viridis</option><option value="night">Night-flight</option><option value="thermal">Thermal migration</option></select></label>
+        <label class="toggle"><input id="vectorsToggle" type="checkbox" checked><span>Observed flow direction</span></label>
+      </section>
+      <section class="notice">Colours are a within-radar activity percentile, not birds per kilometre or a shared scale. Arrows encode observed direction only.</section>
+      <section class="map-stage">
+        <header class="map-heading"><div><p>Historical coastal corridor</p><h1>Relative activity and flow</h1><span id="subtitle">Loading reporting radar observations</span></div><span>Hourly UTC</span></header>
+        <canvas id="mapCanvas" aria-label="UK coastal relative bird activity and flow map"></canvas>
+        <div class="zoom-controls"><button id="zoomIn" type="button" title="Zoom in">+</button><button id="zoomOut" type="button" title="Zoom out">-</button><button id="resetMap" type="button" title="Reset map">Home</button></div>
+        <div class="readout"><strong id="timestamp">--</strong><span id="networkValue">--</span></div>
+        <div class="legend"><strong>Relative activity</strong><div><i id="legendRamp"></i><ol><li style="bottom:0%">0</li><li style="bottom:25%">25</li><li style="bottom:50%">50</li><li style="bottom:75%">75</li><li style="bottom:100%">100</li></ol></div><small>within-radar percentile</small></div>
+        <div class="radar-key"><span><i></i>Reporting radar</span><span class="arrow-key">Arrow direction only</span></div>
+      </section>
+      <section class="timeline">
+        <button id="resetTime" type="button" title="First hour">Reset</button><button id="previous" type="button" title="Previous hour">Prev</button><button id="play" class="play" type="button" title="Play">Play</button><button id="next" type="button" title="Next hour">Next</button>
+        <label><span>UTC timeline</span><input id="hourInput" type="range" min="0" max="23" value="0"><output id="hourOutput">00:00</output></label>
+      </section>
+      <footer><span id="coverage">Coverage unavailable</span><span>Research product: no coast-wide interpolation and no absolute MTR claim.</span></footer>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>

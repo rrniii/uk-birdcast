@@ -45,7 +45,7 @@ birdcast-uk = "birdcast_uk.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-birdcast_uk = ["static/*", "static_europe/*"]
+birdcast_uk = ["static/*", "static_europe/*", "static_coastal/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

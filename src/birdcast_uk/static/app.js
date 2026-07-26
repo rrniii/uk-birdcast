@@ -15,6 +15,8 @@ const state = {
   model: null,
   europe: null,
   europePageUrl: "/europe-bird-maps/",
+  coastal: null,
+  coastalPageUrl: "/coastal-bird-flow/",
   boundary: null,
   yearPayload: null,
   modelDayPayload: null,
@@ -48,24 +50,27 @@ const MTR_CUTOFF_BIRDS_KM_H = 10;
   state.base = (config.data_base_url || "../").replace(/\/$/, "");
   state.vptsObjectUrlTemplate = config.vpts_object_url_template || "https://ncas-radar-o.s3-ext.jc.rl.ac.uk/uk-wsr-visualizer-public/ukmo-nimrod/vpts/current_ci_le4/{radar}/{yyyy}/{yyyymmdd}_{pulse}_vpts.csv";
   state.europePageUrl = config.europe_page_url || "/europe-bird-maps/";
+  state.coastalPageUrl = config.coastal_page_url || "/coastal-bird-flow/";
   const comparisonIndexUrl = config.archive_comparison_index_url || "";
-  const [historical, model, europe, archiveComparisonIndex] = await Promise.all([
+  const [historical, model, europe, coastal, archiveComparisonIndex] = await Promise.all([
     fetchJson(`${state.base}/latest/historical.json`, null),
     fetchJson(`${state.base}/latest/gam-era5.json`, null),
     fetchJson(config.europe_manifest_url || "", null),
+    fetchJson(config.coastal_manifest_url || "", null),
     fetchJson(comparisonIndexUrl, null),
   ]);
   state.historical = historical && historical.data_available ? historical : null;
   state.model = model && model.data_available ? model : null;
   state.europe = europe && europe.data_available && europe.release_status === "published" ? europe : null;
+  state.coastal = coastal && coastal.data_available && coastal.release_status === "published-relative-research-product" ? coastal : null;
   state.archiveComparisonIndex = archiveComparisonIndex;
-  if (!state.historical && !state.model && !state.europe) {
+  if (!state.historical && !state.model && !state.europe && !state.coastal) {
     showUnavailable();
     configureControls();
     setViewAvailability();
     return;
   }
-  if (!state.historical) state.view = state.model ? "modelled" : "europe";
+  if (!state.historical) state.view = state.model ? "modelled" : state.coastal ? "coastal" : "europe";
   const boundaryPath = (state.historical && state.historical.assets && state.historical.assets.boundary)
     || (state.model && state.model.assets && state.model.assets.boundary);
   state.boundary = await fetchJson("regional-boundaries.geojson", null)
@@ -73,7 +78,7 @@ const MTR_CUTOFF_BIRDS_KM_H = 10;
   state.pulse = (state.historical && state.historical.default_pulse) || "lp";
   configureControls();
   setViewAvailability();
-  if (state.view !== "europe") {
+  if (state.view !== "europe" && state.view !== "coastal") {
     setRangeForView();
     await loadCurrentData();
   }
@@ -121,6 +126,8 @@ function setViewAvailability() {
       ? Boolean(state.model)
       : button.dataset.view === "europe"
         ? Boolean(state.europe)
+        : button.dataset.view === "coastal"
+          ? Boolean(state.coastal)
         : Boolean(state.historical);
     button.disabled = !available;
     button.title = available ? "" : `${button.textContent.trim()} are not published`;
@@ -156,7 +163,7 @@ async function loadModelDay() {
 }
 
 async function loadCurrentData() {
-  if (state.view === "europe") return;
+  if (state.view === "europe" || state.view === "coastal") return;
   if (state.view === "modelled") {
     await loadModelDay();
     if (state.historical && state.historical.first_date <= state.date && state.date <= state.historical.latest_date) {
@@ -177,7 +184,7 @@ function configureControls() {
       state.dates[state.view] = state.date;
       state.view = next;
       stopAnimation();
-      if (state.view !== "europe") {
+      if (state.view !== "europe" && state.view !== "coastal") {
         setRangeForView();
         await loadCurrentData();
       }
@@ -237,17 +244,20 @@ function bindSegment(id, key, beforeRender) {
 
 function render() {
   const isEurope = state.view === "europe";
+  const isCoastal = state.view === "coastal";
   const explorer = document.querySelector(".explorer");
   const europePanel = document.getElementById("europePanel");
-  explorer.classList.toggle("europe-active", isEurope);
+  const coastalPanel = document.getElementById("coastalPanel");
+  explorer.classList.toggle("europe-active", isEurope || isCoastal);
   europePanel.hidden = !isEurope;
-  document.querySelectorAll(".map-stage, .timeline, .details, .crow-detail").forEach((element) => { element.hidden = isEurope; });
+  coastalPanel.hidden = !isCoastal;
+  document.querySelectorAll(".map-stage, .timeline, .details, .crow-detail").forEach((element) => { element.hidden = isEurope || isCoastal; });
   document.querySelectorAll(".view-tabs button").forEach((button) => button.classList.toggle("active", button.dataset.view === state.view));
   document.querySelectorAll(".model-control").forEach((element) => { element.hidden = state.view !== "modelled"; });
   document.querySelectorAll(".observed-control").forEach((element) => { element.hidden = state.view !== "observed"; });
-  if (isEurope) {
-    const frame = document.getElementById("europeFrame");
-    if (!frame.src) frame.src = state.europePageUrl;
+  if (isEurope || isCoastal) {
+    const frame = document.getElementById(isEurope ? "europeFrame" : "coastalFrame");
+    if (!frame.src) frame.src = isEurope ? state.europePageUrl : state.coastalPageUrl;
     document.getElementById("plotsSection").hidden = true;
     return;
   }

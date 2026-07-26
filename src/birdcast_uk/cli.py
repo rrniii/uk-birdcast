@@ -52,6 +52,7 @@ from .europe import (
     write_aloft_cohort,
     write_hourly_parquet,
 )
+from .coastal import build_coastal_relative_flow, install_coastal_static_site
 from .europe_fidelity import (
     verify_aloft_chunk,
     verify_training_input_policy,
@@ -176,6 +177,22 @@ def cmd_europe_manifest(args: argparse.Namespace) -> int:
 
 def cmd_europe_static_install(args: argparse.Namespace) -> int:
     result = install_europe_static_site(Path(args.site_root))
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_coastal_build(args: argparse.Namespace) -> int:
+    payload = build_coastal_relative_flow(
+        training_csv=Path(args.training_csv),
+        cohort_json=Path(args.cohort),
+        output_root=Path(args.output_root),
+    )
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_coastal_static_install(args: argparse.Namespace) -> int:
+    result = install_coastal_static_site(Path(args.site_root))
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 
@@ -753,6 +770,17 @@ def build_parser() -> argparse.ArgumentParser:
     europe_publish.add_argument("--radars")
     europe_publish.add_argument("--release-status", default="research-preview")
     europe_publish.set_defaults(func=cmd_europe_publish)
+
+    coastal_parser = subparsers.add_parser("coastal")
+    coastal_sub = coastal_parser.add_subparsers(required=True)
+    coastal_build = coastal_sub.add_parser("build-relative-flow")
+    coastal_build.add_argument("--training-csv", required=True)
+    coastal_build.add_argument("--cohort", required=True)
+    coastal_build.add_argument("--output-root", required=True)
+    coastal_build.set_defaults(func=cmd_coastal_build)
+    coastal_static = coastal_sub.add_parser("install-site")
+    coastal_static.add_argument("--site-root", required=True)
+    coastal_static.set_defaults(func=cmd_coastal_static_install)
 
     radars_parser = subparsers.add_parser("radars")
     radars_sub = radars_parser.add_subparsers(required=True)

@@ -69,6 +69,8 @@ def test_install_static_site_uses_same_origin_data_url(tmp_path: Path) -> None:
     assert config["data_base_url"] == "/birdcast-uk/data"
     assert config["europe_manifest_url"] == "/birdcast-euro/data/latest/reanalysis.json"
     assert config["europe_page_url"] == "/europe-bird-maps/"
+    assert config["coastal_manifest_url"] == "/coastal-bird-flow/data/latest/relative-flow.json"
+    assert config["coastal_page_url"] == "/coastal-bird-flow/"
     assert (site_root / "index.html").is_file()
     assert (site_root / "live-uk-bird-maps-logo.jpg").is_file()
     favicon = (site_root / "live-uk-bird-maps-favicon.png").read_bytes()
@@ -78,6 +80,7 @@ def test_install_static_site_uses_same_origin_data_url(tmp_path: Path) -> None:
     assert 'href="live-uk-bird-maps-favicon.png?v=3" type="image/png"' in html
     assert 'rel="icon" href="live-uk-bird-maps-logo.jpg"' not in html
     assert 'data-view="europe">European reanalysis' in html
+    assert 'data-view="coastal">Coastal activity &amp; flow' in html
     assert (site_root / "radar-marker.svg").is_file()
     radar_marker = (site_root / "radar-marker.svg").read_text(encoding="utf-8")
     assert 'viewBox="95 45 230 270"' in radar_marker
