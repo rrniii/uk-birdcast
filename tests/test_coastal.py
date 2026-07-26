@@ -47,6 +47,10 @@ def test_coastal_static_page_is_independently_installable(tmp_path: Path) -> Non
     assert "birds km" not in html
     assert "activity_index" in javascript
     assert "within-radar percentile" in html
+    assert 'if(!e.ctrlKey&&!e.metaKey)return' in javascript
+    styles = (tmp_path / "styles.css").read_text(encoding="utf-8")
+    assert "touch-action:pan-y" in styles
+    assert "height:clamp(500px,68vh,820px)" in styles
     assert (tmp_path / "regional-boundaries.geojson").is_file()
 
 
