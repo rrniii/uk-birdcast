@@ -803,3 +803,50 @@ def test_country_inclusion_restricts_both_gamm_inputs(tmp_path: Path) -> None:
     assert "robar" not in output_validation.read_text(encoding="utf-8")
     assert audit["training_rows_retained"] == 2
     assert audit["validation_radars_retained"] == ["dksam", "esgld"]
+
+
+def test_uk_coastal_corridor_uses_natural_earth_distance_and_overlap(tmp_path: Path) -> None:
+    training = tmp_path / "training.csv"
+    training.write_text(
+        "radar,country,source,latitude,longitude\n"
+        "frcoast,FR,aloft-baltrad,50.0,1.0\n"
+        "frcoast2,FR,aloft-baltrad,50.5,1.0\n"
+        "frcoast3,FR,aloft-baltrad,51.0,1.0\n"
+        "frfar,FR,aloft-baltrad,43.0,1.0\n"
+        "ukcoast,GBR,jasmin-uk-sp,50.5,-1.0\n"
+        "ukcoast2,GBR,jasmin-uk-sp,51.0,-1.0\n"
+        "ukcoast3,GBR,jasmin-uk-sp,51.5,-1.0\n"
+        "ukfar,GBR,jasmin-uk-sp,58.0,-4.0\n",
+        encoding="utf-8",
+    )
+    spec = tmp_path / "model-spec.json"
+    spec.write_text(json.dumps({"model_id": "base", "training_csv": str(training)}), encoding="utf-8")
+    boundaries = tmp_path / "boundaries.geojson"
+    boundaries.write_text(json.dumps({
+        "type": "FeatureCollection",
+        "features": [{
+            "type": "Feature",
+            "properties": {"ADM0_A3": "GBR"},
+            "geometry": {"type": "Polygon", "coordinates": [[[-2, 49], [0, 49], [0, 52], [-2, 52], [-2, 49]]]},
+        }],
+    }), encoding="utf-8")
+    module = load_script("prepare_uk_coastal_corridor.py")
+    cohort = module.prepare(
+        model_spec=spec,
+        boundaries=boundaries,
+        continental_countries={"FR"},
+        coastline_distance_limit_km=350,
+        overlap_distance_limit_km=350,
+        output_training_csv=tmp_path / "corridor.csv",
+        output_cohort=tmp_path / "cohort.json",
+        output_spec=tmp_path / "corridor-spec.json",
+        model_id="corridor-v1",
+    )
+
+    assert [item["radar"] for item in cohort["continental_radars"]] == ["frcoast", "frcoast2", "frcoast3"]
+    assert [item["radar"] for item in cohort["uk_radars"]] == ["ukcoast", "ukcoast2", "ukcoast3"]
+    assert cohort["raw_input_persisted"] is False
+    r_script = (Path(__file__).parents[1] / "scripts/probe_uk_coastal_corridor.R").read_text(encoding="utf-8")
+    assert "leave_one_continental_radar_out" in r_script
+    assert "train_continental_test_uk" in r_script
+    assert "train_uk_test_continental" in r_script
