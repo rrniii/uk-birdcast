@@ -126,6 +126,37 @@ therefore not a candidate for either a quantitative regional map or a Europe
 release. The hash-locked evidence is at
 `artifacts/europe/runs/44b1520-utc-cadence/uk-atlantic-northsea-k800/`.
 
+## UK Coastal Corridor Experiment
+
+The coastal-corridor cohort is geographic rather than country-based. It uses
+the bundled Natural Earth 1:10m UK coastline and includes continental radars
+in Belgium, France, Netherlands, Germany and Denmark only where their shortest
+distance to that coastline is at most 350 km. UK radars are then retained only
+where they overlap the selected continental sites within the same 350 km
+limit. The frozen cohort contains 10 continental radars, 8 UK coastal radars,
+and 93,393 derived hourly rows. Southern France, inland Germany, Scandinavia
+and Romania are excluded by the geographic rule.
+
+The model is evaluated without site calibration using the required three tests:
+
+| Test | Held-out radars | Median raw `log1p` R-squared | Positive sites | Median event F1 |
+| --- | ---: | ---: | ---: | ---: |
+| Leave one continental coastal radar out | 10 | -3.9436 | 10.0% | 0.2948 |
+| Train continental coast, test UK coast | 8 | -5.5828 | 0.0% | 0.1824 |
+| Train UK coast, test continental coast | 10 | -6.4590 | 0.0% | 0.1821 |
+
+The cross-coast tests deliberately use the training network as the prediction
+reference and do not apply a source or site calibration. They therefore test
+the direct transfer required for an absolute MTR product. Both directions fail
+strongly, so this cannot be released as a quantitative UK coastal-corridor
+map. A future corridor product must be explicitly relative activity/flow, or
+wait for a cross-network calibration that passes held-out coastal radars.
+
+Evidence is stored at
+`artifacts/europe/runs/44b1520-utc-cadence/uk-coastal-corridor-k800/`, including
+the boundary hash, selected radar locations, derived table hash and site-level
+metrics.
+
 ## Interpretation
 
 The limiting issue is site and processing dependence in the observed Aloft MTR
