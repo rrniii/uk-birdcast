@@ -203,10 +203,8 @@ def build_static_artifacts(
         web_dir / "config.json",
         {
             "data_base_url": data_base_url,
-            "europe_manifest_url": f"{public_base_url.rstrip('/')}/birdcast-euro/latest/reanalysis.json",
+            "europe_manifest_url": "/europe-bird-maps/data/latest/relative-flow.json",
             "europe_page_url": "/europe-bird-maps/",
-            "coastal_manifest_url": f"{public_base_url.rstrip('/')}/birdcast-coastal/latest/relative-flow.json",
-            "coastal_page_url": "/coastal-bird-flow/",
             "generated_at_utc": generated_at,
             "object_prefix": object_prefix,
             "vpts_catalog_url": UKMO_VPTS_CATALOG_URL,
@@ -269,10 +267,8 @@ def install_static_site(
         site_root / "config.json",
         {
             "data_base_url": data_base_url.rstrip("/"),
-            "europe_manifest_url": "/birdcast-euro/data/latest/reanalysis.json",
+            "europe_manifest_url": "/europe-bird-maps/data/latest/relative-flow.json",
             "europe_page_url": "/europe-bird-maps/",
-            "coastal_manifest_url": "/coastal-bird-flow/data/latest/relative-flow.json",
-            "coastal_page_url": "/coastal-bird-flow/",
             "generated_at_utc": generated_at,
             "object_prefix": object_prefix,
             "vpts_catalog_url": UKMO_VPTS_CATALOG_URL,

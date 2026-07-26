@@ -72,3 +72,10 @@ def test_north_sea_selector_keeps_named_countries_and_western_germany(tmp_path: 
     )
     assert manifest["radar_count"] == 3
     assert {item["radar"] for item in manifest["radars"]} == {"irish", "west-de", "norway"}
+
+    all_europe = module.prepare(
+        input_csvs=[source], output_csv=tmp_path / "all-europe.csv", output_manifest=tmp_path / "all-europe.json",
+        countries=None, western_germany_longitude_max=10.0,
+    )
+    assert all_europe["countries"] == "all_available_europe_sources"
+    assert {item["radar"] for item in all_europe["radars"]} == {"irish", "west-de", "east-de", "norway"}

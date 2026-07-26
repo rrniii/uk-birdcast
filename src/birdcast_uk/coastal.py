@@ -1,6 +1,6 @@
-"""Publish a relative coastal migration activity and flow product.
+"""Publish a relative European migration activity and flow product.
 
-The coastal cohort is unsuitable for a transferable absolute MTR model.  This
+The available European radar sources are unsuitable for a transferable absolute MTR model. This
 module therefore publishes only a within-radar activity percentile and the
 observed horizontal flow direction from the immutable derived hourly table.
 It never writes or changes VP, VPTS, PVOL, or source radar objects.
@@ -58,9 +58,9 @@ def build_coastal_relative_flow(*, training_csv: Path, cohort_json: Path, output
     """
 
     if not training_csv.is_file():
-        raise FileNotFoundError(f"Coastal training table is missing: {training_csv}")
+        raise FileNotFoundError(f"Relative activity training table is missing: {training_csv}")
     if not cohort_json.is_file():
-        raise FileNotFoundError(f"Coastal cohort manifest is missing: {cohort_json}")
+        raise FileNotFoundError(f"Relative activity cohort manifest is missing: {cohort_json}")
     cohort = json.loads(cohort_json.read_text(encoding="utf-8"))
 
     rows: list[dict[str, Any]] = []
@@ -93,7 +93,7 @@ def build_coastal_relative_flow(*, training_csv: Path, cohort_json: Path, output
             if previous is not None:
                 identical = all(previous[field] == row[field] for field in ("activity_value", "bird_u_ms", "bird_v_ms"))
                 if not identical:
-                    raise ValueError(f"Conflicting duplicate coastal radar-hour: {radar} {timestamp}")
+                    raise ValueError(f"Conflicting duplicate relative-activity radar-hour: {radar} {timestamp}")
                 duplicate_source_row_count += 1
                 continue
             radar_hours[key] = row
@@ -108,7 +108,7 @@ def build_coastal_relative_flow(*, training_csv: Path, cohort_json: Path, output
             })
 
     if not rows:
-        raise ValueError("Coastal training table contains no usable hourly observations")
+        raise ValueError("Relative activity training table contains no usable hourly observations")
     sorted_values = {radar: sorted(values) for radar, values in values_by_radar.items()}
     days: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
     for row in rows:
@@ -126,7 +126,7 @@ def build_coastal_relative_flow(*, training_csv: Path, cohort_json: Path, output
     daily_root.mkdir(parents=True, exist_ok=True)
     for day, frames in sorted(days.items()):
         payload = {
-            "schema_version": "birdcast-uk-coastal-relative-flow-day-1.0",
+            "schema_version": "birdcast-europe-relative-flow-day-1.0",
             "date": day,
             "frames": [
                 {"time_utc": timestamp, "radars": sorted(entries, key=lambda item: item["radar"])}
@@ -142,7 +142,7 @@ def build_coastal_relative_flow(*, training_csv: Path, cohort_json: Path, output
     south = max(35.0, min(item["latitude"] for item in radar_list) - 3.0)
     north = min(75.0, max(item["latitude"] for item in radar_list) + 3.0)
     manifest = {
-        "schema_version": "birdcast-uk-coastal-relative-flow-1.0",
+        "schema_version": "birdcast-europe-relative-flow-1.0",
         "data_available": True,
         "release_status": "published-relative-research-product",
         "generated_at_utc": utc_now(),
@@ -172,9 +172,9 @@ def build_coastal_relative_flow(*, training_csv: Path, cohort_json: Path, output
             "land_mask_applied": False,
         },
         "cohort": {
-            "continental_radars": [item["radar"] for item in cohort.get("continental_radars", [])],
-            "uk_radars": [item["radar"] for item in cohort.get("uk_radars", [])],
-            "geographic_rule": "UK coastal corridor, as declared in the frozen cohort manifest",
+            "radars": [item["radar"] for item in cohort.get("radars", [])],
+            "countries": cohort.get("countries", "declared in the frozen cohort manifest"),
+            "geographic_rule": "all available European radar sources declared in the frozen cohort manifest",
         },
         "source": {
             "derived_training_csv": str(training_csv),
@@ -186,7 +186,7 @@ def build_coastal_relative_flow(*, training_csv: Path, cohort_json: Path, output
         "assets": {"daily_template": "days/{date}.json"},
         "interpretation": (
             "Relative activity and observed flow at reporting radar locations. "
-            "It is not an absolute migration traffic rate, a coast-wide interpolation, or a forecast."
+            "It is not an absolute migration traffic rate, a cross-network calibration, or a forecast."
         ),
     }
     write_json(output_root / "latest" / "relative-flow.json", manifest)
@@ -194,11 +194,11 @@ def build_coastal_relative_flow(*, training_csv: Path, cohort_json: Path, output
 
 
 def install_coastal_static_site(site_root: Path) -> dict[str, Any]:
-    """Install the independent coastal relative-product web shell."""
+    """Install the independent European relative-product web shell."""
 
     source = Path(__file__).with_name("static_coastal")
     if not source.is_dir():
-        raise FileNotFoundError(f"Coastal static source is missing: {source}")
+        raise FileNotFoundError(f"European relative static source is missing: {source}")
     site_root.mkdir(parents=True, exist_ok=True)
     for path in source.iterdir():
         if path.is_file():

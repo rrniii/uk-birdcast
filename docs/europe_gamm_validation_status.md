@@ -157,11 +157,11 @@ Evidence is stored at
 the boundary hash, selected radar locations, derived table hash and site-level
 metrics.
 
-## Relative coastal activity and flow product
+## Relative European activity and flow product
 
-The failed absolute-MTR corridor model is not used by the public coastal
-product. Instead, the separate **Coastal activity & flow** tab reads the same
-frozen, derived hourly cohort table and publishes a radar-local activity index:
+The failed absolute-MTR corridor model is not used by the public European
+analysis. Instead, the **European analysis** tab reads frozen, derived hourly
+tables for every available European radar source and publishes a radar-local activity index:
 the empirical percentile of `log1p(MTR)` within that radar over the model year.
 Each radar therefore contributes a 0-100 relative activity value, while arrows
 show the corresponding VPTS-derived horizontal bird-flow direction only.
@@ -173,9 +173,8 @@ the read-only UK VPTS, VP or PVOL archive. Its data manifest records hashes of
 the frozen derived table and cohort manifest, while daily web partitions retain
 only timestamp, radar ID, relative index and direction components.
 
-The regional relative product uses the existing derived regional tables for
-the UK, Ireland, Norway, Denmark, Netherlands, Belgium, France and Germany
-west of 10 degrees E. Its 0.25 degree, land-unmasked field is calculated from
+The European relative product uses the existing derived training and transfer
+tables, without country filtering. Its 0.25 degree, land-unmasked field is calculated from
 the available reporting-radar percentiles at display time using a 250 km
 inverse-distance support radius. This makes its visual treatment comparable to
 the UK GAMM map without representing it as a GAMM prediction or absolute

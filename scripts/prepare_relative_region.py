@@ -27,7 +27,7 @@ def digest(path: Path) -> str:
 
 def prepare(
     *, input_csvs: list[Path], output_csv: Path, output_manifest: Path,
-    countries: set[str], western_germany_longitude_max: float,
+    countries: set[str] | None, western_germany_longitude_max: float,
 ) -> dict:
     if not input_csvs:
         raise ValueError("at least one derived input CSV is required")
@@ -54,9 +54,9 @@ def prepare(
                     raise ValueError(f"derived input schema differs: {source}")
                 for row in reader:
                     country = str(row["country"]).upper()
-                    if country not in countries:
+                    if countries is not None and country not in countries:
                         continue
-                    if country == "DE" and float(row["longitude"]) > western_germany_longitude_max:
+                    if countries is not None and country == "DE" and float(row["longitude"]) > western_germany_longitude_max:
                         continue
                     assert writer is not None
                     writer.writerow(row)
@@ -68,10 +68,10 @@ def prepare(
     if not row_count:
         raise ValueError("regional selector retained no derived rows")
     manifest = {
-        "schema_version": "birdcast-relative-north-sea-region-1.0",
+        "schema_version": "birdcast-relative-europe-region-1.0",
         "input_csvs": [{"path": str(path), "sha256": digest(path)} for path in input_csvs],
         "output_csv": str(output_csv), "output_csv_sha256": digest(output_csv),
-        "countries": sorted(countries),
+        "countries": sorted(countries) if countries is not None else "all_available_europe_sources",
         "western_germany_longitude_max": western_germany_longitude_max,
         "radars": [radars[key] for key in sorted(radars)],
         "radar_count": len(radars), "retained_row_count": row_count,
@@ -87,12 +87,17 @@ def main() -> None:
     parser.add_argument("--input-csv", type=Path, action="append", required=True)
     parser.add_argument("--output-csv", type=Path, required=True)
     parser.add_argument("--output-manifest", type=Path, required=True)
-    parser.add_argument("--country", action="append", required=True)
+    parser.add_argument("--country", action="append")
+    parser.add_argument("--all-europe", action="store_true")
     parser.add_argument("--western-germany-longitude-max", type=float, default=10.0)
     args = parser.parse_args()
+    if not args.all_europe and not args.country:
+        parser.error("provide --country at least once or use --all-europe")
+    if args.all_europe and args.country:
+        parser.error("--all-europe cannot be combined with --country")
     print(json.dumps(prepare(
         input_csvs=args.input_csv, output_csv=args.output_csv, output_manifest=args.output_manifest,
-        countries={value.upper() for value in args.country},
+        countries=None if args.all_europe else {value.upper() for value in args.country},
         western_germany_longitude_max=args.western_germany_longitude_max,
     ), indent=2))
 
