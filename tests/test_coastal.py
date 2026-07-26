@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
+import importlib.util
 
 from birdcast_uk.coastal import build_coastal_relative_flow, install_coastal_static_site
 
@@ -27,6 +28,8 @@ def test_relative_flow_uses_within_radar_percentiles_and_no_absolute_mtr(tmp_pat
 
     assert manifest["release_status"] == "published-relative-research-product"
     assert manifest["activity_index"]["comparable_between_radars"] is False
+    assert manifest["map"]["resolution_degrees"] == 0.25
+    assert manifest["map"]["land_mask_applied"] is False
     assert manifest["source"]["raw_radar_products_written"] is False
     assert manifest["identical_duplicate_source_row_count"] == 0
     assert "mtr_birds_km_h" not in json.dumps(day)
@@ -45,3 +48,27 @@ def test_coastal_static_page_is_independently_installable(tmp_path: Path) -> Non
     assert "activity_index" in javascript
     assert "within-radar percentile" in html
     assert (tmp_path / "regional-boundaries.geojson").is_file()
+
+
+def test_north_sea_selector_keeps_named_countries_and_western_germany(tmp_path: Path) -> None:
+    spec = importlib.util.spec_from_file_location("relative_region", Path(__file__).parents[1] / "scripts" / "prepare_relative_region.py")
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    source = tmp_path / "input.csv"
+    rows = [
+        {"radar": "irish", "country": "IE", "latitude": "52", "longitude": "-9", "time_utc": "2026-07-01T00:00:00Z"},
+        {"radar": "west-de", "country": "DE", "latitude": "53", "longitude": "8", "time_utc": "2026-07-01T00:00:00Z"},
+        {"radar": "east-de", "country": "DE", "latitude": "53", "longitude": "12", "time_utc": "2026-07-01T00:00:00Z"},
+        {"radar": "norway", "country": "NO", "latitude": "60", "longitude": "5", "time_utc": "2026-07-01T00:00:00Z"},
+    ]
+    with source.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    manifest = module.prepare(
+        input_csvs=[source], output_csv=tmp_path / "out.csv", output_manifest=tmp_path / "manifest.json",
+        countries={"IE", "DE", "NO"}, western_germany_longitude_max=10.0,
+    )
+    assert manifest["radar_count"] == 3
+    assert {item["radar"] for item in manifest["radars"]} == {"irish", "west-de", "norway"}

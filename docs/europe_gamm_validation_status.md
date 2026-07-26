@@ -173,6 +173,14 @@ the read-only UK VPTS, VP or PVOL archive. Its data manifest records hashes of
 the frozen derived table and cohort manifest, while daily web partitions retain
 only timestamp, radar ID, relative index and direction components.
 
+The regional relative product uses the existing derived regional tables for
+the UK, Ireland, Norway, Denmark, Netherlands, Belgium, France and Germany
+west of 10 degrees E. Its 0.25 degree, land-unmasked field is calculated from
+the available reporting-radar percentiles at display time using a 250 km
+inverse-distance support radius. This makes its visual treatment comparable to
+the UK GAMM map without representing it as a GAMM prediction or absolute
+cross-network calibration.
+
 ## Interpretation
 
 The limiting issue is site and processing dependence in the observed Aloft MTR

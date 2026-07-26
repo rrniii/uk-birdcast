@@ -22,9 +22,9 @@
         <label><span>Colour scheme</span><select id="colourSelect"><option value="atlantic">Atlantic blue</option><option value="viridis">Viridis</option><option value="night">Night-flight</option><option value="thermal">Thermal migration</option></select></label>
         <label class="toggle"><input id="vectorsToggle" type="checkbox" checked><span>Observed flow direction</span></label>
       </section>
-      <section class="notice">Colours are a within-radar activity percentile, not birds per kilometre or a shared scale. Arrows encode observed direction only.</section>
+      <section class="notice">Colours are a within-radar activity percentile, rendered as a 0.25 degree relative field. They are not birds per kilometre or a shared scale. Arrows encode observed direction only.</section>
       <section class="map-stage">
-        <header class="map-heading"><div><p>Historical coastal corridor</p><h1>Relative activity and flow</h1><span id="subtitle">Loading reporting radar observations</span></div><span>Hourly UTC</span></header>
+        <header class="map-heading"><div><p>Historical North Sea and eastern Atlantic</p><h1>Relative activity and flow</h1><span id="subtitle">Loading reporting radar observations</span></div><span>0.25 degree field · UTC</span></header>
         <canvas id="mapCanvas" aria-label="UK coastal relative bird activity and flow map"></canvas>
         <div class="zoom-controls"><button id="zoomIn" type="button" title="Zoom in">+</button><button id="zoomOut" type="button" title="Zoom out">-</button><button id="resetMap" type="button" title="Reset map">Home</button></div>
         <div class="readout"><strong id="timestamp">--</strong><span id="networkValue">--</span></div>

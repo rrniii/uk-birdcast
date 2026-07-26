@@ -137,6 +137,10 @@ def build_coastal_relative_flow(*, training_csv: Path, cohort_json: Path, output
 
     radar_list = [radars[key] for key in sorted(radars)]
     first, latest = min(row["time_utc"] for row in rows), max(row["time_utc"] for row in rows)
+    west = min(item["longitude"] for item in radar_list) - 3.0
+    east = max(item["longitude"] for item in radar_list) + 3.0
+    south = max(35.0, min(item["latitude"] for item in radar_list) - 3.0)
+    north = min(75.0, max(item["latitude"] for item in radar_list) + 3.0)
     manifest = {
         "schema_version": "birdcast-uk-coastal-relative-flow-1.0",
         "data_available": True,
@@ -159,6 +163,13 @@ def build_coastal_relative_flow(*, training_csv: Path, cohort_json: Path, output
             "label": "Observed flow direction",
             "method": "hourly VPTS-derived horizontal bird velocity; arrows encode direction only",
             "absolute_speed_published": False,
+        },
+        "map": {
+            "bounds": {"west": west, "east": east, "south": south, "north": north},
+            "resolution_degrees": 0.25,
+            "support_radius_km": 250.0,
+            "method": "inverse-distance weighted relative radar activity field at native 0.25 degree cells",
+            "land_mask_applied": False,
         },
         "cohort": {
             "continental_radars": [item["radar"] for item in cohort.get("continental_radars", [])],
