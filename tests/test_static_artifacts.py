@@ -93,6 +93,10 @@ def test_install_static_site_uses_same_origin_data_url(tmp_path: Path) -> None:
     assert 'formatAxisHour' in crow_detail
     assert 'formatAxisDate' in crow_detail
     assert 'this.data.axisFirst = first.getTime()' in crow_detail
+    app = (site_root / "app.js").read_text(encoding="utf-8")
+    styles = (site_root / "styles.css").read_text(encoding="utf-8")
+    assert "if (!event.ctrlKey && !event.metaKey) return;" in app
+    assert "touch-action: pan-y" in styles
     assert 'this.data.axisLast = plusDays(first, days.length).getTime()' in crow_detail
     assert (site_root / "regional-boundaries.geojson").is_file()
     assert "ukmo-nimrod/vpts/current_ci_le4" in config["vpts_object_url_template"]

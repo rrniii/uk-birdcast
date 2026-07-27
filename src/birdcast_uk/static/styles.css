@@ -65,7 +65,7 @@ input[type="date"], select {
 .toggle > span { margin: 0 !important; color: inherit !important; font-size: inherit !important; }
 
 .map-stage { position: relative; isolation: isolate; overflow: hidden; background: #000; }
-#mapCanvas { display: block; width: 100%; height: clamp(680px, calc(100vh - 150px), 980px); min-height: 680px; cursor: grab; }
+#mapCanvas { display: block; width: 100%; height: clamp(680px, calc(100vh - 150px), 980px); min-height: 680px; cursor: grab; touch-action: pan-y; }
 #mapCanvas.dragging { cursor: grabbing; }
 .map-heading {
   position: absolute;

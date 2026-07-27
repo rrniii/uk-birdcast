@@ -676,6 +676,7 @@ function zoomMap(factor, focus) {
 }
 
 function zoomMapWithWheel(event) {
+  if (!event.ctrlKey && !event.metaKey) return;
   event.preventDefault();
   const rect = event.currentTarget.getBoundingClientRect();
   zoomMap(event.deltaY < 0 ? 1.18 : 1 / 1.18, {x: event.clientX - rect.left, y: event.clientY - rect.top});
