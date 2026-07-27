@@ -97,6 +97,9 @@ def test_install_static_site_uses_same_origin_data_url(tmp_path: Path) -> None:
     styles = (site_root / "styles.css").read_text(encoding="utf-8")
     assert "if (!event.ctrlKey && !event.metaKey) return;" in app
     assert "touch-action: pan-y" in styles
+    nginx = (Path(__file__).parents[1] / "deploy" / "nginx" / "birdcast-uk.conf").read_text(encoding="utf-8")
+    assert "location ^~ /birdcast-uk/data/" in nginx
+    assert "alias /opt/birdcast-uk/data/static-artifacts/;" in nginx
     assert 'this.data.axisLast = plusDays(first, days.length).getTime()' in crow_detail
     assert (site_root / "regional-boundaries.geojson").is_file()
     assert "ukmo-nimrod/vpts/current_ci_le4" in config["vpts_object_url_template"]
