@@ -7,6 +7,7 @@ may publish only the eight components and 365-day evidence window reviewed on
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import re
@@ -34,6 +35,27 @@ PREDICTION_TRANSFORM = {
     "bird_v_ms": "identity",
 }
 UNCERTAINTY_SCALE = "model_linear_predictor_standard_error"
+SELECTED_GRID_FIELDS = frozenset(
+    {
+        "time_utc",
+        "latitude",
+        "longitude",
+        "easting_m",
+        "northing_m",
+        "support",
+        "surface_pressure_pa",
+        "mean_sea_level_pressure_pa",
+        "total_cloud_cover_fraction",
+        "boundary_layer_height_m",
+        "hourly_precipitation_m",
+        "temperature_850_k",
+        "relative_humidity_850_percent",
+        "u_850_ms",
+        "v_850_ms",
+        "u_925_ms",
+        "v_925_ms",
+    }
+)
 COMPONENT_SHA256 = {
     "lp": {
         "mtr_birds_km_h": "06146a147b75a45339bfb149a693320ded42a9a10be37d3b45ce05720026b17d",
@@ -68,6 +90,30 @@ def qualified_dates() -> list[str]:
         (QUALIFIED_FIRST_DAY + timedelta(days=offset)).isoformat()
         for offset in range(QUALIFIED_DAY_COUNT)
     ]
+
+
+def validate_grid_archive(root: Path) -> list[Path]:
+    """Validate exact selected-model dates and predictors before scheduling."""
+
+    if root.is_symlink() or not root.is_dir():
+        raise FileNotFoundError(f"selected-model grid archive is missing: {root}")
+    expected = [root / f"era5_grid_{day.replace('-', '')}.csv" for day in qualified_dates()]
+    actual = sorted(root.glob("era5_grid_*.csv"))
+    if actual != expected:
+        raise ValueError("selected-model grid archive does not match the qualified date window")
+    for path in actual:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+            raise ValueError(f"selected-model grid file is missing, empty, or linked: {path}")
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            header = next(csv.reader(handle), None)
+        if not header or len(header) != len(set(header)):
+            raise ValueError(f"selected-model grid header is invalid: {path}")
+        missing = sorted(SELECTED_GRID_FIELDS - set(header))
+        if missing:
+            raise ValueError(
+                f"selected-model grid is missing predictors in {path.name}: {', '.join(missing)}"
+            )
+    return actual
 
 
 def validate_component_manifest(

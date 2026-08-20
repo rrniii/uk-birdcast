@@ -112,3 +112,36 @@ def test_r_predictor_derives_the_locked_legacy_transform_contract() -> None:
     for target, transform in selected_model.PREDICTION_TRANSFORM.items():
         assert f'{target} = "{transform}"' in script
     assert "prediction_transform(component, target)" in script
+
+
+def _write_grid(path: Path, *, fields: set[str] | None = None) -> None:
+    columns = sorted(fields or selected_model.SELECTED_GRID_FIELDS)
+    path.write_text(",".join(columns) + "\n" + ",".join("0" for _ in columns) + "\n")
+
+
+def test_selected_grid_archive_requires_exact_dates_and_predictors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(selected_model, "qualified_dates", lambda: ["2025-07-14", "2025-07-15"])
+    _write_grid(tmp_path / "era5_grid_20250714.csv")
+    _write_grid(tmp_path / "era5_grid_20250715.csv")
+
+    paths = selected_model.validate_grid_archive(tmp_path)
+
+    assert [path.name for path in paths] == [
+        "era5_grid_20250714.csv",
+        "era5_grid_20250715.csv",
+    ]
+
+
+def test_selected_grid_archive_rejects_missing_925_wind(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(selected_model, "qualified_dates", lambda: ["2025-07-14"])
+    fields = set(selected_model.SELECTED_GRID_FIELDS) - {"u_925_ms", "v_925_ms"}
+    _write_grid(tmp_path / "era5_grid_20250714.csv", fields=fields)
+
+    with pytest.raises(ValueError, match="missing predictors.*u_925_ms.*v_925_ms"):
+        selected_model.validate_grid_archive(tmp_path)

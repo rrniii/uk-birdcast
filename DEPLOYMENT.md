@@ -117,6 +117,8 @@ submission or completion of an upstream array.
 
 Daily acceptance requires:
 
+- every selected-model ERA5 predictor, including 925 hPa `u`/`v`, in every
+  daily grid header before any array task is submitted;
 - every expected calendar date exactly once;
 - exactly `00:00` through `23:00Z` for every date;
 - one row per fixed-grid cell and hour, with finite required targets;

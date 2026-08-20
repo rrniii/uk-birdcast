@@ -66,13 +66,14 @@ fi
 BIRDCAST_UK_COMPONENT_MANIFEST="$authority_manifest"
 export BIRDCAST_UK_COMPONENT_MANIFEST
 
-calculated_days="$("$BIRDCAST_UK_PYTHON" -c \
-  'import datetime,sys; a=datetime.date.fromisoformat(sys.argv[1]); b=datetime.date.fromisoformat(sys.argv[2]); print((b-a).days+1)' \
-  "$BIRDCAST_UK_EXPECTED_START_DAY" "$BIRDCAST_UK_EXPECTED_END_DAY")"
-if [ "$calculated_days" -ne "$BIRDCAST_UK_EXPECTED_DAYS" ]; then
-  echo "Declared component date range contains $calculated_days days, expected $BIRDCAST_UK_EXPECTED_DAYS" >&2
-  exit 1
-fi
+"$BIRDCAST_UK_PYTHON" - "$BIRDCAST_UK_ERA5_GRID_DIR" <<'PY'
+from pathlib import Path
+import sys
+from birdcast_uk.selected_model import validate_grid_archive
+
+paths = validate_grid_archive(Path(sys.argv[1]))
+print(f"validated {len(paths)} selected-model ERA5 grid days")
+PY
 
 BIRDCAST_UK_PUBLICATION_PRODUCTS=gam-era5
 
@@ -87,21 +88,6 @@ for private_output in "$BIRDCAST_UK_COMPONENT_PREDICTION_DIR" "$BIRDCAST_UK_COMP
     echo "Selected-component output directory must start empty: $private_output" >&2
     exit 1
   fi
-done
-
-mapfile -t grids < <(find "$BIRDCAST_UK_ERA5_GRID_DIR" -maxdepth 1 -type f -name 'era5_grid_*.csv' -print | sort)
-if [ "${#grids[@]}" -ne "$BIRDCAST_UK_EXPECTED_DAYS" ]; then
-  echo "Expected $BIRDCAST_UK_EXPECTED_DAYS ERA5 grid days, found ${#grids[@]}" >&2
-  exit 1
-fi
-expected_day="$BIRDCAST_UK_EXPECTED_START_DAY"
-for grid in "${grids[@]}"; do
-  expected_grid="$BIRDCAST_UK_ERA5_GRID_DIR/era5_grid_${expected_day//-/}.csv"
-  if [ "$grid" != "$expected_grid" ]; then
-    echo "ERA5 grid sequence mismatch: expected $expected_grid, got $grid" >&2
-    exit 1
-  fi
-  expected_day="$(date -u -d "$expected_day +1 day" +%Y-%m-%d)"
 done
 
 submitted=()
