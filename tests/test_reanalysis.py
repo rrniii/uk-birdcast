@@ -113,7 +113,7 @@ def _write_component_authority(
                 target: {
                     "model_rds": f"/private/{pulse}-{target}.rds",
                     "sha256": COMPONENT_SHA256[pulse][target],
-                    "prediction_transform": "identity",
+                    "prediction_transform": selected_model.PREDICTION_TRANSFORM[target],
                     "uncertainty_scale": "model_linear_predictor_standard_error",
                 }
                 for target in COMPONENT_SHA256[pulse]

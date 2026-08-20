@@ -68,6 +68,10 @@ remain eligible when all quality and predictor requirements pass.
 The selected component manifest records each model path and SHA-256. Inference
 must verify those hashes before reading a model. LP vector transfer and SP VID
 retain the limitations recorded in the selection/publication manifests.
+The hash-locked manifest predates descriptive transform fields, so the release
+authority also fixes the target mapping: square MTR, cube VID, identity `u`/`v`.
+Component metadata labels uncertainty as linear-predictor standard error; it
+must not be presented as response-scale or calibrated predictive uncertainty.
 
 Family-level GAMM/XGBoost fitting remains available for controlled research,
 but it is not a production selection mechanism.

@@ -47,6 +47,11 @@ twilight, sunrise, sunset, or migration-window filter. Training is all-hour,
 pulse-separated, complete-case across the declared ERA5 predictors, and uses
 projected spatial coordinates.
 
+The reviewed fits use a square-root response for MTR, a cube-root response for
+VID, and identity-scale vector components. Publication therefore squares MTR,
+cubes VID, and leaves `u`/`v` unchanged. Reported uncertainty is the GAMM
+linear-predictor standard error, not a calibrated response-scale interval.
+
 The component decision and exact reviewed hashes are defined once in
 [`src/birdcast_uk/selected_model.py`](src/birdcast_uk/selected_model.py), with
 operator-facing metadata in

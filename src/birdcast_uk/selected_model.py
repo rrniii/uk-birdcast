@@ -27,6 +27,13 @@ TARGETS = (
     "bird_u_ms",
     "bird_v_ms",
 )
+PREDICTION_TRANSFORM = {
+    "mtr_birds_km_h": "square_nonnegative",
+    "vid_birds_per_km2": "cube_nonnegative",
+    "bird_u_ms": "identity",
+    "bird_v_ms": "identity",
+}
+UNCERTAINTY_SCALE = "model_linear_predictor_standard_error"
 COMPONENT_SHA256 = {
     "lp": {
         "mtr_birds_km_h": "06146a147b75a45339bfb149a693320ded42a9a10be37d3b45ce05720026b17d",
@@ -100,6 +107,12 @@ def validate_component_manifest(
                 or component_digest != COMPONENT_SHA256[pulse][target]
             ):
                 raise ValueError(f"selected component hash mismatch: {pulse}/{target}")
+            declared_transform = component.get("prediction_transform")
+            if declared_transform not in (None, PREDICTION_TRANSFORM[target]):
+                raise ValueError(f"selected component transform mismatch: {pulse}/{target}")
+            declared_uncertainty = component.get("uncertainty_scale")
+            if declared_uncertainty not in (None, UNCERTAINTY_SCALE):
+                raise ValueError(f"selected component uncertainty scale mismatch: {pulse}/{target}")
             if verify_model_files:
                 model = Path(str(component.get("model_rds") or ""))
                 if not model.is_absolute():
@@ -114,16 +127,18 @@ def validate_component_manifest(
 def public_component_provenance(path: Path) -> dict[str, object]:
     """Return the reviewed hashes without exposing private model paths."""
 
-    payload = validate_component_manifest(path)
-    components = payload["components"]
+    validate_component_manifest(path)
     return {
         "component_manifest_sha256": COMPONENT_MANIFEST_SHA256,
         "components": {
             pulse: {
                 target: {
                     "sha256": COMPONENT_SHA256[pulse][target],
-                    "prediction_transform": components[pulse][target].get("prediction_transform"),
-                    "uncertainty_scale": components[pulse][target].get("uncertainty_scale"),
+                    # The reviewed manifest predates these descriptive fields.
+                    # The values are derived from the locked fit contract and
+                    # any later manifest may only repeat, never override, them.
+                    "prediction_transform": PREDICTION_TRANSFORM[target],
+                    "uncertainty_scale": UNCERTAINTY_SCALE,
                 }
                 for target in TARGETS
             }

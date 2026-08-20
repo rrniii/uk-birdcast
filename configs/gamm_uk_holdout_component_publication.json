@@ -23,6 +23,13 @@
       "bird_v_ms": "6228cc628ff1904090ee392d02ebcf387ce9930e36a84898eabdbcabd23a3ab0"
     }
   },
+  "prediction_transform": {
+    "mtr_birds_km_h": "square_nonnegative",
+    "vid_birds_per_km2": "cube_nonnegative",
+    "bird_u_ms": "identity",
+    "bird_v_ms": "identity"
+  },
+  "uncertainty_scale": "model_linear_predictor_standard_error",
   "temporal_terms": [
     "day_of_year",
     "utc_hour",

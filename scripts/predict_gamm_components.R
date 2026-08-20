@@ -59,6 +59,24 @@ back_transform <- function(value, transform) {
   stop(sprintf("unsupported prediction transform: %s", transform))
 }
 
+prediction_transform <- function(component, target) {
+  # The reviewed manifest is hash-locked and predates descriptive transform
+  # fields. Derive its established fit contract by target, while rejecting a
+  # future manifest that tries to declare a different transform.
+  expected <- switch(target,
+    mtr_birds_km_h = "square_nonnegative",
+    vid_birds_per_km2 = "cube_nonnegative",
+    bird_u_ms = "identity",
+    bird_v_ms = "identity",
+    stop(sprintf("unsupported selected-model target: %s", target))
+  )
+  declared <- component$prediction_transform
+  if (!is.null(declared) && !identical(declared, expected)) {
+    stop(sprintf("selected component transform mismatch for %s", target))
+  }
+  expected
+}
+
 predict_component <- function(component, target) {
   model <- readRDS(verify_component(component))
   newdata <- grid
@@ -72,7 +90,10 @@ predict_component <- function(component, target) {
     exclude = if (has_radar_effect(model)) "s(radar)" else NULL,
     se.fit = TRUE
   )
-  value <- back_transform(as.numeric(estimate$fit), component$prediction_transform)
+  value <- back_transform(
+    as.numeric(estimate$fit),
+    prediction_transform(component, target)
+  )
   list(value = value, uncertainty = as.numeric(estimate$se.fit))
 }
 

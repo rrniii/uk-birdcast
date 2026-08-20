@@ -44,6 +44,12 @@ def test_exact_selected_component_contract_is_accepted(
     assert len(selected_model.qualified_dates()) == selected_model.QUALIFIED_DAY_COUNT
     assert selected_model.qualified_dates()[0] == "2025-07-14"
     assert selected_model.qualified_dates()[-1] == "2026-07-13"
+    provenance = selected_model.public_component_provenance(path)
+    for pulse in selected_model.PULSES:
+        for target in selected_model.TARGETS:
+            component = provenance["components"][pulse][target]
+            assert component["prediction_transform"] == selected_model.PREDICTION_TRANSFORM[target]
+            assert component["uncertainty_scale"] == selected_model.UNCERTAINTY_SCALE
 
 
 def test_selected_component_contract_rejects_an_unreviewed_hash(
@@ -64,6 +70,24 @@ def test_selected_component_contract_rejects_an_unreviewed_hash(
         selected_model.validate_component_manifest(path)
 
 
+def test_selected_component_contract_rejects_a_conflicting_transform(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "component-selection.json"
+    payload = _manifest(path)
+    payload["components"]["lp"]["mtr_birds_km_h"]["prediction_transform"] = "identity"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(
+        selected_model,
+        "COMPONENT_MANIFEST_SHA256",
+        hashlib.sha256(path.read_bytes()).hexdigest(),
+    )
+
+    with pytest.raises(ValueError, match="transform mismatch: lp/mtr_birds_km_h"):
+        selected_model.validate_component_manifest(path)
+
+
 def test_operator_publication_config_matches_code_authority() -> None:
     path = Path(__file__).parents[1] / "configs" / "gamm_uk_holdout_component_publication.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -71,8 +95,20 @@ def test_operator_publication_config_matches_code_authority() -> None:
     assert payload["selection_id"] == selected_model.SELECTION_ID
     assert payload["selection_manifest_sha256"] == selected_model.COMPONENT_MANIFEST_SHA256
     assert payload["component_sha256"] == selected_model.COMPONENT_SHA256
+    assert payload["prediction_transform"] == selected_model.PREDICTION_TRANSFORM
+    assert payload["uncertainty_scale"] == selected_model.UNCERTAINTY_SCALE
     assert payload["qualified_date_window"] == {
         "first_day": "2025-07-14",
         "last_day": "2026-07-13",
         "day_count": 365,
     }
+
+
+def test_r_predictor_derives_the_locked_legacy_transform_contract() -> None:
+    script = (Path(__file__).parents[1] / "scripts" / "predict_gamm_components.R").read_text(
+        encoding="utf-8"
+    )
+
+    for target, transform in selected_model.PREDICTION_TRANSFORM.items():
+        assert f'{target} = "{transform}"' in script
+    assert "prediction_transform(component, target)" in script
