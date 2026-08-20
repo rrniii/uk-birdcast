@@ -2,26 +2,44 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from datetime import date, timedelta
-from functools import lru_cache
 import hashlib
-from importlib.metadata import PackageNotFoundError, version
 import json
-import os
-from pathlib import Path
-import zipfile
-from typing import Any, Iterable
 import math
+import os
+import re
+import shutil
+import stat
+import zipfile
+from dataclasses import asdict, dataclass
+from datetime import date, datetime, timedelta, timezone
+from functools import lru_cache
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path, PurePosixPath
+from tempfile import mkdtemp
+from typing import Any, Iterable
 
 from .config import (
-    ERA5_PRESSURE_LEVELS,
     ERA5_PRESSURE_LEVEL_VARIABLES,
+    ERA5_PRESSURE_LEVELS,
     ERA5_SINGLE_LEVEL_VARIABLES,
     UK_ERA5_AREA,
 )
 from .radars import BirdcastRadar, load_radars
 from .static_artifacts import utc_now, write_json
+
+SITE_SINGLE_LEVEL_KEYS = frozenset({"sp", "msl", "tcc", "blh", "tp"})
+SITE_PRESSURE_LEVEL_KEYS = frozenset(
+    {
+        "t_pressure_level_850.0",
+        "r_pressure_level_850.0",
+        "u_pressure_level_850.0",
+        "v_pressure_level_850.0",
+        "u_pressure_level_925.0",
+        "v_pressure_level_925.0",
+        "u_pressure_level_700.0",
+        "v_pressure_level_700.0",
+    }
+)
 
 
 EARTHKIT_BACKEND = "earthkit-data"
@@ -39,7 +57,9 @@ class Era5Request:
         return asdict(self)
 
 
-def build_request(day: str, kind: str, output_file: Path, area: dict[str, float] | None = None) -> Era5Request:
+def build_request(
+    day: str, kind: str, output_file: Path, area: dict[str, float] | None = None
+) -> Era5Request:
     return build_period_request(day, day, kind, output_file, area=area)
 
 
@@ -59,7 +79,11 @@ def build_period_request(
     domain = area or UK_ERA5_AREA
     base = {
         "product_type": ["reanalysis"],
-        "variable": list(ERA5_SINGLE_LEVEL_VARIABLES if kind == "single-levels" else ERA5_PRESSURE_LEVEL_VARIABLES),
+        "variable": list(
+            ERA5_SINGLE_LEVEL_VARIABLES
+            if kind == "single-levels"
+            else ERA5_PRESSURE_LEVEL_VARIABLES
+        ),
         "year": [f"{start.year:04d}"],
         "month": [f"{start.month:02d}"],
         "day": [
@@ -81,7 +105,9 @@ def build_period_request(
     return Era5Request(dataset=dataset, request=base, output_file=str(output_file))
 
 
-def write_request(day: str, kind: str, output_file: Path, request_json: Path, area: dict[str, float] | None = None) -> Era5Request:
+def write_request(
+    day: str, kind: str, output_file: Path, request_json: Path, area: dict[str, float] | None = None
+) -> Era5Request:
     request = build_request(day, kind, output_file, area=area)
     write_json(request_json, request.to_dict())
     return request
@@ -132,9 +158,7 @@ def download_request(request_json: Path, *, overwrite: bool = False) -> dict[str
         request=request.request,
         prompt=False,
     )
-    temporary = output.with_name(
-        f".{output.stem}.{os.getpid()}.partial{output.suffix}"
-    )
+    temporary = output.with_name(f".{output.stem}.{os.getpid()}.partial{output.suffix}")
     try:
         try:
             data.to_target("file", str(temporary))
@@ -201,7 +225,11 @@ def cds_readiness(credentials_path: Path | None = None) -> dict[str, object]:
     if not earthkit_ready:
         notes.append("earthkit-data is not importable")
     return {
-        "ok": earthkit_ready and configured.is_file() and url == CDS_API_URL and key_present and not legacy_key,
+        "ok": earthkit_ready
+        and configured.is_file()
+        and url == CDS_API_URL
+        and key_present
+        and not legacy_key,
         "backend": EARTHKIT_BACKEND,
         "backend_version": backend_version,
         "credentials_path": str(configured),
@@ -214,10 +242,41 @@ def cds_readiness(credentials_path: Path | None = None) -> dict[str, object]:
 
 
 def extract_zip_archive(archive: Path, output_dir: Path) -> dict[str, object]:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(archive) as zip_file:
-        names = [name for name in zip_file.namelist() if not name.endswith("/")]
-        zip_file.extractall(output_dir)
+    """Extract a bounded archive into a new directory without overwriting files."""
+
+    if output_dir.exists() and any(output_dir.iterdir()):
+        raise FileExistsError(f"ERA5 extraction directory is not empty: {output_dir}")
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(mkdtemp(prefix=f".{output_dir.name}.", dir=output_dir.parent))
+    names: list[str] = []
+    try:
+        with zipfile.ZipFile(archive) as zip_file:
+            members = [member for member in zip_file.infolist() if not member.is_dir()]
+            if len(members) > 10_000:
+                raise ValueError("ERA5 ZIP contains more than 10,000 files")
+            if sum(member.file_size for member in members) > 50 * 1024**3:
+                raise ValueError("ERA5 ZIP expands beyond the 50 GiB safety limit")
+            for member in members:
+                relative = PurePosixPath(member.filename)
+                mode = member.external_attr >> 16
+                if (
+                    relative.is_absolute()
+                    or ".." in relative.parts
+                    or not relative.parts
+                    or stat.S_ISLNK(mode)
+                ):
+                    raise ValueError(f"unsafe ERA5 ZIP member: {member.filename}")
+                destination = staging.joinpath(*relative.parts)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                with zip_file.open(member) as source, destination.open("xb") as target:
+                    shutil.copyfileobj(source, target)
+                names.append(member.filename)
+        if output_dir.exists():
+            output_dir.rmdir()
+        os.replace(staging, output_dir)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
     return {
         "ok": True,
         "archive": str(archive),
@@ -248,9 +307,12 @@ def extract_site_features(
             skipped.append({"radar": radar.slug, "reason": "missing latitude/longitude"})
             continue
         available_radars.append(radar)
-    datasets = _open_datasets(single_levels, pressure_levels)
+    named_datasets = _open_named_datasets(
+        ("single_levels", 0, single_levels),
+        ("pressure_levels", 1, pressure_levels),
+    )
     try:
-        for dataset_index, dataset in enumerate(datasets):
+        for source_kind, dataset_index, dataset in named_datasets:
             # Point-select every radar together and load that small subset once.
             # The former radar-by-radar path repeatedly read the same monthly
             # NetCDF chunks, making a model-year reconstruction impractical.
@@ -261,10 +323,11 @@ def extract_site_features(
                         radar,
                         selected.isel(radar_site=site_index),
                         dataset_index,
+                        source_kind=source_kind,
                     )
                 )
     finally:
-        for dataset in datasets:
+        for _, _, dataset in named_datasets:
             close = getattr(dataset, "close", None)
             if callable(close):
                 close()
@@ -276,7 +339,7 @@ def extract_site_features(
             "rows": rows,
             "skipped": skipped,
         }
-        output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        write_json(output, payload)
     else:
         try:
             import pandas as pd  # type: ignore[import-not-found]
@@ -287,14 +350,20 @@ def extract_site_features(
             frame.to_csv(output, index=False)
         else:
             frame.to_parquet(output, index=False)
+    available_sources = [source_kind for source_kind, _, _ in named_datasets]
+    missing_sources = sorted({"single_levels", "pressure_levels"} - set(available_sources))
     status = {
-        "ok": True,
+        "ok": bool(rows) and not skipped and not missing_sources,
         "generated_at_utc": utc_now(),
         "output": str(output),
         "row_count": len(rows),
+        "available_sources": available_sources,
+        "missing_sources": missing_sources,
         "skipped_count": len(skipped),
         "skipped": skipped,
-        "radars_sha256": _file_sha256(radars_path) if radars_path and radars_path.is_file() else None,
+        "radars_sha256": _file_sha256(radars_path)
+        if radars_path and radars_path.is_file()
+        else None,
     }
     status_path = output.with_suffix(output.suffix + ".status.json")
     write_json(status_path, status)
@@ -369,9 +438,19 @@ def extract_grid_features(
                     continue
                 if not training_window[0] <= selected_day <= training_window[1]:
                     continue
-            single_point = _select_time(single_grid, time_name, time_value) if single_grid is not None else None
-            pressure_point = _select_time(pressure_grid, time_name, time_value) if pressure_grid is not None else None
-            weather_values = _grid_weather_values_bulk(single_point, pressure_point, len(grid_points))
+            single_point = (
+                _select_time(single_grid, time_name, time_value)
+                if single_grid is not None
+                else None
+            )
+            pressure_point = (
+                _select_time(pressure_grid, time_name, time_value)
+                if pressure_grid is not None
+                else None
+            )
+            weather_values = _grid_weather_values_bulk(
+                single_point, pressure_point, len(grid_points)
+            )
             for point_index, (latitude, longitude, easting, northing) in enumerate(grid_points):
                 row = {
                     "time_utc": timestamp,
@@ -380,11 +459,13 @@ def extract_grid_features(
                     "easting_m": easting,
                     "northing_m": northing,
                 }
-                row.update({
-                    name: values[point_index]
-                    for name, values in weather_values.items()
-                    if values[point_index] is not None
-                })
+                row.update(
+                    {
+                        name: values[point_index]
+                        for name, values in weather_values.items()
+                        if values[point_index] is not None
+                    }
+                )
                 row["nearest_radar_km"] = round(
                     min(
                         _great_circle_km(
@@ -419,7 +500,9 @@ def extract_grid_features(
         "radar_ranges_m": {radar.slug: radar.max_range_m for radar in coverage_radars},
         "support_definition": "within-range radar proximity multiplied by covariate-range support",
         "training_table": str(training_table) if training_table else None,
-        "training_window": [value.isoformat() for value in training_window] if training_window else None,
+        "training_window": [value.isoformat() for value in training_window]
+        if training_window
+        else None,
     }
     write_json(output.with_suffix(output.suffix + ".status.json"), status)
     return status
@@ -430,6 +513,7 @@ def validate_day(
     day: str,
     raw_dir: Path,
     feature_output: Path,
+    radars_path: Path | None,
 ) -> dict[str, object]:
     """Require both ERA5 datasets and both feature rows for every radar-hour."""
 
@@ -452,37 +536,52 @@ def validate_day(
         except (json.JSONDecodeError, OSError) as exc:
             errors.append(f"site-feature file cannot be read: {exc}")
 
-    required_single = {"sp", "msl", "tcc", "blh", "tp"}
-    required_pressure = {
-        "t_pressure_level_850.0",
-        "r_pressure_level_850.0",
-        "u_pressure_level_850.0",
-        "v_pressure_level_850.0",
-        "u_pressure_level_925.0",
-        "v_pressure_level_925.0",
-        "u_pressure_level_700.0",
-        "v_pressure_level_700.0",
-    }
+    expected_radars = {radar.slug for radar in load_radars(radars_path)}
+    if not expected_radars or "" in expected_radars:
+        errors.append("configured radar set is empty or contains a blank slug")
     grouped: dict[tuple[str, str], set[str]] = {}
+    grouped_sources: dict[tuple[str, str], set[str]] = {}
     for row in rows:
         radar = str(row.get("radar") or "")
-        time_utc = str(row.get("time_utc") or "")
-        if not radar or not time_utc.startswith(selected.isoformat()):
+        time_utc = _canonical_day_hour(row.get("time_utc"), selected)
+        if not radar or time_utc is None:
             continue
-        grouped.setdefault((radar, time_utc), set()).update(row)
+        key = (radar, time_utc)
+        grouped.setdefault(key, set()).update(row)
+        source_kind = str(row.get("source_kind") or "")
+        if source_kind not in {"single_levels", "pressure_levels"}:
+            row_keys = set(row)
+            if SITE_SINGLE_LEVEL_KEYS.issubset(row_keys):
+                source_kind = "single_levels"
+            elif SITE_PRESSURE_LEVEL_KEYS.issubset(row_keys):
+                source_kind = "pressure_levels"
+        if source_kind:
+            grouped_sources.setdefault(key, set()).add(source_kind)
 
-    radars = sorted({radar for radar, _ in grouped})
+    actual_radars = {radar for radar, _ in grouped}
+    missing_radars = sorted(expected_radars - actual_radars)
+    unexpected_radars = sorted(actual_radars - expected_radars)
     incomplete = [
         (radar, time_utc)
         for (radar, time_utc), keys in grouped.items()
-        if not required_single.issubset(keys) or not required_pressure.issubset(keys)
+        if not SITE_SINGLE_LEVEL_KEYS.issubset(keys)
+        or not SITE_PRESSURE_LEVEL_KEYS.issubset(keys)
+        or grouped_sources.get((radar, time_utc)) != {"single_levels", "pressure_levels"}
     ]
-    expected_groups = len(radars) * 24
-    if not radars:
+    expected_groups = len(expected_radars) * 24
+    if not actual_radars:
         errors.append("site-feature file contains no radar-hours for the requested day")
     elif len(grouped) != expected_groups:
         errors.append(
             f"site-feature file has {len(grouped)} radar-hours; expected {expected_groups}"
+        )
+    if missing_radars:
+        errors.append(
+            f"site-feature file is missing configured radars: {', '.join(missing_radars)}"
+        )
+    if unexpected_radars:
+        errors.append(
+            f"site-feature file contains unexpected radars: {', '.join(unexpected_radars)}"
         )
     if incomplete:
         errors.append(
@@ -495,12 +594,36 @@ def validate_day(
         "single_levels": str(single_file),
         "pressure_levels": str(pressure_file),
         "feature_output": str(feature_output),
-        "radar_count": len(radars),
+        "radar_count": len(actual_radars),
+        "expected_radar_count": len(expected_radars),
         "radar_hour_count": len(grouped),
         "expected_radar_hour_count": expected_groups,
         "incomplete_radar_hour_count": len(incomplete),
+        "missing_radars": missing_radars,
+        "unexpected_radars": unexpected_radars,
         "errors": errors,
     }
+
+
+def _canonical_day_hour(value: object, selected: date) -> str | None:
+    """Return one canonical UTC hour, rejecting off-hour or wrong-day rows."""
+
+    if value in (None, ""):
+        return None
+    text = str(value).replace("Z", "+00:00")
+    # xarray commonly serializes nanosecond precision, while fromisoformat
+    # accepts microseconds on the oldest supported Python release.
+    text = re.sub(r"(\.[0-9]{6})[0-9]+", r"\1", text)
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    parsed = parsed.astimezone(timezone.utc)
+    if parsed.date() != selected or any((parsed.minute, parsed.second, parsed.microsecond)):
+        return None
+    return parsed.isoformat().replace("+00:00", "Z")
 
 
 def split_period_file(
@@ -629,6 +752,7 @@ def build_period(
             day=selected.isoformat(),
             raw_dir=raw_dir,
             feature_output=feature_output,
+            radars_path=radars_path,
         )
         validations.append(validation)
         if not validation["ok"]:
@@ -701,7 +825,9 @@ def _point_in_ring(longitude: float, latitude: float, ring: list[tuple[float, fl
     for current_x, current_y in ring:
         crosses = (current_y > latitude) != (previous_y > latitude)
         if crosses:
-            crossing_x = (previous_x - current_x) * (latitude - current_y) / (previous_y - current_y) + current_x
+            crossing_x = (previous_x - current_x) * (latitude - current_y) / (
+                previous_y - current_y
+            ) + current_x
             if longitude < crossing_x:
                 inside = not inside
         previous_x, previous_y = current_x, current_y
@@ -777,8 +903,14 @@ def build_day(
                 "error_type": type(exc).__name__,
                 "error": str(exc),
             }
+    validation = validate_day(
+        day=day,
+        raw_dir=raw_dir,
+        feature_output=feature_output,
+        radars_path=radars_path,
+    )
     downloads_ok = all(bool(item.get("ok")) for item in downloads) if downloads else True
-    features_ok = feature_status is None or bool(feature_status.get("ok"))
+    features_ok = bool(feature_status and feature_status.get("ok")) and bool(validation["ok"])
     status = {
         "ok": downloads_ok and features_ok,
         "backend": EARTHKIT_BACKEND,
@@ -792,6 +924,7 @@ def build_day(
         },
         "downloads": downloads,
         "features": feature_status,
+        "validation": validation,
     }
     write_json(feature_output.with_suffix(feature_output.suffix + ".build-status.json"), status)
     return status
@@ -806,6 +939,23 @@ def _open_datasets(*paths: Path | None) -> list[object]:
     for path in existing:
         data = earthkit.from_source("file", str(path))
         datasets.append(data.to_xarray())
+    return datasets
+
+
+def _open_named_datasets(
+    *sources: tuple[str, int, Path | None],
+) -> list[tuple[str, int, object]]:
+    """Open ERA5 inputs without allowing a missing file to change its identity."""
+
+    earthkit = None
+    datasets: list[tuple[str, int, object]] = []
+    for source_kind, dataset_index, path in sources:
+        if path is None or not path.is_file() or path.stat().st_size == 0:
+            continue
+        if earthkit is None:
+            earthkit = _earthkit_data()
+        data = earthkit.from_source("file", str(path))
+        datasets.append((source_kind, dataset_index, data.to_xarray()))
     return datasets
 
 
@@ -827,7 +977,9 @@ def _earthkit_version() -> str:
         return "unknown"
 
 
-def _features_for_radar(radar: BirdcastRadar, datasets: Iterable[object]) -> list[dict[str, object]]:
+def _features_for_radar(
+    radar: BirdcastRadar, datasets: Iterable[object]
+) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for dataset_index, dataset in enumerate(datasets):
         selected = dataset.sel(latitude=radar.latitude, longitude=radar.longitude, method="nearest")  # type: ignore[attr-defined]
@@ -852,15 +1004,25 @@ def _select_radar_sites(dataset: object, radars: list[BirdcastRadar]) -> object:
     radar_site = "radar_site"
     selected = dataset.sel(  # type: ignore[attr-defined]
         {
-            latitude_name: xr.DataArray([float(radar.latitude) for radar in radars], dims=radar_site),
-            longitude_name: xr.DataArray([float(radar.longitude) for radar in radars], dims=radar_site),
+            latitude_name: xr.DataArray(
+                [float(radar.latitude) for radar in radars], dims=radar_site
+            ),
+            longitude_name: xr.DataArray(
+                [float(radar.longitude) for radar in radars], dims=radar_site
+            ),
         },
         method="nearest",
     )
     return selected.load()
 
 
-def _features_for_selected_radar(radar: BirdcastRadar, selected: object, dataset_index: int) -> list[dict[str, object]]:
+def _features_for_selected_radar(
+    radar: BirdcastRadar,
+    selected: object,
+    dataset_index: int,
+    *,
+    source_kind: str | None = None,
+) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     time_name = "valid_time" if "valid_time" in selected.coords else "time"
     for time_value, point in _time_points(selected, time_name):
@@ -870,6 +1032,8 @@ def _features_for_selected_radar(radar: BirdcastRadar, selected: object, dataset
             "latitude": radar.latitude,
             "longitude": radar.longitude,
             "dataset_index": dataset_index,
+            "source_kind": source_kind
+            or ("single_levels" if dataset_index == 0 else "pressure_levels"),
             "time_utc": str(time_value) if time_value is not None else "",
         }
         for name in point.data_vars:
@@ -878,7 +1042,11 @@ def _features_for_selected_radar(radar: BirdcastRadar, selected: object, dataset
                 base[str(name)] = _scalar(value.values)
             elif getattr(value, "ndim", 0) == 1:
                 dim = str(value.dims[0])
-                coords = value[dim].values.tolist() if dim in value.coords else list(range(value.shape[0]))
+                coords = (
+                    value[dim].values.tolist()
+                    if dim in value.coords
+                    else list(range(value.shape[0]))
+                )
                 if not isinstance(coords, list):
                     coords = [coords]
                 for coord, cell in zip(coords, value.values.tolist()):
@@ -995,7 +1163,9 @@ def _grid_weather_values_bulk(
         "u_850_ms": ("u", "u_component_of_wind"),
         "v_850_ms": ("v", "v_component_of_wind"),
     }.items():
-        values[target] = _grid_variable_values(pressure, candidates, point_count, pressure_level=850)
+        values[target] = _grid_variable_values(
+            pressure, candidates, point_count, pressure_level=850
+        )
     for level in (925, 700):
         for component, candidates in {
             "u": ("u", "u_component_of_wind"),
@@ -1080,11 +1250,21 @@ def _training_feature_ranges(table: Path | None) -> dict[str, tuple[float, float
         return {}
     result: dict[str, tuple[float, float]] = {}
     for name in (
-        "temperature_850_k", "relative_humidity_850_percent", "u_850_ms", "v_850_ms",
-        "surface_pressure_pa", "mean_sea_level_pressure_pa", "total_cloud_cover_fraction",
-        "boundary_layer_height_m", "hourly_precipitation_m",
+        "temperature_850_k",
+        "relative_humidity_850_percent",
+        "u_850_ms",
+        "v_850_ms",
+        "surface_pressure_pa",
+        "mean_sea_level_pressure_pa",
+        "total_cloud_cover_fraction",
+        "boundary_layer_height_m",
+        "hourly_precipitation_m",
     ):
-        values = sorted(_as_float(row.get(name)) for row in rows if isinstance(row, dict) and _as_float(row.get(name)) is not None)
+        values = sorted(
+            _as_float(row.get(name))
+            for row in rows
+            if isinstance(row, dict) and _as_float(row.get(name)) is not None
+        )
         if values:
             lower = values[max(0, int(len(values) * 0.01) - 1)]
             upper = values[min(len(values) - 1, int(len(values) * 0.99))]
@@ -1099,7 +1279,9 @@ def _training_window(table: Path | None) -> tuple[date, date] | None:
     if not isinstance(payload, dict):
         return None
     try:
-        return date.fromisoformat(str(payload["first_day_utc"])), date.fromisoformat(str(payload["latest_complete_day_utc"]))
+        return date.fromisoformat(str(payload["first_day_utc"])), date.fromisoformat(
+            str(payload["latest_complete_day_utc"])
+        )
     except (KeyError, ValueError):
         return None
 
@@ -1138,10 +1320,20 @@ def _support_score(
     return max(0.0, min(1.0, radar_support * covariate_support))
 
 
-def _great_circle_km(latitude_a: float, longitude_a: float, latitude_b: float, longitude_b: float) -> float:
+def _great_circle_km(
+    latitude_a: float, longitude_a: float, latitude_b: float, longitude_b: float
+) -> float:
     radians = math.pi / 180.0
-    lat_a, lon_a, lat_b, lon_b = latitude_a * radians, longitude_a * radians, latitude_b * radians, longitude_b * radians
-    haversine = math.sin((lat_b - lat_a) / 2) ** 2 + math.cos(lat_a) * math.cos(lat_b) * math.sin((lon_b - lon_a) / 2) ** 2
+    lat_a, lon_a, lat_b, lon_b = (
+        latitude_a * radians,
+        longitude_a * radians,
+        latitude_b * radians,
+        longitude_b * radians,
+    )
+    haversine = (
+        math.sin((lat_b - lat_a) / 2) ** 2
+        + math.cos(lat_a) * math.cos(lat_b) * math.sin((lon_b - lon_a) / 2) ** 2
+    )
     return 6371.0 * 2 * math.asin(math.sqrt(haversine))
 
 
@@ -1194,9 +1386,7 @@ def radar_coverage_area(
         latitude = float(radar.latitude)
         longitude = float(radar.longitude)
         latitude_delta = range_km / 111.195
-        longitude_delta = range_km / (
-            111.195 * max(math.cos(math.radians(latitude)), 0.01)
-        )
+        longitude_delta = range_km / (111.195 * max(math.cos(math.radians(latitude)), 0.01))
         north = max(north, latitude + latitude_delta)
         south = min(south, latitude - latitude_delta)
         west = min(west, longitude - longitude_delta)

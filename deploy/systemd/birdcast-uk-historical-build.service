@@ -9,7 +9,7 @@ User=birdcast
 Group=birdcast
 EnvironmentFile=/etc/birdcast-uk/birdcast-uk.env
 WorkingDirectory=/opt/birdcast-uk/repo
-ExecStart=/opt/birdcast-uk/venv/bin/birdcast-uk historical build --source-dir ${BIRDCAST_UK_HISTORICAL_SOURCE} --output-root ${BIRDCAST_UK_ARTIFACT_ROOT} --radars ${BIRDCAST_UK_RADARS_FILE}
+ExecStart=/opt/birdcast-uk/venv/bin/birdcast-uk historical build --source-dir ${BIRDCAST_UK_HISTORICAL_SOURCE} --output-root ${BIRDCAST_UK_ARTIFACT_ROOT} --radars ${BIRDCAST_UK_RADARS_FILE} --expected-latest-date ${BIRDCAST_UK_HISTORICAL_EXPECTED_LATEST_DATE}
 
 NoNewPrivileges=true
 PrivateTmp=true

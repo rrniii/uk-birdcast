@@ -10,6 +10,19 @@ output_dir <- args[[3]]
 library(mgcv)
 library(jsonlite)
 
+expected_manifest_sha256 <- Sys.getenv("BIRDCAST_UK_EXPECTED_COMPONENT_MANIFEST_SHA256")
+if (!grepl("^[0-9a-f]{64}$", expected_manifest_sha256)) {
+  stop("BIRDCAST_UK_EXPECTED_COMPONENT_MANIFEST_SHA256 is missing or invalid")
+}
+manifest_hash_output <- system2("sha256sum", shQuote(manifest_path), stdout = TRUE, stderr = TRUE)
+manifest_hash_status <- attr(manifest_hash_output, "status")
+if (!is.null(manifest_hash_status) && manifest_hash_status != 0) {
+  stop("sha256sum failed for the component manifest")
+}
+manifest_hash <- strsplit(manifest_hash_output[[1]], "[[:space:]]+")[[1]][[1]]
+if (!identical(tolower(manifest_hash), expected_manifest_sha256)) {
+  stop("component manifest hash differs from the reviewed authority")
+}
 manifest <- jsonlite::read_json(manifest_path, simplifyVector = FALSE)
 grid <- utils::read.csv(grid_path, check.names = FALSE)
 time_text <- sub("Z$", "", sub("\\.[0-9]+Z?$", "", grid$time_utc))
@@ -22,8 +35,32 @@ has_radar_effect <- function(model) {
   any(vapply(model$smooth, function(smooth) identical(smooth$label, "s(radar)"), logical(1)))
 }
 
+resolve_model_path <- function(path) {
+  if (grepl("^/", path)) path else file.path(dirname(manifest_path), path)
+}
+
+verify_component <- function(component) {
+  path <- resolve_model_path(component$model_rds)
+  if (!file.exists(path)) stop(sprintf("selected model is missing: %s", path))
+  output <- system2("sha256sum", shQuote(path), stdout = TRUE, stderr = TRUE)
+  status <- attr(output, "status")
+  if (!is.null(status) && status != 0) stop(sprintf("sha256sum failed for %s", path))
+  actual <- strsplit(output[[1]], "[[:space:]]+")[[1]][[1]]
+  if (!identical(tolower(actual), tolower(component$sha256))) {
+    stop(sprintf("selected model hash mismatch: %s", path))
+  }
+  path
+}
+
+back_transform <- function(value, transform) {
+  if (identical(transform, "identity")) return(value)
+  if (identical(transform, "square_nonnegative")) return(pmax(value, 0)^2)
+  if (identical(transform, "cube_nonnegative")) return(pmax(value, 0)^3)
+  stop(sprintf("unsupported prediction transform: %s", transform))
+}
+
 predict_component <- function(component, target) {
-  model <- readRDS(component$model_rds)
+  model <- readRDS(verify_component(component))
   newdata <- grid
   if (has_radar_effect(model)) {
     reference <- model$model$radar[[1]]
@@ -35,13 +72,16 @@ predict_component <- function(component, target) {
     exclude = if (has_radar_effect(model)) "s(radar)" else NULL,
     se.fit = TRUE
   )
-  value <- as.numeric(estimate$fit)
-  if (target == "mtr_birds_km_h") value <- pmax(value, 0)^2
-  if (target == "vid_birds_per_km2") value <- pmax(value, 0)^3
+  value <- back_transform(as.numeric(estimate$fit), component$prediction_transform)
   list(value = value, uncertainty = as.numeric(estimate$se.fit))
 }
 
-dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+output_parent <- dirname(output_dir)
+dir.create(output_parent, recursive = TRUE, showWarnings = FALSE)
+if (file.exists(output_dir)) stop(sprintf("prediction day is immutable and already exists: %s", output_dir))
+staging_dir <- tempfile(pattern = paste0(".", basename(output_dir), "."), tmpdir = output_parent)
+if (!dir.create(staging_dir)) stop(sprintf("could not create prediction staging directory: %s", staging_dir))
+on.exit(unlink(staging_dir, recursive = TRUE, force = TRUE), add = TRUE)
 for (pulse in names(manifest$components)) {
   output <- grid[, c("time_utc", "longitude", "latitude", "support"), drop = FALSE]
   for (target in names(manifest$components[[pulse]])) {
@@ -49,5 +89,13 @@ for (pulse in names(manifest$components)) {
     output[[target]] <- prediction$value
     output[[paste0("uncertainty_", target)]] <- prediction$uncertainty
   }
-  utils::write.csv(output, file.path(output_dir, sprintf("predictions_wide_%s.csv", pulse)), row.names = FALSE)
+  utils::write.csv(
+    output,
+    file.path(staging_dir, sprintf("predictions_wide_%s.csv", pulse)),
+    row.names = FALSE
+  )
+}
+writeLines(expected_manifest_sha256, file.path(staging_dir, "component-manifest.sha256"))
+if (!file.rename(staging_dir, output_dir)) {
+  stop(sprintf("could not atomically promote prediction day: %s", output_dir))
 }

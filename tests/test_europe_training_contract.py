@@ -21,13 +21,17 @@ def _load(name: str):
 
 def test_training_contract_freezes_common_predictors(tmp_path: Path) -> None:
     spec = tmp_path / "spec.json"
-    spec.write_text(json.dumps({"predictors": ["u_850_ms", "surface_pressure_pa"]}), encoding="utf-8")
+    spec.write_text(
+        json.dumps({"predictors": ["u_850_ms", "surface_pressure_pa"]}), encoding="utf-8"
+    )
     table = tmp_path / "training.csv"
     table.write_text(
         "radar,time_utc,u_850_ms,surface_pressure_pa\nbejab,2025-07-14T00:00:00Z,2,100000\nbejab,2025-07-15T00:00:00Z,4,101000\n",
         encoding="utf-8",
     )
-    payload = _load("build_europe_training_contract.py").build(table, spec, tmp_path / "contract.json")
+    payload = _load("build_europe_training_contract.py").build(
+        table, spec, tmp_path / "contract.json"
+    )
     assert payload["first_day_utc"] == "2025-07-14"
     assert payload["feature_ranges"]["u_850_ms"]["upper"] == 4
 
@@ -50,14 +54,19 @@ def test_europe_model_spec_uses_the_frozen_uk_core_predictors() -> None:
 
 def test_training_policy_denies_missing_aloft_training_and_transfer_rows(tmp_path: Path) -> None:
     cohort = tmp_path / "cohort.json"
-    cohort.write_text(json.dumps({"entries": [
-        {"source": "baltrad", "radar": "train", "role": "training"},
-        {"source": "baltrad", "radar": "holdout", "role": "transfer-validation"},
-    ]}), encoding="utf-8")
-    training = tmp_path / "training.csv"
-    training.write_text(
-        "source,radar,pulse,u_850_ms\njasmin-uk-sp,uk,sp,1\n", encoding="utf-8"
+    cohort.write_text(
+        json.dumps(
+            {
+                "entries": [
+                    {"source": "baltrad", "radar": "train", "role": "training"},
+                    {"source": "baltrad", "radar": "holdout", "role": "transfer-validation"},
+                ]
+            }
+        ),
+        encoding="utf-8",
     )
+    training = tmp_path / "training.csv"
+    training.write_text("source,radar,pulse,u_850_ms\njasmin-uk-sp,uk,sp,1\n", encoding="utf-8")
     transfer = tmp_path / "transfer.csv"
     transfer.write_text("source,radar,pulse,u_850_ms\n", encoding="utf-8")
     with pytest.raises(ValueError, match="no approved Aloft training"):
@@ -97,20 +106,30 @@ def test_publication_denies_unpassed_model_validation(tmp_path: Path) -> None:
         path.write_text(json.dumps({"status": "passed"}), encoding="utf-8")
     model.write_text(json.dumps({"release_passed": False}), encoding="utf-8")
     with pytest.raises(ValueError, match="model validation"):
-        module.validate(tmp_path / "missing.csv", tmp_path, source, era5, training, model, tmp_path / "out.json")
+        module.validate(
+            tmp_path / "missing.csv", tmp_path, source, era5, training, model, tmp_path / "out.json"
+        )
 
 
 def test_publication_reconciles_every_supported_prediction_cell(tmp_path: Path) -> None:
     predictions = tmp_path / "predictions.csv"
+    rows = "".join(
+        f"2025-07-14T{hour:02d}:00:00Z,1,50,interpolation,2,3,1,4\n" for hour in range(24)
+    )
     predictions.write_text(
         "time_utc,longitude,latitude,prediction_class,mtr_birds_km_h,vid_birds_per_km2,bird_u_ms,bird_v_ms\n"
-        "2025-07-14T00:00:00Z,1,50,interpolation,2,3,1,4\n",
+        + rows,
         encoding="utf-8",
     )
     root = tmp_path / "published"
     publish_europe_predictions(
-        predictions_csv=predictions, output_root=root, model_id="euro-test", aloft_radar_count=1,
-        uk_sp_radar_count=1, validation_url="validation.json", release_status="published",
+        predictions_csv=predictions,
+        output_root=root,
+        model_id="euro-test",
+        aloft_radar_count=1,
+        uk_sp_radar_count=1,
+        validation_url="validation.json",
+        release_status="research-validated",
     )
     (root / "validation.json").write_text(json.dumps({"release_passed": True}), encoding="utf-8")
     source = tmp_path / "source.json"
@@ -125,7 +144,7 @@ def test_publication_reconciles_every_supported_prediction_cell(tmp_path: Path) 
         predictions, root, source, era5, training, model, tmp_path / "publication.json"
     )
     assert result["status"] == "passed"
-    assert result["published_frame_cell_count"] == 1
+    assert result["published_frame_cell_count"] == 24
 
     (root / "validation.json").unlink()
     with pytest.raises(ValueError, match="validation asset is missing"):
@@ -145,4 +164,6 @@ def test_publication_denies_unpassed_era5_fidelity(tmp_path: Path) -> None:
     training.write_text(json.dumps({"status": "passed"}), encoding="utf-8")
     model.write_text(json.dumps({"release_passed": True}), encoding="utf-8")
     with pytest.raises(ValueError, match="ERA5 fidelity"):
-        module.validate(tmp_path / "missing.csv", tmp_path, source, era5, training, model, tmp_path / "out.json")
+        module.validate(
+            tmp_path / "missing.csv", tmp_path, source, era5, training, model, tmp_path / "out.json"
+        )

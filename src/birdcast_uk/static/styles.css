@@ -9,6 +9,21 @@ body { margin: 0; background: #070a0b; color: #edf3ee; }
 button, input, select { font: inherit; }
 button { cursor: pointer; }
 [hidden] { display: none !important; }
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible {
+  outline: 3px solid #75d5df;
+  outline-offset: 2px;
+}
 
 .brand-bar {
   display: flex;
@@ -106,7 +121,6 @@ input[type="date"], select {
 .radar-key span { display: flex; align-items: center; gap: 7px; }
 .radar-symbol { width: 15px; height: 15px; background: currentColor; mask: url("radar-marker.svg") center/contain no-repeat; }
 .radar-symbol.active { color: #22ed5a; }
-.radar-symbol.inactive { color: #f14640; }
 
 .map-controls {
   position: absolute;
@@ -179,9 +193,10 @@ dl { display: grid; grid-template-columns: 90px 1fr; gap: 6px 10px; margin: 0; f
 dt { color: #78857e; }
 dd { margin: 0; overflow-wrap: anywhere; }
 .radar-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: 260px; overflow: auto; }
-.radar-list button { display: flex; justify-content: space-between; gap: 8px; min-width: 0; padding: 8px; border: 0; border-bottom: 1px solid #28312d; background: transparent; color: #dbe2de; text-align: left; font-size: 10px; }
+.radar-list button, .radar-status-item { display: flex; justify-content: space-between; gap: 8px; min-width: 0; padding: 8px; border: 0; border-bottom: 1px solid #28312d; background: transparent; color: #dbe2de; text-align: left; font-size: 10px; }
 .radar-list button:hover, .radar-list button.selected { background: #202823; }
-.radar-list button strong { color: #f2b632; white-space: nowrap; }
+.radar-list button strong, .radar-status-item strong { color: #f2b632; white-space: nowrap; }
+.empty-state { grid-column: 1 / -1; margin: 0; padding: 8px; color: #aeb9b2; font-size: 11px; }
 .crow-detail { padding: 22px clamp(14px, 2.4vw, 32px); border-bottom: 1px solid #28312d; background: #111816; }
 .europe-panel { min-height: 0; background: #070a0b; }
 .europe-panel iframe { display: block; width: 100%; height: clamp(780px, 88vh, 1040px); border: 0; background: #070a0b; }
@@ -206,7 +221,8 @@ footer { padding: 18px clamp(16px, 3vw, 42px); color: #77827c; background: #080b
   .brand img { width: 46px; height: 46px; }
   .brand p { display: none; }
   .toolbar { display: block; padding: 8px 10px; }
-  .view-tabs { border-right: 0; padding: 0 0 8px; }
+  .view-tabs { overflow-x: auto; border-right: 0; padding: 0 0 8px; white-space: nowrap; }
+  .view-tabs button { flex: 0 0 auto; }
   .control-bar { gap: 9px; }
   #mapCanvas { height: 68vh; min-height: 510px; }
   .map-controls { top: 106px; left: 10px; }

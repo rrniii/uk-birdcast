@@ -1,116 +1,117 @@
-# UK BirdCast historical implementation contract
+# UK BirdCast implementation contract
 
-## Operational product
+## Operational scope
 
-- Historical radar reanalysis only; no public forecast.
-- VPTS vertical integrated density from 200 to 4000 m.
-- LP and SP retained as separate products, with LP selected by default.
-- Daily radar-site maps for the latest complete 365-day window.
-- All-hour radar-site summaries, time-series plots, and archive coverage
-  plots. The displayed radar values aggregate available day, twilight, and
-  night profiles rather than selecting a solar period.
-- Natural Earth 1:10m country geometry rendered on a device-pixel-aware canvas.
-- Versioned Object Store assets and an atomic `latest/historical.json` manifest.
+- Historical observations and historical model reanalysis only.
+- No operational forecast or ECMWF Open Data product.
+- VPTS-derived VID integrated over 200-4000 m.
+- LP and SP retained separately; no combined LP+SP interpretation.
+- All-hour UTC products with measured effort, coverage, and rain flags.
+- Immutable daily assets with atomic `latest` manifest promotion.
+- Natural Earth geometry is display context, never a scientific mask.
 
-VID is a bird-passage index in birds km-2. It is not an absolute bird count or
+VID in birds km-2 is a radar passage index, not an absolute bird count or
 population estimate.
 
-## Compute and storage boundary
+## Storage and compute boundary
 
-The 149 GB VPTS object archive remains in the `ncas-radar-o` Object Store. Full
-archive analysis belongs on JASMIN batch compute or the radar GWS, not on the
-cloud web host. A successful batch run produces the compact aggregate contract:
+The source VPTS archive remains read-only in the JASMIN Object Store. Archive
+analysis, ERA5 retrieval, feature extraction, model inference, validation, and
+publication run on JASMIN batch/GWS. Raw VPTS, ERA5 files, model objects,
+prediction tables, logs, and credentials remain private.
+
+The browser receives only compact historical and modelled manifests plus their
+referenced web assets. The JASMIN Cloud host serves those objects and the static
+shell; it does not produce data.
+
+## Observation contract
+
+For each non-gap altitude layer:
 
 ```text
-analysis_summary.json
-daily_totals.csv
-network_annual_seasonal_totals.csv
-phenology.csv
-coverage.csv
+VID = sum(density_birds_km3 * layer_width_km)
+MTR = sum(density_birds_km3 * speed_ms * 3.6 * layer_width_km)
 ```
 
-The JASMIN Cloud host consumes that package, creates browser-ready artifacts,
-and publishes them under `birdcast-uk/historical/`. Year partitioning limits a
-normal browser request to one year of radar-day data.
+Hourly circular direction uses aligned finite direction/MTR pairs from
+non-rain profiles. Missing speed or direction remains missing and is never
+interpreted as calm. Every aggregate records its pulse, source provenance,
+coverage, and applicable quality flags.
 
-### Public Object Store CORS
+## Historical ERA5 contract
 
-The public bucket must allow browser `GET` and `HEAD` requests. Apply the
-version-controlled policy after creating or replacing the bucket:
+ERA5 is an independent retrospective weather flow. Training rows are
+complete-case for the declared predictor set: 850 hPa temperature, relative
+humidity, `u` and `v` wind; surface pressure; mean sea-level pressure; total
+cloud cover; boundary-layer height; and hourly precipitation. Required values
+are never silently dropped or imputed as zero.
 
-```bash
-s3cmd --config "$BIRDCAST_UK_S3CMD_CONFIG" setcors \
-  deploy/object-store/public-read-cors.xml \
-  "s3://$BIRDCAST_UK_OBJECT_STORE_BUCKET"
-```
+Monthly Earthkit retrievals are split into atomic daily pressure and
+single-level files. Readiness requires both source families, exact configured
+radar coverage, all 24 UTC hours, and successful feature validation.
 
-Verify both anonymous access and the browser-origin response before deploying
-the web client:
+## Selected model contract
 
-```bash
-curl --fail --silent --show-error --dump-header - --output /dev/null \
-  -H "Origin: http://uk-birdcast.tailea56a2.ts.net" \
-  "$BIRDCAST_UK_PUBLIC_BASE_URL/birdcast-uk/latest/historical.json"
-```
+Production selection is `uk-gamm-heldout-v2-sp-vector-925`:
 
-The response must be `200` and include `Access-Control-Allow-Origin` and
-`Access-Control-Allow-Methods: GET,HEAD`. This CORS policy does not make private
-objects public and grants no browser write permissions.
+| Target | LP | SP |
+| --- | --- | --- |
+| MTR | Selected 850 hPa GAMM | Selected 850 hPa GAMM |
+| VID | Selected 850 hPa GAMM | Selected 850 hPa GAMM |
+| Bird `u`/`v` | Selected 850 hPa control GAMM | 925 hPa wind-interaction GAMM |
 
-## Historical weather flow
+The fit derives cyclic day-of-year and UTC-hour predictors from `time_utc` and
+includes their cyclic interaction. This is a learned temporal model, not a
+hard-coded season or solar-period filter. Day, night, and twilight observations
+remain eligible when all quality and predictor requirements pass.
 
-ERA5 remains a standalone BirdCast flow using Earthkit. Radar summaries are
-joined to ERA5 by radar and time for retrospective wind, temperature, cloud,
-boundary-layer, and precipitation analyses. ERA5 source files, requests,
-checksums, and derived feature tables remain under `birdcast-uk/era5/`.
+The selected component manifest records each model path and SHA-256. Inference
+must verify those hashes before reading a model. LP vector transfer and SP VID
+retain the limitations recorded in the selection/publication manifests.
 
-ECMWF Open Data cycle retrieval and forecast generation are disabled. Their code
-and archived test cycles remain for provenance but are outside the operational
-product. The ERA5 model has no hour-of-day, date, season, daylight, twilight,
-sunrise, sunset, or phenology predictor.
+Family-level GAMM/XGBoost fitting remains available for controlled research,
+but it is not a production selection mechanism.
 
-The production training table is complete-case across all declared weather
-predictors. A row is excluded unless it contains 850 hPa temperature, relative
-humidity, u wind and v wind, surface pressure, mean sea-level pressure, total
-cloud cover, boundary-layer height, and hourly precipitation. Projected
-easting and northing are the only non-weather predictors. The pipeline fails
-instead of silently fitting a reduced predictor set.
+## Release completeness
 
-The Earthkit request contains exactly those nine ERA5 fields. Pressure-level
-retrieval is limited to the four required variables at 850 hPa; unused levels
-and ancillary variables are not downloaded. This keeps every calendar-month
-request below CDS cost limits and makes acquisition provenance identical to the
-model feature contract.
+A modelled release must declare its exact inclusive start/end dates and day
+count. Every day must contain the canonical `00:00`-`23:00Z` frames, the exact
+fixed coordinate set, one finite required value per cell/hour, and identical
+LP/SP coverage. A filename count alone is not evidence of completeness.
 
-The annual backfill uses a bounded Slurm array with two workers and one Earthkit
-request per calendar-month segment. Each response is split atomically into
-independently named daily pressure and single-level files before radar-site
-features are extracted. The reconciliation job validates both predictor
-families in every radar-hour across the exact 365-day inventory and retries
-missing or incomplete days before the join can start. Monthly requests follow
-ECMWF guidance and avoid hundreds of independent CDS queue transactions.
+The production sequence is:
 
-The GAMB2LE ERA5 flow is not an input to this product. Its live model-evaluation
-archive currently contains only the Iceland campaign day 2026-07-06 and has a
-different domain and variable contract. UK BirdCast therefore owns its ERA5
-requests, files, feature extraction, provenance, and completeness checks.
+1. verify immutable inputs and selected component hashes;
+2. predict daily private partitions;
+3. reconcile dates, hours, cells, targets, and pulse products;
+4. build compact public `historical` and `gam-era5` products;
+5. create a product-scoped, hash-bearing publication plan;
+6. upload immutable assets, then update `latest` manifests last;
+7. verify the public objects and uncached browser.
 
-## Plot rules
+No run, model, log, raw-data, or credential path belongs beneath the public
+artifact root.
 
-- LP and SP plots are separate; no combined LP+SP population interpretation.
-- The initial release is a rolling 365-day historical reanalysis window.
-- Network plots use all available hours and report effort/coverage.
-- Every plot labels VID as a passage index.
+## Forecast denial contract
 
-## BTO validation
+Forecast and ECMWF code is retained for provenance and research. Production
+timers remain disabled and the forecast-enable sentinel remains absent.
+Static refreshes must emit an explicit unavailable forecast manifest rather
+than preserve stale validity times.
 
-BirdTrack complete-list reporting frequency and effort-normalised regional
-summaries test phenology, event timing, and broad spatial plausibility. Licensed
-raw records remain private. Only aggregate validation scores are published.
-BTO data are not used to calibrate VID as an absolute population count.
+Reactivation is blocked until the source latency/completeness contract and
+per-radar timestamp/freshness checks are implemented. One fresh radar must not
+authorize stale radar observations, and missing data must not be treated as
+zero density or calm wind. Full criteria are in [DEPLOYMENT.md](../DEPLOYMENT.md).
 
-The request is made through `https://www.bto.org/data/request`. Ask for weekly
-10 km or agreed regional summaries with complete-list denominators, effort,
-species groups, dates, and licence/version metadata. After private aggregation,
-run `birdcast-uk bto validate`; the public result contains only correlation,
-event overlap, peak-timing error, coverage, and total effort.
+## Public validation
+
+Only aggregate BTO validation results may be public. Licensed source records
+remain private and are not used to claim absolute calibration. UK-to-Aloft
+comparison reports likewise contain aggregate metrics and explicit mapping
+provenance, never source profiles.
+
+The public bucket must allow anonymous browser `GET` and `HEAD` for intended
+objects. CORS grants no write permission. A public HTTP 200 is necessary but
+does not replace manifest, asset, coverage, provenance, or deployment-SHA
+verification.

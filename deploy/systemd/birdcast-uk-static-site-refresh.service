@@ -12,6 +12,7 @@ Environment=PYTHONPATH=/opt/birdcast-uk/repo/src
 WorkingDirectory=/opt/birdcast-uk/repo
 ExecStart=/opt/birdcast-uk/venv/bin/python -m birdcast_uk.cli static build --output-dir ${BIRDCAST_UK_ARTIFACT_ROOT} --public-base-url ${BIRDCAST_UK_PUBLIC_BASE_URL} --object-prefix ${BIRDCAST_UK_OBJECT_PREFIX}
 ExecStart=/opt/birdcast-uk/venv/bin/python -m birdcast_uk.cli static install-site --artifact-root ${BIRDCAST_UK_ARTIFACT_ROOT} --site-root ${BIRDCAST_UK_SITE_ROOT} --data-base-url ${BIRDCAST_UK_PUBLIC_BASE_URL}/${BIRDCAST_UK_OBJECT_PREFIX} --object-prefix ${BIRDCAST_UK_OBJECT_PREFIX}
+ExecStart=/opt/birdcast-uk/venv/bin/python -m birdcast_uk.cli coastal install-site --site-root /opt/birdcast-euro/site
 
 NoNewPrivileges=true
 PrivateTmp=true

@@ -1,4 +1,6 @@
-from birdcast_uk.external_validation import evaluate_external_vpts
+import pytest
+
+from birdcast_uk.external_validation import evaluate_external_vpts, hourly_vpts_observations
 
 
 def test_evaluate_external_vpts_scores_matching_hours():
@@ -35,3 +37,30 @@ def test_evaluate_external_vpts_scores_matching_hours():
         "mae": 1.0,
         "rmse": 1.0,
     }
+
+
+def test_hourly_vectors_ignore_profiles_with_missing_vector_inputs() -> None:
+    observations = hourly_vpts_observations(
+        [
+            {
+                "radar": "frabb",
+                "datetime": "2026-07-11T00:05:00Z",
+                "mtr": 2.0,
+                "vid": 1.0,
+                "ground_speed_ms": 10.0,
+                "direction_deg": 90.0,
+            },
+            {
+                "radar": "frabb",
+                "datetime": "2026-07-11T00:15:00Z",
+                "mtr": 4.0,
+                "vid": 2.0,
+                "ground_speed_ms": 20.0,
+                "direction_deg": None,
+            },
+        ]
+    )
+
+    assert observations[0]["profile_count"] == 2
+    assert observations[0]["bird_u_ms"] == pytest.approx(10.0)
+    assert observations[0]["bird_v_ms"] == pytest.approx(0.0, abs=1e-12)

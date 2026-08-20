@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from importlib import resources
 import json
 import os
 import shutil
+from datetime import datetime, timezone
+from importlib import resources
 from pathlib import Path
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, mkdtemp
 from typing import Any
 
 from .config import (
@@ -27,7 +27,10 @@ def utc_now() -> str:
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    content = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    # Browser-facing JSON must remain RFC 8259 compliant.  Python's default
+    # NaN/Infinity literals are not valid JSON and different browsers handle
+    # them inconsistently, so fail before replacing a good artifact.
+    content = json.dumps(payload, indent=2, sort_keys=True, allow_nan=False) + "\n"
     with NamedTemporaryFile(
         "w",
         dir=path.parent,
@@ -37,8 +40,11 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
     ) as handle:
         handle.write(content)
         temporary_path = Path(handle.name)
-    temporary_path.chmod(0o644)
-    os.replace(temporary_path, path)
+    try:
+        temporary_path.chmod(0o644)
+        os.replace(temporary_path, path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def write_placeholder_json(path: Path, payload: dict[str, Any]) -> None:
@@ -58,6 +64,7 @@ def write_placeholder_json(path: Path, payload: dict[str, Any]) -> None:
             )
             or bool(existing.get("features"))
             or bool(existing.get("valid_times_utc"))
+            or existing.get("bto_data_available") is True
             or existing.get("latest_vpts_date")
             or existing.get("latest_observed_date")
             or existing.get("latest_date")
@@ -72,6 +79,7 @@ def build_static_artifacts(
     public_base_url: str,
     object_prefix: str = OBJECT_PREFIX,
     radars_path: Path | None = None,
+    forecast_enabled: bool = False,
 ) -> dict[str, object]:
     """Create placeholder artifacts and a static web shell.
 
@@ -81,7 +89,9 @@ def build_static_artifacts(
 
     generated_at = utc_now()
     radars = radar_records(tuple(load_radars(radars_path)))
-    data_base_url = "/".join(part.strip("/") for part in (public_base_url, object_prefix) if part.strip("/"))
+    data_base_url = "/".join(
+        part.strip("/") for part in (public_base_url, object_prefix) if part.strip("/")
+    )
 
     latest_dir = output_dir / "latest"
     web_dir = output_dir / "web"
@@ -137,17 +147,22 @@ def build_static_artifacts(
             "status": "not_started",
         },
     )
-    write_placeholder_json(
-        latest_dir / "forecast.json",
-        {
-            "schema_version": "birdcast-uk-forecast-1.0",
-            "data_available": False,
-            "generated_at_utc": generated_at,
-            "mode": "unavailable",
-            "valid_times_utc": [],
-            "assets": {"frames": []},
-        },
-    )
+    forecast_placeholder = {
+        "schema_version": "birdcast-uk-forecast-1.0",
+        "data_available": False,
+        "generated_at_utc": generated_at,
+        "mode": "disabled",
+        "disabled_reason": "The data-latency and per-radar freshness contracts are unresolved.",
+        "valid_times_utc": [],
+        "assets": {"frames": []},
+    }
+    if forecast_enabled:
+        write_placeholder_json(latest_dir / "forecast.json", forecast_placeholder)
+    else:
+        # A static refresh is authoritative for the public availability flag.
+        # Do not let an old data-bearing forecast survive after production has
+        # been disabled.
+        write_json(latest_dir / "forecast.json", forecast_placeholder)
     write_placeholder_json(
         latest_dir / "historical.json",
         {
@@ -163,7 +178,7 @@ def build_static_artifacts(
     write_placeholder_json(
         latest_dir / "gam-era5.json",
         {
-            "schema_version": "live-uk-bird-maps-gam-era5-1.1",
+            "schema_version": "live-uk-bird-maps-gam-era5-1.2",
             "data_available": False,
             "generated_at_utc": generated_at,
             "model_family": None,
@@ -171,7 +186,7 @@ def build_static_artifacts(
             "interpretation": "Historical modelled reanalysis is not available yet.",
         },
     )
-    write_json(
+    write_placeholder_json(
         latest_dir / "validation_status.json",
         {
             "bto_data_available": False,
@@ -181,9 +196,18 @@ def build_static_artifacts(
             "status": "request_pending",
         },
     )
-    write_json(archive_dir / ".keep.json", {"generated_at_utc": generated_at, "purpose": "archive prefix placeholder"})
-    write_json(era5_dir / ".keep.json", {"generated_at_utc": generated_at, "purpose": "era5 prefix placeholder"})
-    write_json(bto_dir / "validation_status.json", json.loads((latest_dir / "validation_status.json").read_text(encoding="utf-8")))
+    write_json(
+        archive_dir / ".keep.json",
+        {"generated_at_utc": generated_at, "purpose": "archive prefix placeholder"},
+    )
+    write_json(
+        era5_dir / ".keep.json",
+        {"generated_at_utc": generated_at, "purpose": "era5 prefix placeholder"},
+    )
+    write_json(
+        bto_dir / "validation_status.json",
+        json.loads((latest_dir / "validation_status.json").read_text(encoding="utf-8")),
+    )
 
     static_root = resources.files("birdcast_uk").joinpath("static")
     web_dir.mkdir(parents=True, exist_ok=True)
@@ -211,7 +235,11 @@ def build_static_artifacts(
             "vpts_object_url_template": "https://ncas-radar-o.s3-ext.jc.rl.ac.uk/uk-wsr-visualizer-public/ukmo-nimrod/vpts/current_ci_le4/{radar}/{yyyy}/{yyyymmdd}_{pulse}_vpts.csv",
             "archive_sources": {
                 "jasmin-uk": {"kind": "vpts", "catalog_url": UKMO_VPTS_CATALOG_URL},
-                "aloft": {"kind": "vpts", "coverage_url": ALOFT_COVERAGE_URL, "public_base_url": ALOFT_PUBLIC_BASE_URL},
+                "aloft": {
+                    "kind": "vpts",
+                    "coverage_url": ALOFT_COVERAGE_URL,
+                    "public_base_url": ALOFT_PUBLIC_BASE_URL,
+                },
             },
             "archive_comparison_index_url": f"{data_base_url}/archive/comparisons/latest.json",
         },
@@ -250,21 +278,20 @@ def install_static_site(
     if missing:
         raise FileNotFoundError(f"Static web artifacts are missing: {', '.join(missing)}")
 
-    site_root.mkdir(parents=True, exist_ok=True)
-    for child in site_root.iterdir():
-        if child.is_dir():
-            shutil.rmtree(child)
-        else:
-            child.unlink()
-
+    # Build a complete managed-file set beside the live site.  Each file is
+    # replaced atomically, with index.html promoted last so it never points at
+    # a half-copied JavaScript/CSS release.  Unknown operator files are left
+    # untouched rather than recursively deleting an arbitrary supplied path.
+    site_root.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(mkdtemp(prefix=f".{site_root.name}.", dir=site_root.parent))
     for name in required_files:
-        destination = site_root / name
+        destination = staging / name
         shutil.copyfile(web_root / name, destination)
         destination.chmod(0o644)
 
     generated_at = utc_now()
     write_json(
-        site_root / "config.json",
+        staging / "config.json",
         {
             "data_base_url": data_base_url.rstrip("/"),
             "europe_manifest_url": "/europe-bird-maps/data/latest/relative-flow.json",
@@ -275,11 +302,31 @@ def install_static_site(
             "vpts_object_url_template": "https://ncas-radar-o.s3-ext.jc.rl.ac.uk/uk-wsr-visualizer-public/ukmo-nimrod/vpts/current_ci_le4/{radar}/{yyyy}/{yyyymmdd}_{pulse}_vpts.csv",
             "archive_sources": {
                 "jasmin-uk": {"kind": "vpts", "catalog_url": UKMO_VPTS_CATALOG_URL},
-                "aloft": {"kind": "vpts", "coverage_url": ALOFT_COVERAGE_URL, "public_base_url": ALOFT_PUBLIC_BASE_URL},
+                "aloft": {
+                    "kind": "vpts",
+                    "coverage_url": ALOFT_COVERAGE_URL,
+                    "public_base_url": ALOFT_PUBLIC_BASE_URL,
+                },
             },
             "archive_comparison_index_url": f"{data_base_url.rstrip('/')}/archive/comparisons/latest.json",
         },
     )
+    managed_files = [*required_files, "config.json", ".birdcast-uk-site.json"]
+    write_json(
+        staging / ".birdcast-uk-site.json",
+        {"generated_at_utc": generated_at, "managed_files": managed_files},
+    )
+    site_root.mkdir(parents=True, exist_ok=True)
+    try:
+        for name in (
+            *[item for item in required_files if item != "index.html"],
+            "config.json",
+            ".birdcast-uk-site.json",
+            "index.html",
+        ):
+            os.replace(staging / name, site_root / name)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
     site_root.chmod(0o755)
 
     return {

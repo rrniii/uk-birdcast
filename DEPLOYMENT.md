@@ -1,107 +1,210 @@
-# Live UK Bird Maps Static Deployment
+# Live UK Bird Maps deployment
 
-Target host:
-
-```text
-uk-birdcast-workstation-ssh
-130.246.212.190
-```
-
-The site is served from the JASMIN Cloud host and reads public data artifacts
-from the JASMIN Object Store. Heavy processing and historical backfills run on
-JASMIN batch/GWS.
-
-## Install
-
-```bash
-ssh -J login azimuth@130.246.212.190
-sudo useradd --system --home /opt/birdcast-uk --shell /usr/sbin/nologin birdcast
-sudo mkdir -p /opt/birdcast-uk/{repo,venv,data,site,logs} /etc/birdcast-uk
-sudo chown -R birdcast:birdcast /opt/birdcast-uk
-```
-
-Clone or copy this repository into `/opt/birdcast-uk/repo`, then install:
-
-```bash
-sudo -u birdcast python3 -m venv /opt/birdcast-uk/venv
-sudo -u birdcast /opt/birdcast-uk/venv/bin/pip install -e "/opt/birdcast-uk/repo[birdcast]"
-sudo install -m 0640 -o root -g birdcast deploy/env/birdcast-uk.env.example /etc/birdcast-uk/birdcast-uk.env
-sudo install -m 0640 -o root -g birdcast configs/birdcast_uk_object_store.example.toml /etc/birdcast-uk/object_store.toml
-```
-
-Edit `/etc/birdcast-uk/birdcast-uk.env` before enabling Object Store sync.
-
-## Build Static Artifacts
-
-```bash
-sudo -u birdcast /opt/birdcast-uk/venv/bin/birdcast-uk static build \
-  --output-dir /opt/birdcast-uk/data/static-artifacts \
-  --public-base-url https://ncas-radar-o.s3-ext.jc.rl.ac.uk/uk-wsr-visualizer-public \
-  --object-prefix birdcast-uk
-
-sudo -u birdcast rm -rf /opt/birdcast-uk/site
-sudo -u birdcast mkdir -p /opt/birdcast-uk/site
-sudo -u birdcast cp -R /opt/birdcast-uk/data/static-artifacts/web/. /opt/birdcast-uk/site/
-```
-
-## Nginx
-
-```bash
-sudo install -m 0644 deploy/nginx/birdcast-uk.conf /etc/nginx/sites-available/birdcast-uk.conf
-sudo ln -sf /etc/nginx/sites-available/birdcast-uk.conf /etc/nginx/sites-enabled/birdcast-uk.conf
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-The site is then available at:
+## End-to-end topology
 
 ```text
-http://130.246.212.190/live-uk-bird-maps/
+read-only VPTS + ERA5 inputs
+          |
+          v
+JASMIN batch/GWS: private inventories, models and predictions
+          |
+          v
+validated public staging: historical + gam-era5 only
+          |
+          v
+JASMIN Object Store: immutable assets, then latest manifests
+          |
+          v
+JASMIN Cloud/Nginx: static browser only
 ```
 
-## JASMIN Cloud Public Ingress
+The cloud host must not retrieve ERA5/ECMWF data, build observations, fit
+models, or publish Object Store data. A successful web response proves only
+that the static host is reachable; it does not prove source freshness, model
+coverage, or release completion.
 
-The JASMIN Cloud security group attached to the web server must allow inbound
-IPv4 TCP port 80 from `0.0.0.0/0`. The host firewall does not replace this
-OpenStack-level rule.
+## Release authority
 
-Current public endpoint:
+- `main` is the only release branch.
+- CI, review, and a clean commit are required before deployment.
+- Record the exact `main` commit SHA and use a detached checkout or immutable
+  worktree for JASMIN and cloud deployment.
+- Never deploy an uncommitted tree or a mutable research branch.
+- Production model authority is selection
+  `uk-gamm-heldout-v2-sp-vector-925`, manifest SHA-256
+  `fabfeceba85ed637b8eddd7909199e22913b251a901f5f452c8011a35e9ac3ea`,
+  and the eight exact component hashes in `birdcast_uk.selected_model`.
+- `submit-historical-reanalysis.sh` and the family-level finalizer are research
+  benchmark paths only. They cannot promote production.
+
+A typical host layout keeps releases immutable and switches only reviewed
+symlinks:
 
 ```text
-Instance: uk-birdcast-workstation-ssh
-Instance UUID: 6fba7cb3-6212-436f-a18c-cbff2d4c6bdb
-Public IP: 130.246.212.190
-Network port: c0d30fbf-dedf-46a8-a46a-b55fc68634a6
-Ingress: IPv4 TCP 80 from 0.0.0.0/0
+/opt/birdcast-uk/source/                 shared Git checkout
+/opt/birdcast-uk/releases/<commit>/      detached release worktree
+/opt/birdcast-uk/repo -> releases/<commit>
+/opt/birdcast-uk/venv -> releases/<commit>/.venv
+/opt/birdcast-uk/data/                   persistent public-data cache
+/opt/birdcast-uk/site/                   generated static shell
 ```
 
-Verify from a host outside the cloud instance:
+Create a release from the reviewed remote `main` commit:
 
 ```bash
-curl --connect-timeout 8 -I \
-  http://130.246.212.190/live-uk-bird-maps/
+git -C /opt/birdcast-uk/source fetch --prune origin main
+release_sha="$(git -C /opt/birdcast-uk/source rev-parse origin/main)"
+release_dir="/opt/birdcast-uk/releases/$release_sha"
+sudo -u birdcast git -C /opt/birdcast-uk/source worktree add --detach \
+  "$release_dir" "$release_sha"
+sudo -u birdcast python3 -m venv "$release_dir/.venv"
+sudo -u birdcast "$release_dir/.venv/bin/python" -m pip install \
+  --disable-pip-version-check --upgrade "pip>=26.1.2"
+sudo -u birdcast "$release_dir/.venv/bin/pip" install \
+  --disable-pip-version-check "$release_dir[birdcast]"
+git -C "$release_dir" diff --quiet
+test -z "$(git -C "$release_dir" status --porcelain)"
 ```
 
-The expected response is HTTP 200. Port 443 remains closed until TLS is
-configured.
+Stop the web refresh timer while switching the two compatibility symlinks,
+then restart and verify the recorded SHA. Do not edit a release directory in
+place. Roll forward with a new SHA or roll back to an already retained SHA.
 
-To roll back public access without changing or stopping the application,
-remove the TCP port 80 ingress rule from the security group attached to the
-network port above. Tailscale and SSH administration remain separate from the
-public web rule.
+## Selected component publication
 
-## Web-Only systemd Timer
+Copy `deploy/env/birdcast-uk.jasmin.env.example` to a private location and set
+all paths there. Model files, daily predictions, merged CSVs, logs, credentials,
+and publication plans must remain outside the public artifact root.
+
+Before submission, verify:
 
 ```bash
-sudo install -m 0644 deploy/systemd/birdcast-uk-*.service /etc/systemd/system/
-sudo install -m 0644 deploy/systemd/birdcast-uk-*.timer /etc/systemd/system/
+export PYTHONPATH="$BIRDCAST_UK_ROOT/src"
+"$BIRDCAST_UK_PYTHON" -c \
+  'from pathlib import Path; from birdcast_uk.selected_model import validate_component_manifest; import os; validate_component_manifest(Path(os.environ["BIRDCAST_UK_COMPONENT_MANIFEST"]), verify_model_files=True)'
+test -d "$BIRDCAST_UK_ERA5_GRID_DIR"
+test -d "$BIRDCAST_UK_COMPONENT_PREDICTION_DIR"
+test -d "$BIRDCAST_UK_COMPONENT_MERGED_DIR"
+```
+
+Declare the exact inclusive prediction range. The qualified selected-model
+release is the independently validated 365-day evidence window:
+
+```bash
+export BIRDCAST_UK_EXPECTED_START_DAY=2025-07-14
+export BIRDCAST_UK_EXPECTED_END_DAY=2026-07-13
+export BIRDCAST_UK_EXPECTED_DAYS=365
+```
+
+The observation catch-up through 15 August 2026 is a separate historical
+publication milestone. Do not extend the modelled reanalysis to that date
+without first building the additional ERA5 grids and component predictions,
+repeating the scientific validation, and declaring a new release contract.
+Never derive coverage from the files that happen to be present.
+
+Submit the production dependency chain:
+
+```bash
+cd "$BIRDCAST_UK_ROOT"
+bash deploy/slurm/submit-selected-reanalysis.sh
+```
+
+The chain performs one daily component-prediction array, exact merge and
+coverage reconciliation, component publication, and product-scoped Object
+Store publication. Record every returned Slurm job ID. Completion requires
+successful terminal status for the final publication job, not merely successful
+submission or completion of an upstream array.
+
+Daily acceptance requires:
+
+- every expected calendar date exactly once;
+- exactly `00:00` through `23:00Z` for every date;
+- one row per fixed-grid cell and hour, with finite required targets;
+- identical LP/SP dates, timestamps, and coordinate sets;
+- verified component model hashes and the expected selection ID.
+
+Every array day records the reviewed manifest digest. The merge rejects a
+missing or different sidecar, and the publication job revalidates the manifest
+and all eight model files. Each Slurm stage also verifies the full Git SHA,
+clean worktree, release-local venv, and imported package path.
+
+## Product-scoped Object Store publication
+
+The public scope is an explicit allowlist: `latest/historical.json`,
+`latest/gam-era5.json`, and only the local assets referenced by those two
+manifests. Run directories, logs, models, raw data, prediction CSVs, credentials,
+and unrelated files must never appear in a plan.
+
+The batch publication job runs the equivalent of:
+
+```bash
+birdcast-uk publish validate \
+  --source-dir "$BIRDCAST_UK_ARTIFACT_ROOT" \
+  --require historical --require gam-era5
+
+birdcast-uk publish plan \
+  --source-dir "$BIRDCAST_UK_ARTIFACT_ROOT" \
+  --output "$BIRDCAST_UK_OBJECT_STORE_PLAN" \
+  --object-prefix "$BIRDCAST_UK_OBJECT_PREFIX" \
+  --product historical --product gam-era5
+
+birdcast-uk publish sync-script \
+  --plan "$BIRDCAST_UK_OBJECT_STORE_PLAN" \
+  --output "$BIRDCAST_UK_OBJECT_STORE_SYNC_SCRIPT" \
+  --bucket "$BIRDCAST_UK_OBJECT_STORE_BUCKET" \
+  --client s3cmd --s3cmd-config "$BIRDCAST_UK_S3CMD_CONFIG"
+```
+
+The plan rejects escaping paths and symlinks and records size and SHA-256 for
+every object. The generated script rechecks hashes immediately before upload,
+uploads immutable assets first, and updates `latest/*.json` last as the atomic
+promotion step. Keep both the plan and generated script outside the artifact
+root.
+
+## Forecast fail-closed policy
+
+Forecast and ECMWF services must remain disabled and inactive. The additional
+`ConditionPathExists=/etc/birdcast-uk/forecast-enabled` guard is defense in
+depth; the sentinel must be absent in production.
+
+```bash
+sudo systemctl disable --now \
+  birdcast-uk-ecmwf-archive.timer \
+  birdcast-uk-forecast-build.timer
+sudo rm -f /etc/birdcast-uk/forecast-enabled
+systemctl is-enabled birdcast-uk-ecmwf-archive.timer
+systemctl is-enabled birdcast-uk-forecast-build.timer
+systemctl is-active birdcast-uk-ecmwf-archive.timer
+systemctl is-active birdcast-uk-forecast-build.timer
+```
+
+Expected states are `disabled` and `inactive`. A forecast manifest must state
+`data_available: false` and must not preserve stale validity times.
+
+Forecasting may be reconsidered only after all of these are implemented and
+accepted:
+
+1. a documented VPTS availability/completeness latency contract;
+2. independently accepted observation timestamp and per-radar age thresholds;
+3. exclusion or explicit degradation of stale/missing radars, never zero-fill;
+4. verified ECMWF cycle completeness, files, hashes, domain and issue time;
+5. immutable forecast issues and an operational rollback path;
+6. end-to-end tests showing that one fresh radar cannot make another stale
+   radar eligible.
+
+## Cloud web host
+
+Install the environment and Nginx files from the selected release. The static
+refresh service installs both the UK shell and the sole public Europe
+relative-flow shell; it does not publish absolute Europe model output. Enable
+only that web-shell refresh timer:
+
+```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now birdcast-uk-static-site-refresh.timer
 ```
 
-The cloud workstation is a web server only. VPTS inventory, ERA5 retrieval,
-feature preparation, model fitting, and Object Store publication run in the
-JASMIN batch/GWS flow. Disable all data-production timers on this host:
+Disable all production timers on this host:
 
 ```bash
 sudo systemctl disable --now \
@@ -109,6 +212,7 @@ sudo systemctl disable --now \
   birdcast-uk-vpts-inventory.timer \
   birdcast-uk-observed-build.timer \
   birdcast-uk-era5-build-day.timer \
+  birdcast-uk-era5-request-smoke.timer \
   birdcast-uk-feature-join.timer \
   birdcast-uk-object-store-plan.timer \
   birdcast-uk-object-store-sync.timer \
@@ -116,31 +220,57 @@ sudo systemctl disable --now \
   birdcast-uk-forecast-build.timer
 ```
 
-The web client reads immutable daily assets and `latest/*.json` directly from
-the public `birdcast-uk/` Object Store prefix. It has no credentials and cannot
-modify VPTS, ERA5, or publication data.
+Retire the superseded absolute-Europe Object Store poller during this upgrade;
+deleting its files from Git does not stop an already installed timer:
 
-The public artifact tree contains historical radar and ERA5-reanalysis
-products only. Immutable assets are uploaded before the `latest/*.json`
-manifests so readers do not observe a partial publication. Publication fails
-closed if either required manifest is a placeholder or references a missing
-asset.
+```bash
+sudo systemctl disable --now birdcast-euro-object-store-pull.timer
+sudo rm -f \
+  /etc/systemd/system/birdcast-euro-object-store-pull.timer \
+  /etc/systemd/system/birdcast-euro-object-store-pull.service \
+  /etc/birdcast-euro/birdcast-euro.env
+sudo systemctl daemon-reload
+sudo systemctl reset-failed
+test "$(systemctl is-active birdcast-euro-object-store-pull.timer)" = inactive
+test "$(systemctl is-enabled birdcast-euro-object-store-pull.timer 2>/dev/null)" = not-found
+```
 
-## BTO Validation Request
+Before cleaning its leaked staging directories, record
+`readlink -f /opt/birdcast-euro/artifacts-current` and confirm that it is the
+relative-flow release, not a `pull.*` directory. Delete only empty
+`/opt/birdcast-euro/staged-artifacts/pull.*` directories; preserve the active
+release and every `archive/relative-flow/` asset.
 
-Generate and process the BTO request on JASMIN batch/GWS, not on the cloud web
-host. Keep licensed BTO source data outside public Object Store prefixes and
-publish only aggregate validation summaries.
+The canonical route is `/live-uk-bird-maps/`. The compatibility route
+`/birdcast-uk/` redirects there, and `/birdcast-uk/data/` serves public data.
+After installing `deploy/nginx/birdcast-uk.conf`, run `nginx -t` before reload.
 
-## ERA5 with ECMWF Earthkit
+## Release verification
 
-The independent BirdCast ERA5 flow uses `earthkit-data` for CDS retrieval,
-cache management, file decoding, and conversion to Xarray before extracting
-the nearest native-grid values for the 17 UK radar sites. CDS credentials,
-Earthkit cache, request JSON, raw NetCDF, site features, and model tables all
-remain on JASMIN. The cloud host has no ERA5 credential or processing role.
+Verify the actual public source, not a cached dashboard card:
 
-The ERA5 request envelope and published grid are derived from the union of the
-radars' validated 255 km LP ranges, including sea areas. Natural Earth
-coastlines are visual context only and never constrain extraction, model
-support, or rendering.
+```bash
+curl --fail --silent --show-error \
+  "$BIRDCAST_UK_PUBLIC_BASE_URL/birdcast-uk/latest/historical.json" \
+  -o /tmp/birdcast-historical.json
+curl --fail --silent --show-error \
+  "$BIRDCAST_UK_PUBLIC_BASE_URL/birdcast-uk/latest/gam-era5.json" \
+  -o /tmp/birdcast-reanalysis.json
+
+jq -e '.data_available == true' /tmp/birdcast-historical.json
+jq -e '.data_available == true' /tmp/birdcast-reanalysis.json
+jq -e '.selection_id == "uk-gamm-heldout-v2-sp-vector-925"' \
+  /tmp/birdcast-reanalysis.json
+```
+
+Also verify every referenced asset, first/latest timestamps, exact day count,
+LP/SP coverage, deployed Git SHA, Nginx access/error logs, and an uncached
+browser load. A release is incomplete until all checks pass.
+
+## Rollback
+
+Do not delete or overwrite immutable archive assets. To roll back data, rebuild
+and verify a product-scoped plan whose `latest` manifests reference the prior
+known-good immutable assets, then promote those manifests last. To roll back
+code, switch the release symlinks to the prior recorded SHA, restart only the
+web refresh service, and repeat the full verification above.

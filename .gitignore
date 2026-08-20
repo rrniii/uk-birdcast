@@ -10,5 +10,8 @@ dist/
 # Credentials and runtime state are installed directly on the host.
 .cdsapirc
 .env
+logs/
+*.s3cfg
+s3cmd.conf
 data/
 site/

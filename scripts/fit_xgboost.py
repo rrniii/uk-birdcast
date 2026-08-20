@@ -4,10 +4,9 @@
 from __future__ import annotations
 
 import json
-import math
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 
 
 def score(observed, predicted):
@@ -20,12 +19,18 @@ def score(observed, predicted):
     predicted_event = predicted >= threshold
     observed_event = observed >= threshold
     return {
-        "rmse": float(np.sqrt(np.mean(residual ** 2))),
+        "rmse": float(np.sqrt(np.mean(residual**2))),
         "mae": float(np.mean(np.abs(residual))),
         "bias": float(np.mean(residual)),
-        "r_squared": float(1 - np.sum(residual ** 2) / np.sum((observed - observed.mean()) ** 2)) if np.var(observed) else 0.0,
-        "top_decile_precision": float(np.mean(observed_event[predicted_event])) if predicted_event.any() else 0.0,
-        "top_decile_recall": float(np.mean(predicted_event[observed_event])) if observed_event.any() else 0.0,
+        "r_squared": float(1 - np.sum(residual**2) / np.sum((observed - observed.mean()) ** 2))
+        if np.var(observed)
+        else 0.0,
+        "top_decile_precision": float(np.mean(observed_event[predicted_event]))
+        if predicted_event.any()
+        else 0.0,
+        "top_decile_recall": float(np.mean(predicted_event[observed_event]))
+        if observed_event.any()
+        else 0.0,
     }
 
 
@@ -52,15 +57,15 @@ def main() -> int:
         raise SystemExit(f"missing JASMIN benchmark dependency: {exc.name}") from exc
     spec = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
     workers = max(1, int(os.environ.get("SLURM_CPUS_PER_TASK", "1")))
-    output = Path(sys.argv[2]); output.mkdir(parents=True, exist_ok=True)
+    output = Path(sys.argv[2])
+    output.mkdir(parents=True, exist_ok=True)
     grid = pd.read_csv(sys.argv[3]) if len(sys.argv) >= 4 else None
     frame = pd.read_csv(spec["training_csv"])
     predictors = list(spec["predictors"])
     missing_predictors = sorted(set(predictors) - set(frame.columns))
     if missing_predictors:
         raise SystemExit(
-            "training table is missing declared predictors: "
-            + ", ".join(missing_predictors)
+            "training table is missing declared predictors: " + ", ".join(missing_predictors)
         )
     targets = [*spec["intensity_targets"], *spec["vector_targets"]]
     metrics = []
@@ -77,39 +82,130 @@ def main() -> int:
             if len(data) < 30 or data.radar.nunique() < 2:
                 continue
             intensity = target in spec["intensity_targets"]
-            y = np.cbrt(data[target].clip(lower=0).to_numpy()) if intensity else data[target].to_numpy()
+            y = (
+                np.cbrt(data[target].clip(lower=0).to_numpy())
+                if intensity
+                else data[target].to_numpy()
+            )
             held_observed, held_predicted = [], []
             for radar in sorted(data.radar.unique()):
-                train = data.radar != radar; test = ~train
-                model = xgb.XGBRegressor(n_estimators=500, max_depth=5, learning_rate=.035, subsample=.8, colsample_bytree=.9, objective="reg:squarederror", n_jobs=workers)
-                model.fit(data.loc[train, predictors], y[train.to_numpy()], sample_weight=(data.loc[train, "profile_count"].clip(lower=1) if intensity else data.loc[train, "mtr_birds_km_h"].clip(lower=.01)))
-                predicted = model.predict(data.loc[test, predictors]); predicted = np.maximum(predicted, 0) ** 3 if intensity else predicted
-                held_observed.extend(data.loc[test, target]); held_predicted.extend(predicted)
-            metrics.append({"pulse": pulse, "target": target, "validation": "leave_one_radar_out", "row_count": len(held_observed), **score(held_observed, held_predicted)})
+                train = data.radar != radar
+                test = ~train
+                model = xgb.XGBRegressor(
+                    n_estimators=500,
+                    max_depth=5,
+                    learning_rate=0.035,
+                    subsample=0.8,
+                    colsample_bytree=0.9,
+                    objective="reg:squarederror",
+                    n_jobs=workers,
+                )
+                model.fit(
+                    data.loc[train, predictors],
+                    y[train.to_numpy()],
+                    sample_weight=(
+                        data.loc[train, "profile_count"].clip(lower=1)
+                        if intensity
+                        else data.loc[train, "mtr_birds_km_h"].clip(lower=0.01)
+                    ),
+                )
+                predicted = model.predict(data.loc[test, predictors])
+                predicted = np.maximum(predicted, 0) ** 3 if intensity else predicted
+                held_observed.extend(data.loc[test, target])
+                held_predicted.extend(predicted)
+            metrics.append(
+                {
+                    "pulse": pulse,
+                    "target": target,
+                    "validation": "leave_one_radar_out",
+                    "row_count": len(held_observed),
+                    **score(held_observed, held_predicted),
+                }
+            )
             blocked = blocked_time_split(data)
             if blocked is not None:
                 train, test, cutoff = blocked
-                y_train = np.cbrt(train[target].clip(lower=0).to_numpy()) if intensity else train[target].to_numpy()
-                time_model = xgb.XGBRegressor(n_estimators=500, max_depth=5, learning_rate=.035, subsample=.8, colsample_bytree=.9, objective="reg:squarederror", n_jobs=workers)
-                time_model.fit(train[predictors], y_train, sample_weight=(train["profile_count"].clip(lower=1) if intensity else train["mtr_birds_km_h"].clip(lower=.01)))
+                y_train = (
+                    np.cbrt(train[target].clip(lower=0).to_numpy())
+                    if intensity
+                    else train[target].to_numpy()
+                )
+                time_model = xgb.XGBRegressor(
+                    n_estimators=500,
+                    max_depth=5,
+                    learning_rate=0.035,
+                    subsample=0.8,
+                    colsample_bytree=0.9,
+                    objective="reg:squarederror",
+                    n_jobs=workers,
+                )
+                time_model.fit(
+                    train[predictors],
+                    y_train,
+                    sample_weight=(
+                        train["profile_count"].clip(lower=1)
+                        if intensity
+                        else train["mtr_birds_km_h"].clip(lower=0.01)
+                    ),
+                )
                 time_predicted = time_model.predict(test[predictors])
                 time_predicted = np.maximum(time_predicted, 0) ** 3 if intensity else time_predicted
-                metrics.append({"pulse": pulse, "target": target, "validation": "blocked_time", "row_count": len(test), "cutoff_time_utc": cutoff, **score(test[target], time_predicted)})
-            final = xgb.XGBRegressor(n_estimators=500, max_depth=5, learning_rate=.035, subsample=.8, colsample_bytree=.9, objective="reg:squarederror", n_jobs=workers)
-            final.fit(data[predictors], y, sample_weight=(data["profile_count"].clip(lower=1) if intensity else data["mtr_birds_km_h"].clip(lower=.01)))
+                metrics.append(
+                    {
+                        "pulse": pulse,
+                        "target": target,
+                        "validation": "blocked_time",
+                        "row_count": len(test),
+                        "cutoff_time_utc": cutoff,
+                        **score(test[target], time_predicted),
+                    }
+                )
+            final = xgb.XGBRegressor(
+                n_estimators=500,
+                max_depth=5,
+                learning_rate=0.035,
+                subsample=0.8,
+                colsample_bytree=0.9,
+                objective="reg:squarederror",
+                n_jobs=workers,
+            )
+            final.fit(
+                data[predictors],
+                y,
+                sample_weight=(
+                    data["profile_count"].clip(lower=1)
+                    if intensity
+                    else data["mtr_birds_km_h"].clip(lower=0.01)
+                ),
+            )
             final.save_model(output / f"xgboost_{pulse}_{target}.json")
             if grid is not None:
                 required_grid = ["time_utc", "longitude", "latitude", "support", *predictors]
                 if not all(name in grid.columns for name in required_grid):
-                    raise SystemExit("national ERA5 grid must include time_utc, coordinates, support, and all predictors")
-                predicted = final.predict(grid[predictors]); predicted = np.maximum(predicted, 0) ** 3 if intensity else predicted
+                    raise SystemExit(
+                        "national ERA5 grid must include time_utc, coordinates, support, and all predictors"
+                    )
+                predicted = final.predict(grid[predictors])
+                predicted = np.maximum(predicted, 0) ** 3 if intensity else predicted
                 pulse_prediction[target] = predicted
                 pulse_prediction[f"uncertainty_{target}"] = float("nan")
         if pulse_prediction is not None:
             if not all(target in pulse_prediction.columns for target in targets):
                 raise SystemExit(f"missing national predictions for pulse {pulse}")
             pulse_prediction.to_csv(output / f"predictions_wide_{pulse}.csv", index=False)
-    (output / "metrics.json").write_text(json.dumps({"model_family": "xgboost", "metrics": metrics, "model_time_terms": "none", "predictors": predictors}, indent=2) + "\n", encoding="utf-8")
+    (output / "metrics.json").write_text(
+        json.dumps(
+            {
+                "model_family": "xgboost",
+                "metrics": metrics,
+                "model_time_terms": "none",
+                "predictors": predictors,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     return 0
 
 

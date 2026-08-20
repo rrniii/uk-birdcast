@@ -71,7 +71,9 @@ def assemble(args: argparse.Namespace) -> None:
             writer.writeheader()
             for item in entries:
                 writer.writerow({"radar": str(item["radar"]).lower(), "cohort_role": item["role"]})
-        con.execute(f"CREATE VIEW cohort AS SELECT * FROM read_csv_auto({sql_literal(str(cohort_csv))}, header=true)")
+        con.execute(
+            f"CREATE VIEW cohort AS SELECT * FROM read_csv_auto({sql_literal(str(cohort_csv))}, header=true)"
+        )
         con.execute(
             f"""
             CREATE VIEW era5 AS
@@ -135,21 +137,36 @@ def assemble(args: argparse.Namespace) -> None:
         aloft_only = bool(getattr(args, "aloft_only", False))
         columns = sorted(
             aloft_columns - {"cohort_role"}
-            if aloft_only else (aloft_columns - {"cohort_role"}) & uk_columns
+            if aloft_only
+            else (aloft_columns - {"cohort_role"}) & uk_columns
         )
         preferred = [
-            "radar", "pulse", "source", "network", "country", "time_utc",
-            "latitude", "longitude", "easting_m", "northing_m",
-            "mtr_birds_km_h", "vid_birds_per_km2", "bird_u_ms", "bird_v_ms",
-            "profile_count", "rain_suspect_fraction",
+            "radar",
+            "pulse",
+            "source",
+            "network",
+            "country",
+            "time_utc",
+            "latitude",
+            "longitude",
+            "easting_m",
+            "northing_m",
+            "mtr_birds_km_h",
+            "vid_birds_per_km2",
+            "bird_u_ms",
+            "bird_v_ms",
+            "profile_count",
+            "rain_suspect_fraction",
         ]
-        ordered = [name for name in preferred if name in columns] + sorted(set(columns) - set(preferred))
+        ordered = [name for name in preferred if name in columns] + sorted(
+            set(columns) - set(preferred)
+        )
         select = ", ".join(f'"{name}"' for name in ordered)
         destination = str(output).replace("'", "''")
         training_query = (
             f"SELECT {select} FROM aloft_joined WHERE cohort_role='training'"
-            if aloft_only else
-            f"SELECT {select} FROM aloft_joined WHERE cohort_role='training' UNION ALL BY NAME SELECT {select} FROM uk_sp"
+            if aloft_only
+            else f"SELECT {select} FROM aloft_joined WHERE cohort_role='training' UNION ALL BY NAME SELECT {select} FROM uk_sp"
         )
         con.execute(f"COPY ({training_query}) TO '{destination}' (HEADER, DELIMITER ',')")
         validation_counts = []
@@ -171,7 +188,7 @@ def assemble(args: argparse.Namespace) -> None:
                 "WHERE cohort_role='transfer-validation'"
             ).fetchone()
         counts = con.execute(
-            f"""
+            """
             SELECT source, count(*) AS rows, count(DISTINCT radar) AS radars
             FROM read_csv_auto(?, header=true)
             GROUP BY source ORDER BY source
@@ -185,11 +202,19 @@ def assemble(args: argparse.Namespace) -> None:
         "aloft_hourly_parquet": args.aloft_parquet,
         "uk_training_csv": args.uk_training_csv,
         "era5_parquet": args.era5_parquet,
-        "source_counts": [{"source": source, "rows": rows, "radars": radars} for source, rows, radars in counts],
+        "source_counts": [
+            {"source": source, "rows": rows, "radars": radars} for source, rows, radars in counts
+        ],
         "transfer_validation_csv": args.validation_output,
         "transfer_validation_rows": validation_counts[0] if validation_counts else 0,
         "transfer_validation_radars": validation_counts[1] if validation_counts else 0,
-        "filters": {"aloft_source": "baltrad", "uk_pulse": "sp", "aloft_only": aloft_only, "phenology": "none", "daylight": "none"},
+        "filters": {
+            "aloft_source": "baltrad",
+            "uk_pulse": "sp",
+            "aloft_only": aloft_only,
+            "phenology": "none",
+            "daylight": "none",
+        },
     }
     output.with_suffix(output.suffix + ".manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n",
@@ -203,9 +228,13 @@ def sql_literal(value: str) -> str:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--aloft-parquet", required=True, help="DuckDB glob for derived hourly partitions")
+    parser.add_argument(
+        "--aloft-parquet", required=True, help="DuckDB glob for derived hourly partitions"
+    )
     parser.add_argument("--uk-training-csv", required=True)
-    parser.add_argument("--era5-parquet", required=True, help="DuckDB glob for European site ERA5 features")
+    parser.add_argument(
+        "--era5-parquet", required=True, help="DuckDB glob for European site ERA5 features"
+    )
     parser.add_argument("--radar-metadata", required=True)
     parser.add_argument("--cohort", required=True)
     parser.add_argument("--aloft-only", action="store_true")

@@ -24,7 +24,9 @@ def _metric(pulse: str, target: str, r_squared: float, rmse: float) -> dict[str,
     }
 
 
-def test_candidate_summary_requires_intensity_non_regression_and_lp_vector_gain(tmp_path: Path) -> None:
+def test_candidate_summary_requires_intensity_non_regression_and_lp_vector_gain(
+    tmp_path: Path,
+) -> None:
     module = _load_module()
     baseline_metrics = [
         _metric("lp", "mtr_birds_km_h", 0.23, 20.0),

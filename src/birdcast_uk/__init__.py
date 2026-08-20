@@ -2,4 +2,10 @@
 
 from __future__ import annotations
 
-__version__ = "0.3.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    # pyproject.toml is the single version source for installed distributions.
+    __version__ = version("birdcast-uk")
+except PackageNotFoundError:
+    __version__ = "0+unknown"

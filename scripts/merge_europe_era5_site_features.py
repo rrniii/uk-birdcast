@@ -4,14 +4,17 @@
 from __future__ import annotations
 
 import argparse
-from datetime import date, timedelta
 import json
+from datetime import date, timedelta
 from pathlib import Path
 
 
 def merge(feature_root: Path, output: Path, *, start_day: str, end_day: str) -> dict[str, object]:
     expected = _days(start_day, end_day)
-    files = {path.stem.rsplit("_", 1)[-1]: path for path in feature_root.glob("era5_site_features_*.json")}
+    files = {
+        path.stem.rsplit("_", 1)[-1]: path
+        for path in feature_root.glob("era5_site_features_*.json")
+    }
     missing = sorted(day.replace("-", "") for day in expected if day.replace("-", "") not in files)
     if missing:
         raise ValueError(f"missing Europe ERA5 site feature days: {len(missing)}")
@@ -34,7 +37,12 @@ def merge(feature_root: Path, output: Path, *, start_day: str, end_day: str) -> 
         raise RuntimeError("pyarrow is required") from exc
     output.parent.mkdir(parents=True, exist_ok=True)
     pq.write_table(pa.Table.from_pylist(rows), output, compression="zstd")
-    return {"status": "passed", "day_count": len(expected), "row_count": len(rows), "output": str(output)}
+    return {
+        "status": "passed",
+        "day_count": len(expected),
+        "row_count": len(rows),
+        "output": str(output),
+    }
 
 
 ALIASES = {
@@ -60,7 +68,9 @@ def _canonicalise(raw_rows: list[dict[str, object]]) -> list[dict[str, object]]:
         radar, time_utc = str(row.get("radar") or ""), str(row.get("time_utc") or "")
         if not radar or not time_utc:
             raise ValueError("ERA5 site row has no radar or UTC time")
-        target = merged.setdefault((radar.lower(), time_utc), {"radar": radar.lower(), "time_utc": time_utc})
+        target = merged.setdefault(
+            (radar.lower(), time_utc), {"radar": radar.lower(), "time_utc": time_utc}
+        )
         for key, value in row.items():
             if value is not None and key not in {"dataset_index", "radar_num"}:
                 target[key] = value
@@ -73,7 +83,9 @@ def _canonicalise(raw_rows: list[dict[str, object]]) -> list[dict[str, object]]:
                 row[canonical] = value
         missing = sorted(name for name in required if row.get(name) is None)
         if missing:
-            raise ValueError(f"Europe ERA5 site row {key[0]} {key[1]} lacks predictors: {', '.join(missing)}")
+            raise ValueError(
+                f"Europe ERA5 site row {key[0]} {key[1]} lacks predictors: {', '.join(missing)}"
+            )
         rows.append(row)
     return rows
 
@@ -82,7 +94,9 @@ def _days(start_day: str, end_day: str) -> list[str]:
     start, end = date.fromisoformat(start_day), date.fromisoformat(end_day)
     if end < start:
         raise ValueError("end day precedes start day")
-    return [(start + timedelta(days=offset)).isoformat() for offset in range((end - start).days + 1)]
+    return [
+        (start + timedelta(days=offset)).isoformat() for offset in range((end - start).days + 1)
+    ]
 
 
 if __name__ == "__main__":
@@ -92,4 +106,14 @@ if __name__ == "__main__":
     parser.add_argument("--start-day", required=True)
     parser.add_argument("--end-day", required=True)
     args = parser.parse_args()
-    print(json.dumps(merge(Path(args.feature_root), Path(args.output), start_day=args.start_day, end_day=args.end_day), indent=2))
+    print(
+        json.dumps(
+            merge(
+                Path(args.feature_root),
+                Path(args.output),
+                start_day=args.start_day,
+                end_day=args.end_day,
+            ),
+            indent=2,
+        )
+    )

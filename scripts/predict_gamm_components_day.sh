@@ -5,6 +5,7 @@ set -euo pipefail
 # vertical-grid Slurm array. The array index deliberately follows the grid
 # archive ordering so each result has an unambiguous UTC-date directory.
 : "${BIRDCAST_UK_COMPONENT_MANIFEST:?Set the component selection manifest}"
+: "${BIRDCAST_UK_EXPECTED_COMPONENT_MANIFEST_SHA256:?Set the reviewed manifest hash}"
 : "${BIRDCAST_UK_ERA5_GRID_DIR:?Set the daily ERA5 grid directory}"
 : "${BIRDCAST_UK_COMPONENT_PREDICTION_DIR:?Set the daily prediction output directory}"
 : "${BIRDCAST_UK_ROOT:?Set the uk-birdcast checkout root}"

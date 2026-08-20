@@ -1,31 +1,39 @@
 """Historical ERA5-driven UK BirdCast reanalysis contracts.
 
-This module deliberately keeps model execution on JASMIN batch compute.  It
+This module deliberately keeps model execution on JASMIN batch compute. It
 prepares pulse-separated, all-hour input tables; records model-selection
-evidence; and publishes small daily browser assets.  No calendar, season,
-sunrise, sunset, or clock-time variable is emitted for model fitting.
+evidence; and publishes small daily browser assets. The selected GAMM derives
+cyclic day-of-year and UTC-hour terms from timestamps, but applies no hard-coded
+season, daylight, twilight, sunrise, sunset, or nocturnal filter.
 """
 
 from __future__ import annotations
 
 import csv
-from datetime import datetime, timedelta, timezone
-from functools import lru_cache
+import hashlib
 import json
 import math
 import os
-from pathlib import Path
 import random
 import shutil
+from datetime import date, datetime, timedelta, timezone
+from functools import lru_cache
+from pathlib import Path
 from tempfile import mkdtemp
 from typing import Any
 
 from .config import PROCESSING_VERSION
 from .scales import log_colour_scale
+from .selected_model import (
+    QUALIFIED_FIRST_DAY,
+    QUALIFIED_LAST_DAY,
+    SELECTION_ID,
+    public_component_provenance,
+    qualified_dates,
+)
 from .static_artifacts import utc_now, write_json
 
-
-REANALYSIS_SCHEMA_VERSION = "live-uk-bird-maps-gam-era5-1.1"
+REANALYSIS_SCHEMA_VERSION = "live-uk-bird-maps-gam-era5-1.2"
 MODEL_FAMILIES = ("gamm", "xgboost")
 PULSES = ("lp", "sp")
 INTENSITY_TARGETS = ("mtr_birds_km_h", "vid_birds_per_km2")
@@ -49,6 +57,63 @@ OPTIONAL_ERA5_FEATURES = (
 )
 
 
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _stage_boundary(output_root: Path, staging: Path) -> str:
+    """Copy the validated map boundary into the immutable model release."""
+
+    source = output_root / "assets" / "uk-boundary.geojson"
+    if source.is_symlink() or not source.is_file():
+        raise FileNotFoundError(f"validated UK boundary is missing: {source}")
+    boundary = _read_json(source)
+    if boundary.get("type") != "FeatureCollection" or not boundary.get("features"):
+        raise ValueError("UK boundary must be a non-empty GeoJSON FeatureCollection")
+    name = "uk-boundary.geojson"
+    write_json(staging / name, boundary)
+    return name
+
+
+def _model_contract(selection: dict[str, Any]) -> dict[str, object]:
+    """Describe fitted time terms without overstating biological calibration."""
+
+    options = selection.get("gamm_options")
+    option_terms = options.get("temporal_smooths") if isinstance(options, dict) else None
+    terms = selection.get("temporal_terms") or option_terms or []
+    return {
+        "selection_id": selection.get("selection_id"),
+        "temporal_terms": list(terms) if isinstance(terms, list) else [],
+        "uncertainty_contract": {
+            "field": "uncertainty_by_target",
+            "missing": None,
+            "scale": "per-target model linear-predictor standard error where supplied",
+            "cross_target_aggregation": "none",
+        },
+        "interpretation": (
+            "Historical modelled reanalysis. The selected GAMM learns cyclic "
+            "day-of-year and UTC-hour structure; it applies no hard-coded "
+            "phenology, season, solar-period, daylight, twilight, sunrise, or sunset filter."
+        ),
+    }
+
+
+def _component_contract(
+    component_manifest: Path,
+    *,
+    selection_id: str,
+) -> dict[str, object]:
+    """Return public component hashes without leaking private model paths."""
+
+    if selection_id != SELECTION_ID:
+        raise ValueError("component and publication selection IDs differ")
+    return public_component_provenance(component_manifest)
+
+
 class _ReservoirSampler:
     """Deterministic bounded sample for archive-scale percentile estimates."""
 
@@ -70,28 +135,6 @@ class _ReservoirSampler:
             self.values[replacement] = value
 
 
-def _model_colour_scales(frames: list[dict[str, Any]]) -> dict[str, object]:
-    values = {target: [] for target in INTENSITY_TARGETS}
-    for frame in frames:
-        for cell in frame.get("cells") or []:
-            if not isinstance(cell, dict):
-                continue
-            for target in INTENSITY_TARGETS:
-                value = _number(cell.get(target))
-                if value is not None:
-                    values[target].append(value)
-    return {
-        "mtr_birds_km_h": log_colour_scale(
-            values["mtr_birds_km_h"],
-            units="birds km-1 h-1",
-        ),
-        "vid_birds_per_km2": log_colour_scale(
-            values["vid_birds_per_km2"],
-            units="birds km-2",
-        ),
-    }
-
-
 def prepare_training_table(
     *,
     joined_features: Path,
@@ -104,18 +147,23 @@ def prepare_training_table(
 
     unknown_features = set(extra_era5_features) - set(OPTIONAL_ERA5_FEATURES)
     if unknown_features:
-        raise ValueError(f"unsupported optional ERA5 features: {', '.join(sorted(unknown_features))}")
+        raise ValueError(
+            f"unsupported optional ERA5 features: {', '.join(sorted(unknown_features))}"
+        )
     required_features = (*ERA5_FEATURES, *extra_era5_features)
 
     payload = _read_json(joined_features)
     source_rows = payload.get("rows")
     if not isinstance(source_rows, list):
         raise ValueError("joined features artifact has no rows")
-    candidates = [_normalise_row(row, min_profiles_per_hour) for row in source_rows if isinstance(row, dict)]
+    candidates = [
+        _normalise_row(row, min_profiles_per_hour) for row in source_rows if isinstance(row, dict)
+    ]
     candidates = [
         row
         for row in candidates
-        if row is not None and all(_number(row.get(feature)) is not None for feature in required_features)
+        if row is not None
+        and all(_number(row.get(feature)) is not None for feature in required_features)
     ]
     if not candidates:
         raise ValueError(
@@ -128,7 +176,11 @@ def prepare_training_table(
         raise ValueError("joined features has no UTC day with all 24 ERA5 hours")
     latest_day = max(complete_days)
     first_day = latest_day - timedelta(days=window_days - 1)
-    rows = [row for row in candidates if first_day <= _parse_time(str(row["time_utc"])).date() <= latest_day]
+    rows = [
+        row
+        for row in candidates
+        if first_day <= _parse_time(str(row["time_utc"])).date() <= latest_day
+    ]
     if not rows:
         raise ValueError("no rows remain in selected rolling window")
 
@@ -149,8 +201,9 @@ def prepare_training_table(
         "schema_version": REANALYSIS_SCHEMA_VERSION,
         "generated_at_utc": utc_now(),
         "processing_version": PROCESSING_VERSION,
-        "model_time_terms": "none",
-        "excluded_predictors": ["timestamp", "hour", "day_of_year", "season", "sunrise", "sunset", "solar_period"],
+        "model_time_terms": "configured_in_model_spec",
+        "available_derived_time_terms": ["day_of_year", "utc_hour"],
+        "excluded_predictors": ["timestamp", "season", "sunrise", "sunset", "solar_period"],
         "source": str(joined_features),
         "csv": str(csv_path),
         "first_day_utc": first_day.isoformat(),
@@ -213,7 +266,16 @@ def write_model_spec(
         "validation": {
             "spatial": "leave-one-radar-out",
             "temporal": "contiguous blocked UTC windows",
-            "metrics": ["rmse", "mae", "bias", "r_squared", "top_decile_precision", "top_decile_recall", "speed_mae", "direction_mae_deg"],
+            "metrics": [
+                "rmse",
+                "mae",
+                "bias",
+                "r_squared",
+                "top_decile_precision",
+                "top_decile_recall",
+                "speed_mae",
+                "direction_mae_deg",
+            ],
         },
     }
     if model_family == "gamm" and gamm_options:
@@ -239,23 +301,62 @@ def compare_models(*, gamm_metrics: Path, xgboost_metrics: Path, output: Path) -
             baseline = gamm_rows.get((pulse, target))
             candidate = xgb_rows.get((pulse, target))
             if baseline is None or candidate is None:
-                checks.append({"pulse": pulse, "target": target, "passed": False, "reason": "missing_metrics"})
+                checks.append(
+                    {"pulse": pulse, "target": target, "passed": False, "reason": "missing_metrics"}
+                )
                 continue
             improvement = _improvement(baseline.get("rmse"), candidate.get("rmse"))
-            event_better = _number(candidate.get("top_decile_precision")) >= _number(baseline.get("top_decile_precision")) and _number(candidate.get("top_decile_recall")) >= _number(baseline.get("top_decile_recall"))
-            checks.append({"pulse": pulse, "target": target, "rmse_improvement_fraction": improvement, "event_detection_improved": event_better, "passed": improvement >= 0.10 and event_better})
+            event_better = _number(candidate.get("top_decile_precision")) >= _number(
+                baseline.get("top_decile_precision")
+            ) and _number(candidate.get("top_decile_recall")) >= _number(
+                baseline.get("top_decile_recall")
+            )
+            checks.append(
+                {
+                    "pulse": pulse,
+                    "target": target,
+                    "rmse_improvement_fraction": improvement,
+                    "event_detection_improved": event_better,
+                    "passed": improvement >= 0.10 and event_better,
+                }
+            )
             temporal_baseline = gamm_time_rows.get((pulse, target))
             temporal_candidate = xgb_time_rows.get((pulse, target))
             if temporal_baseline is None or temporal_candidate is None:
-                temporal_checks.append({"pulse": pulse, "target": target, "passed": False, "reason": "missing_metrics"})
+                temporal_checks.append(
+                    {"pulse": pulse, "target": target, "passed": False, "reason": "missing_metrics"}
+                )
                 continue
-            temporal_improvement = _improvement(temporal_baseline.get("rmse"), temporal_candidate.get("rmse"))
-            temporal_events = _number(temporal_candidate.get("top_decile_precision")) >= _number(temporal_baseline.get("top_decile_precision")) and _number(temporal_candidate.get("top_decile_recall")) >= _number(temporal_baseline.get("top_decile_recall"))
-            temporal_checks.append({"pulse": pulse, "target": target, "rmse_improvement_fraction": temporal_improvement, "event_detection_improved": temporal_events, "passed": temporal_improvement >= 0.10 and temporal_events})
+            temporal_improvement = _improvement(
+                temporal_baseline.get("rmse"), temporal_candidate.get("rmse")
+            )
+            temporal_events = _number(temporal_candidate.get("top_decile_precision")) >= _number(
+                temporal_baseline.get("top_decile_precision")
+            ) and _number(temporal_candidate.get("top_decile_recall")) >= _number(
+                temporal_baseline.get("top_decile_recall")
+            )
+            temporal_checks.append(
+                {
+                    "pulse": pulse,
+                    "target": target,
+                    "rmse_improvement_fraction": temporal_improvement,
+                    "event_detection_improved": temporal_events,
+                    "passed": temporal_improvement >= 0.10 and temporal_events,
+                }
+            )
     vector_ok = _vectors_not_worse(gamm_rows, xgb_rows)
-    temporal_required = _has_validation_rows(gamm, "blocked_time") or _has_validation_rows(xgboost, "blocked_time")
+    temporal_required = _has_validation_rows(gamm, "blocked_time") or _has_validation_rows(
+        xgboost, "blocked_time"
+    )
     temporal_ok = bool(temporal_checks) and all(bool(check["passed"]) for check in temporal_checks)
-    selected = "xgboost" if checks and all(bool(check["passed"]) for check in checks) and vector_ok and (temporal_ok if temporal_required else True) else "gamm"
+    selected = (
+        "xgboost"
+        if checks
+        and all(bool(check["passed"]) for check in checks)
+        and vector_ok
+        and (temporal_ok if temporal_required else True)
+        else "gamm"
+    )
     payload = {
         "schema_version": REANALYSIS_SCHEMA_VERSION,
         "generated_at_utc": utc_now(),
@@ -272,77 +373,6 @@ def compare_models(*, gamm_metrics: Path, xgboost_metrics: Path, output: Path) -
     return payload
 
 
-def publish_reanalysis(
-    *,
-    predictions: Path,
-    comparison: Path,
-    output_root: Path,
-) -> dict[str, object]:
-    """Publish daily pulse-separated browser frames and atomically update latest."""
-
-    source = _read_json(predictions)
-    selection = _read_json(comparison)
-    frames = source.get("frames")
-    grid = source.get("grid")
-    if not isinstance(frames, list) or not frames or not isinstance(grid, dict):
-        raise ValueError("predictions must contain a grid and non-empty frames list")
-    family = str(selection.get("selected_model_family") or "gamm")
-    frame_rows = [frame for frame in frames if isinstance(frame, dict) and frame.get("model_family") == family]
-    if not frame_rows:
-        raise ValueError(f"predictions has no frames for selected model family {family}")
-    run_id = str(source.get("run_id") or source.get("latest_complete_day_utc") or utc_now()).replace(":", "").replace("-", "")
-    archive_relative = Path("archive") / "reanalysis" / "gam-era5" / run_id
-    archive_dir = output_root / archive_relative
-    output_root.mkdir(parents=True, exist_ok=True)
-    staging = Path(mkdtemp(prefix=".reanalysis.", dir=output_root))
-    try:
-        daily_assets: dict[str, dict[str, str]] = {pulse: {} for pulse in PULSES}
-        by_day: dict[tuple[str, str], list[dict[str, Any]]] = {}
-        for frame in frame_rows:
-            pulse = str(frame.get("pulse") or "")
-            timestamp = _parse_time(str(frame.get("time_utc") or ""))
-            if pulse not in PULSES:
-                continue
-            by_day.setdefault((pulse, timestamp.date().isoformat()), []).append(frame)
-        for (pulse, day), day_frames in sorted(by_day.items()):
-            relative = Path("daily") / pulse / f"{day.replace('-', '')}.json"
-            destination = staging / relative
-            write_json(destination, {"schema_version": REANALYSIS_SCHEMA_VERSION, "grid": grid, "pulse": pulse, "date_utc": day, "frames": sorted(day_frames, key=lambda item: str(item["time_utc"]))})
-            daily_assets[pulse][day] = str(relative)
-        write_json(staging / "validation.json", selection)
-        write_json(staging / "source.json", {key: value for key, value in source.items() if key != "frames"})
-        if archive_dir.exists():
-            raise FileExistsError(f"refusing to overwrite immutable reanalysis archive: {archive_dir}")
-        archive_dir.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(staging, archive_dir)
-    except Exception:
-        shutil.rmtree(staging, ignore_errors=True)
-        raise
-    times = sorted(str(frame["time_utc"]) for frame in frame_rows)
-    latest = {
-        "schema_version": REANALYSIS_SCHEMA_VERSION,
-        "data_available": True,
-        "generated_at_utc": utc_now(),
-        "model_family": family,
-        "archive_prefix": str(archive_relative),
-        "first_time_utc": times[0],
-        "latest_time_utc": times[-1],
-        "grid": grid,
-        "colour_scales": _model_colour_scales(frame_rows),
-        "pulses": list(PULSES),
-        "variables": ["mtr_birds_km_h", "vid_birds_per_km2", "bird_u_ms", "bird_v_ms", "uncertainty", "support"],
-        "assets": {
-            **{pulse: {day: str(archive_relative / path) for day, path in assets.items()} for pulse, assets in daily_assets.items()},
-            "boundary": "assets/uk-boundary.geojson",
-        },
-        "comparison": str(archive_relative / "validation.json"),
-        "source": str(archive_relative / "source.json"),
-        "interpretation": "Historical modelled reanalysis. No phenology, solar-period, daylight, or timestamp predictor is used.",
-    }
-    write_json(output_root / "latest" / "gam-era5.json", latest)
-    return latest
-
-
 def publish_wide_reanalysis(
     *,
     lp_csv: Path,
@@ -350,6 +380,7 @@ def publish_wide_reanalysis(
     comparison: Path,
     output_root: Path,
     model_family: str,
+    component_manifest: Path,
 ) -> dict[str, object]:
     """Stream wide national predictions into daily browser assets."""
 
@@ -359,6 +390,11 @@ def publish_wide_reanalysis(
     selected = str(selection.get("selected_model_family") or "")
     if selected != model_family:
         raise ValueError(f"model selection is {selected}, not {model_family}")
+    selection_id = str(selection.get("selection_id") or "")
+    component_provenance = _component_contract(
+        component_manifest,
+        selection_id=selection_id,
+    )
     run_id = utc_now().replace(":", "").replace("-", "")
     archive_relative = Path("archive") / "reanalysis" / "gam-era5" / run_id
     archive_dir = output_root / archive_relative
@@ -378,8 +414,7 @@ def publish_wide_reanalysis(
                 model_family=model_family,
             )
             assets[pulse] = {
-                day: str(archive_relative / relative)
-                for day, relative in pulse_assets.items()
+                day: str(archive_relative / relative) for day, relative in pulse_assets.items()
             }
             grids.append(grid)
             first_times.append(first_time)
@@ -388,19 +423,37 @@ def publish_wide_reanalysis(
                 scale_samples[target].extend(pulse_samples[target])
         if grids[0] != grids[1]:
             raise ValueError("LP and SP prediction grids differ")
+        if set(assets["lp"]) != set(assets["sp"]):
+            raise ValueError("LP and SP prediction dates differ")
+        if first_times[0] != first_times[1] or last_times[0] != last_times[1]:
+            raise ValueError("LP and SP prediction time coverage differs")
+        if sorted(assets["lp"]) != qualified_dates():
+            raise ValueError("predictions do not cover the exact qualified model window")
+        if first_times[0] != f"{QUALIFIED_FIRST_DAY.isoformat()}T00:00:00Z":
+            raise ValueError("predictions do not start at the qualified model boundary")
+        if last_times[0] != f"{QUALIFIED_LAST_DAY.isoformat()}T23:00:00Z":
+            raise ValueError("predictions do not end at the qualified model boundary")
         write_json(staging / "validation.json", selection)
+        source_payload = {
+            "generated_at_utc": utc_now(),
+            "model_family": model_family,
+            "selection_id": selection.get("selection_id"),
+            "prediction_inputs": {
+                "lp_sha256": _file_sha256(lp_csv),
+                "sp_sha256": _file_sha256(sp_csv),
+            },
+            "streaming_policy": "one complete UTC day at a time",
+        }
+        source_payload["component_provenance"] = component_provenance
         write_json(
             staging / "source.json",
-            {
-                "generated_at_utc": utc_now(),
-                "model_family": model_family,
-                "lp_csv": str(lp_csv),
-                "sp_csv": str(sp_csv),
-                "streaming_policy": "one complete UTC day at a time",
-            },
+            source_payload,
         )
+        boundary_asset = _stage_boundary(output_root, staging)
         if archive_dir.exists():
-            raise FileExistsError(f"refusing to overwrite immutable reanalysis archive: {archive_dir}")
+            raise FileExistsError(
+                f"refusing to overwrite immutable reanalysis archive: {archive_dir}"
+            )
         archive_dir.parent.mkdir(parents=True, exist_ok=True)
         os.replace(staging, archive_dir)
     except Exception:
@@ -427,15 +480,23 @@ def publish_wide_reanalysis(
             ),
         },
         "pulses": list(PULSES),
-        "variables": ["mtr_birds_km_h", "vid_birds_per_km2", "bird_u_ms", "bird_v_ms", "uncertainty", "support"],
+        "variables": [
+            "mtr_birds_km_h",
+            "vid_birds_per_km2",
+            "bird_u_ms",
+            "bird_v_ms",
+            "uncertainty_by_target",
+            "support",
+        ],
         "assets": {
             **assets,
-            "boundary": "assets/uk-boundary.geojson",
+            "boundary": str(archive_relative / boundary_asset),
         },
         "comparison": str(archive_relative / "validation.json"),
         "source": str(archive_relative / "source.json"),
-        "interpretation": "Historical modelled reanalysis. No phenology, solar-period, daylight, or timestamp predictor is used.",
+        **_model_contract(selection),
     }
+    latest["component_provenance"] = component_provenance
     write_json(output_root / "latest" / "gam-era5.json", latest)
     return latest
 
@@ -461,23 +522,44 @@ def _stream_wide_daily_assets(
     last_time: str | None = None
     current_day: str | None = None
     frames: dict[str, list[dict[str, object]]] = {}
+    reference_coordinates: set[tuple[float, float]] | None = None
+    previous_day: date | None = None
     samplers = {
         target: _ReservoirSampler(limit=100_000, seed=index)
         for index, target in enumerate(INTENSITY_TARGETS)
     }
 
     def flush(day: str) -> None:
-        nonlocal grid
+        nonlocal grid, previous_day, reference_coordinates
+        parsed_day = datetime.strptime(day, "%Y-%m-%d").date()
+        if previous_day is not None and parsed_day != previous_day + timedelta(days=1):
+            raise ValueError(f"{source} prediction dates are not contiguous at {day}")
+        if day in assets:
+            raise ValueError(f"{source} repeats prediction day {day}")
         if len(frames) != 24:
             raise ValueError(f"{source} has {len(frames)} hourly frames for {day}, expected 24")
+        expected_times = {f"{day}T{hour:02d}:00:00Z" for hour in range(24)}
+        if set(frames) != expected_times:
+            raise ValueError(f"{source} does not contain canonical 00-23 UTC frames for {day}")
         ordered = []
-        cell_counts = set()
+        frame_coordinates: list[set[tuple[float, float]]] = []
         for time_utc, cells in sorted(frames.items()):
             cells.sort(key=lambda cell: (-float(cell["latitude"]), float(cell["longitude"])))
-            cell_counts.add(len(cells))
-            ordered.append({"model_family": model_family, "pulse": pulse, "time_utc": time_utc, "cells": cells})
-        if len(cell_counts) != 1 or not cell_counts or next(iter(cell_counts)) < 1:
+            coordinates = {(float(cell["longitude"]), float(cell["latitude"])) for cell in cells}
+            if len(coordinates) != len(cells):
+                raise ValueError(f"{source} has duplicate grid cells at {time_utc}")
+            frame_coordinates.append(coordinates)
+            ordered.append(
+                {"model_family": model_family, "pulse": pulse, "time_utc": time_utc, "cells": cells}
+            )
+        if not frame_coordinates or not frame_coordinates[0]:
             raise ValueError(f"{source} has an inconsistent prediction grid for {day}")
+        if any(coordinates != frame_coordinates[0] for coordinates in frame_coordinates[1:]):
+            raise ValueError(f"{source} changes grid coordinates within {day}")
+        if reference_coordinates is None:
+            reference_coordinates = frame_coordinates[0]
+        elif frame_coordinates[0] != reference_coordinates:
+            raise ValueError(f"{source} changes grid coordinates at {day}")
         if grid is None:
             first_cells = ordered[0]["cells"]
             longitudes = sorted({float(cell["longitude"]) for cell in first_cells})
@@ -509,6 +591,7 @@ def _stream_wide_daily_assets(
             },
         )
         assets[day] = str(relative)
+        previous_day = parsed_day
 
     with source.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
@@ -516,7 +599,10 @@ def _stream_wide_daily_assets(
             missing = sorted(required - set(reader.fieldnames or []))
             raise ValueError(f"wide prediction CSV is missing fields: {', '.join(missing)}")
         for row in reader:
-            timestamp = _canonical_time(row.get("time_utc"))
+            parsed_time = _parse_time(str(row.get("time_utc") or ""))
+            if parsed_time.minute or parsed_time.second or parsed_time.microsecond:
+                raise ValueError(f"{source} contains a non-hourly timestamp: {row.get('time_utc')}")
+            timestamp = parsed_time.isoformat().replace("+00:00", "Z")
             day = timestamp[:10]
             if current_day is not None and day != current_day:
                 flush(current_day)
@@ -524,92 +610,41 @@ def _stream_wide_daily_assets(
             current_day = day
             first_time = min(first_time, timestamp) if first_time else timestamp
             last_time = max(last_time, timestamp) if last_time else timestamp
-            uncertainty_values = [
-                _number(row.get(f"uncertainty_{target}"))
+            uncertainty_by_target = {
+                target: _number(row.get(f"uncertainty_{target}"))
                 for target in (*INTENSITY_TARGETS, *VECTOR_TARGETS)
-            ]
-            uncertainty = max((value for value in uncertainty_values if value is not None), default=0.0)
+            }
+            longitude = _number(row.get("longitude"))
+            latitude = _number(row.get("latitude"))
+            support = _number(row.get("support"))
+            targets = {
+                target: _number(row.get(target)) for target in (*INTENSITY_TARGETS, *VECTOR_TARGETS)
+            }
+            if longitude is None or latitude is None or support is None or not 0 <= support <= 1:
+                raise ValueError(f"{source} contains invalid coordinates or support at {timestamp}")
+            if any(value is None for value in targets.values()):
+                raise ValueError(f"{source} contains a non-finite prediction at {timestamp}")
             cell = {
-                "longitude": float(row["longitude"]),
-                "latitude": float(row["latitude"]),
-                "support": float(row["support"]),
-                "uncertainty": uncertainty,
-                **{target: float(row[target]) for target in (*INTENSITY_TARGETS, *VECTOR_TARGETS)},
+                "longitude": longitude,
+                "latitude": latitude,
+                "support": support,
+                "uncertainty_by_target": uncertainty_by_target,
+                **targets,
             }
             for target in INTENSITY_TARGETS:
-                samplers[target].add(float(row[target]))
+                samplers[target].add(float(targets[target]))
             frames.setdefault(timestamp, []).append(cell)
     if current_day is None or first_time is None or last_time is None:
         raise ValueError(f"wide prediction CSV is empty: {source}")
     flush(current_day)
     assert grid is not None
-    return assets, grid, first_time, last_time, {
-        target: sampler.values for target, sampler in samplers.items()
-    }
-
-
-def build_prediction_frames(*, predictions_csv: Path, output: Path, model_family: str) -> dict[str, object]:
-    """Pivot batch-model long predictions into the browser frame contract.
-
-    The national ERA5 grid builder must provide a support score in ``[0, 1]``
-    for every cell.  This fail-closed requirement prevents an attractive map
-    from silently presenting unsupported extrapolation as equally reliable.
-    """
-
-    if model_family not in MODEL_FAMILIES:
-        raise ValueError(f"unknown model family: {model_family}")
-    with predictions_csv.open("r", encoding="utf-8", newline="") as handle:
-        rows = list(csv.DictReader(handle))
-    required = {"time_utc", "longitude", "latitude", "pulse", "target", "value", "support"}
-    if not rows or not required.issubset(rows[0]):
-        raise ValueError("prediction CSV must contain time_utc, longitude, latitude, pulse, target, value, and support")
-    cells: dict[tuple[str, str, str, str], dict[str, object]] = {}
-    for row in rows:
-        pulse = str(row.get("pulse") or "")
-        target = str(row.get("target") or "")
-        if pulse not in PULSES or target not in {*INTENSITY_TARGETS, *VECTOR_TARGETS}:
-            continue
-        key = (str(row["time_utc"]), pulse, str(row["longitude"]), str(row["latitude"]))
-        cell = cells.setdefault(
-            key,
-            {
-                "longitude": float(row["longitude"]),
-                "latitude": float(row["latitude"]),
-                "support": float(row["support"]),
-                "uncertainty": _number(row.get("uncertainty")) or 0.0,
-            },
-        )
-        cell[target] = float(row["value"])
-        if _number(row.get("uncertainty")) is not None:
-            cell["uncertainty"] = max(float(cell["uncertainty"]), float(row["uncertainty"]))
-    grouped: dict[tuple[str, str], list[dict[str, object]]] = {}
-    for (time_utc, pulse, _, _), cell in cells.items():
-        if not all(target in cell for target in (*INTENSITY_TARGETS, *VECTOR_TARGETS)):
-            continue
-        grouped.setdefault((time_utc, pulse), []).append(cell)
-    if not grouped:
-        raise ValueError("prediction CSV contains no complete intensity/vector cells")
-    longitudes = sorted({float(cell["longitude"]) for cell in cells.values()})
-    latitudes = sorted({float(cell["latitude"]) for cell in cells.values()}, reverse=True)
-    grid = {
-        "longitude_step": _grid_step(longitudes),
-        "latitude_step": _grid_step(latitudes),
-        "longitude_count": len(longitudes),
-        "latitude_count": len(latitudes),
-        "resolution": "ERA5 native 0.25 degree grid",
-    }
-    payload = {
-        "schema_version": REANALYSIS_SCHEMA_VERSION,
-        "generated_at_utc": utc_now(),
-        "model_family": model_family,
-        "grid": grid,
-        "frames": [
-            {"model_family": model_family, "pulse": pulse, "time_utc": time_utc, "cells": sorted(values, key=lambda cell: (-float(cell["latitude"]), float(cell["longitude"]))) }
-            for (time_utc, pulse), values in sorted(grouped.items())
-        ],
-    }
-    write_json(output, payload)
-    return {key: value for key, value in payload.items() if key != "frames"} | {"frame_count": len(payload["frames"])}
+    return (
+        assets,
+        grid,
+        first_time,
+        last_time,
+        {target: sampler.values for target, sampler in samplers.items()},
+    )
 
 
 def _normalise_row(row: dict[str, Any], min_profiles: int) -> dict[str, object] | None:
@@ -622,32 +657,64 @@ def _normalise_row(row: dict[str, Any], min_profiles: int) -> dict[str, object] 
     vid = _number(row.get("observed_mean_vid_birds_per_km2"))
     speed = _number(row.get("observed_mean_ground_speed_ms"))
     direction = _number(row.get("observed_dominant_direction_deg"))
-    if profiles is None or profiles < min_profiles or rain is None or rain > 0.5 or mtr is None or vid is None:
+    if (
+        profiles is None
+        or profiles < min_profiles
+        or rain is None
+        or rain > 0.5
+        or mtr is None
+        or vid is None
+    ):
         return None
-    latitude = _number(row.get("latitude") or row.get("observed_latitude"))
-    longitude = _number(row.get("longitude") or row.get("observed_longitude"))
+    latitude = _number(row.get("latitude"))
+    if latitude is None:
+        latitude = _number(row.get("observed_latitude"))
+    longitude = _number(row.get("longitude"))
+    if longitude is None:
+        longitude = _number(row.get("observed_longitude"))
     if latitude is None or longitude is None:
         return None
     easting, northing = _project(longitude, latitude)
     result: dict[str, object] = {
-        "radar": str(row.get("radar") or ""), "pulse": pulse, "time_utc": _canonical_time(row.get("time_utc")),
-        "latitude": latitude, "longitude": longitude, "easting_m": easting, "northing_m": northing,
-        "mtr_birds_km_h": mtr, "vid_birds_per_km2": vid, "profile_count": profiles, "rain_suspect_fraction": rain,
+        "radar": str(row.get("radar") or ""),
+        "pulse": pulse,
+        "time_utc": _canonical_time(row.get("time_utc")),
+        "latitude": latitude,
+        "longitude": longitude,
+        "easting_m": easting,
+        "northing_m": northing,
+        "mtr_birds_km_h": mtr,
+        "vid_birds_per_km2": vid,
+        "profile_count": profiles,
+        "rain_suspect_fraction": rain,
     }
     if speed is not None and direction is not None:
         radians = math.radians(direction)
         result["bird_u_ms"] = speed * math.sin(radians)
         result["bird_v_ms"] = speed * math.cos(radians)
     for target, aliases in _ERA5_ALIASES.items():
-        value = next((_number(row.get(alias)) for alias in aliases if _number(row.get(alias)) is not None), None)
+        value = next(
+            (_number(row.get(alias)) for alias in aliases if _number(row.get(alias)) is not None),
+            None,
+        )
         if value is not None:
             result[target] = value
     return result
 
 
 _ERA5_ALIASES = {
-    "temperature_850_k": ("t_pressure_level_850", "t_pressure_level_850.0", "t_isobaricInhPa_850", "temperature_850"),
-    "relative_humidity_850_percent": ("r_pressure_level_850", "r_pressure_level_850.0", "r_isobaricInhPa_850", "relative_humidity_850"),
+    "temperature_850_k": (
+        "t_pressure_level_850",
+        "t_pressure_level_850.0",
+        "t_isobaricInhPa_850",
+        "temperature_850",
+    ),
+    "relative_humidity_850_percent": (
+        "r_pressure_level_850",
+        "r_pressure_level_850.0",
+        "r_isobaricInhPa_850",
+        "relative_humidity_850",
+    ),
     "u_850_ms": ("u_pressure_level_850", "u_pressure_level_850.0", "u_isobaricInhPa_850", "u_850"),
     "v_850_ms": ("v_pressure_level_850", "v_pressure_level_850.0", "v_isobaricInhPa_850", "v_850"),
     "u_925_ms": ("u_pressure_level_925", "u_pressure_level_925.0", "u_isobaricInhPa_925", "u_925"),
@@ -658,7 +725,12 @@ _ERA5_ALIASES = {
     "mean_sea_level_pressure_pa": ("msl", "mean_sea_level_pressure"),
     "total_cloud_cover_fraction": ("tcc", "total_cloud_cover"),
     "boundary_layer_height_m": ("blh", "boundary_layer_height"),
-    "hourly_precipitation_m": ("tp_hourly", "total_precipitation_hourly", "tp", "total_precipitation"),
+    "hourly_precipitation_m": (
+        "tp_hourly",
+        "total_precipitation_hourly",
+        "tp",
+        "total_precipitation",
+    ),
 }
 
 
@@ -670,8 +742,23 @@ def _complete_days(rows: list[dict[str, object]]):
     return [day for day, present in hours.items() if len(present) == 24]
 
 
-def _fieldnames(rows: list[dict[str, object]], era5_features: tuple[str, ...] = ERA5_FEATURES) -> list[str]:
-    preferred = ["radar", "pulse", "time_utc", "latitude", "longitude", "easting_m", "northing_m", *INTENSITY_TARGETS, *VECTOR_TARGETS, "profile_count", "rain_suspect_fraction", *era5_features]
+def _fieldnames(
+    rows: list[dict[str, object]], era5_features: tuple[str, ...] = ERA5_FEATURES
+) -> list[str]:
+    preferred = [
+        "radar",
+        "pulse",
+        "time_utc",
+        "latitude",
+        "longitude",
+        "easting_m",
+        "northing_m",
+        *INTENSITY_TARGETS,
+        *VECTOR_TARGETS,
+        "profile_count",
+        "rain_suspect_fraction",
+        *era5_features,
+    ]
     observed = {key for row in rows for key in row}
     return [key for key in preferred if key in observed] + sorted(observed - set(preferred))
 
@@ -692,23 +779,30 @@ def _grid_step(values: list[float]) -> float:
     return min(steps) if steps else 0.25
 
 
-def _metric_index(payload: dict[str, Any], *, validation: str) -> dict[tuple[str, str], dict[str, Any]]:
+def _metric_index(
+    payload: dict[str, Any], *, validation: str
+) -> dict[tuple[str, str], dict[str, Any]]:
     rows = payload.get("metrics")
     if not isinstance(rows, list):
         return {}
-    matching = [row for row in rows if isinstance(row, dict) and row.get("validation", "leave_one_radar_out") == validation]
+    matching = [
+        row
+        for row in rows
+        if isinstance(row, dict) and row.get("validation", "leave_one_radar_out") == validation
+    ]
     return {(str(row.get("pulse")), str(row.get("target"))): row for row in matching}
 
 
 def _has_validation_rows(payload: dict[str, Any], validation: str) -> bool:
     rows = payload.get("metrics")
     return isinstance(rows, list) and any(
-        isinstance(row, dict) and row.get("validation") == validation
-        for row in rows
+        isinstance(row, dict) and row.get("validation") == validation for row in rows
     )
 
 
-def _vectors_not_worse(gamm: dict[tuple[str, str], dict[str, Any]], xgb: dict[tuple[str, str], dict[str, Any]]) -> bool:
+def _vectors_not_worse(
+    gamm: dict[tuple[str, str], dict[str, Any]], xgb: dict[tuple[str, str], dict[str, Any]]
+) -> bool:
     for pulse in PULSES:
         for target in VECTOR_TARGETS:
             baseline, candidate = gamm.get((pulse, target)), xgb.get((pulse, target))
@@ -727,7 +821,12 @@ def _improvement(baseline: object, candidate: object) -> float:
 
 
 def _canonical_time(value: object) -> str:
-    return _parse_time(str(value)).replace(minute=0, second=0, microsecond=0).isoformat().replace("+00:00", "Z")
+    return (
+        _parse_time(str(value))
+        .replace(minute=0, second=0, microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
 
 def _parse_time(value: str) -> datetime:

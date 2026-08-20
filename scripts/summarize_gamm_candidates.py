@@ -8,7 +8,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-
 PRIMARY_INTENSITY = (
     ("lp", "mtr_birds_km_h"),
     ("lp", "vid_birds_per_km2"),
@@ -43,9 +42,19 @@ def compare(
         value = candidate.get(key)
         row: dict[str, Any] = {"pulse": key[0], "target": key[1]}
         if base:
-            row.update({f"baseline_{field}": base.get(field) for field in ("r_squared", "rmse", "mae", "bias")})
+            row.update(
+                {
+                    f"baseline_{field}": base.get(field)
+                    for field in ("r_squared", "rmse", "mae", "bias")
+                }
+            )
         if value:
-            row.update({f"candidate_{field}": value.get(field) for field in ("r_squared", "rmse", "mae", "bias")})
+            row.update(
+                {
+                    f"candidate_{field}": value.get(field)
+                    for field in ("r_squared", "rmse", "mae", "bias")
+                }
+            )
         if base and value:
             row["delta_r_squared"] = value["r_squared"] - base["r_squared"]
             row["delta_rmse"] = value["rmse"] - base["rmse"]
@@ -67,7 +76,9 @@ def compare(
         "metrics": rows,
         "selection_gate": {
             "intensity_non_regression": intensity_non_regression,
-            "lp_vector_mean_r_squared_delta": sum(vector_rows) / len(vector_rows) if vector_rows else None,
+            "lp_vector_mean_r_squared_delta": sum(vector_rows) / len(vector_rows)
+            if vector_rows
+            else None,
             "lp_vector_gain": vector_gain,
             "eligible_for_follow_up": intensity_non_regression and vector_gain,
             "rule": "A candidate is eligible only when each primary intensity R2 is within 0.01 of baseline and mean LP vector R2 improves by at least 0.02.",
@@ -84,7 +95,9 @@ def markdown(payload: dict[str, Any]) -> str:
     ]
     for name, result in payload["candidates"].items():
         if result["status"] != "evaluated":
-            lines.extend([f"## {name}", "", f"Metrics unavailable: `{result['metrics_path']}`.", ""])
+            lines.extend(
+                [f"## {name}", "", f"Metrics unavailable: `{result['metrics_path']}`.", ""]
+            )
             continue
         gate = result["selection_gate"]
         lines.extend(
@@ -122,7 +135,11 @@ def main() -> None:
         if not path.exists():
             candidates[name] = {"status": "missing", "metrics_path": str(path)}
             continue
-        candidates[name] = {"status": "evaluated", "metrics_path": str(path), **compare(baseline, read_loro_metrics(path))}
+        candidates[name] = {
+            "status": "evaluated",
+            "metrics_path": str(path),
+            **compare(baseline, read_loro_metrics(path)),
+        }
 
     payload = {"baseline_metrics_path": str(args.baseline), "candidates": candidates}
     args.output_json.parent.mkdir(parents=True, exist_ok=True)

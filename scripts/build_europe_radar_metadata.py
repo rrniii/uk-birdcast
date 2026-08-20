@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 from collections import defaultdict
 from glob import glob
-import json
 from pathlib import Path
 
 
@@ -115,7 +115,9 @@ def build(args: argparse.Namespace) -> dict[str, object]:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--aloft-parquet", required=True, help="DuckDB glob for derived hourly partitions")
+    parser.add_argument(
+        "--aloft-parquet", required=True, help="DuckDB glob for derived hourly partitions"
+    )
     parser.add_argument("--uk-radars", required=True)
     parser.add_argument("--overrides")
     parser.add_argument("--maximum-support-km", type=float, default=250.0)

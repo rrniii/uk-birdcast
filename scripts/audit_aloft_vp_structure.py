@@ -23,15 +23,33 @@ from urllib.parse import urlencode
 from urllib.request import urlopen
 from xml.etree import ElementTree
 
-
 PUBLIC_BASE = "https://aloftdata.s3-eu-west-1.amazonaws.com"
 DEFAULT_RADARS = ("dksam", "robuc", "rocra", "romed", "rotim")
 DEFAULT_DAYS = ("20260115", "20260415", "20260715")
 SELECTED_ATTRIBUTES = {
-    "product", "object", "version", "quantity", "gain", "offset",
-    "nodata", "undetect", "height", "height_min", "height_max",
-    "levels", "interval", "rscale", "nbins", "startdate", "starttime",
-    "enddate", "endtime", "date", "time", "source", "radar",
+    "product",
+    "object",
+    "version",
+    "quantity",
+    "gain",
+    "offset",
+    "nodata",
+    "undetect",
+    "height",
+    "height_min",
+    "height_max",
+    "levels",
+    "interval",
+    "rscale",
+    "nbins",
+    "startdate",
+    "starttime",
+    "enddate",
+    "endtime",
+    "date",
+    "time",
+    "source",
+    "radar",
 }
 DYNAMIC_ATTRIBUTES = {"date", "time", "startdate", "starttime", "enddate", "endtime"}
 VP_TO_VPTS_FIELDS = {
@@ -88,7 +106,11 @@ def s3_day_objects(*, public_base: str, radar: str, day: str, timeout_seconds: f
     with urlopen(f"{public_base.rstrip('/')}/?{query}", timeout=timeout_seconds) as response:
         root = ElementTree.fromstring(response.read())
     namespace = "{http://s3.amazonaws.com/doc/2006-03-01/}"
-    return [item.text for item in root.findall(f".//{namespace}Key") if item.text and item.text.endswith(".h5")]
+    return [
+        item.text
+        for item in root.findall(f".//{namespace}Key")
+        if item.text and item.text.endswith(".h5")
+    ]
 
 
 def sample_keys(keys: list[str], count: int) -> list[str]:
@@ -96,7 +118,11 @@ def sample_keys(keys: list[str], count: int) -> list[str]:
         raise ValueError("sample count must be positive")
     if len(keys) <= count:
         return keys
-    indices = {round(index * (len(keys) - 1) / (count - 1)) for index in range(count)} if count > 1 else {len(keys) // 2}
+    indices = (
+        {round(index * (len(keys) - 1) / (count - 1)) for index in range(count)}
+        if count > 1
+        else {len(keys) // 2}
+    )
     return [keys[index] for index in sorted(indices)]
 
 
@@ -141,11 +167,23 @@ def inspect_hdf5(payload: bytes) -> dict[str, Any]:
     datasets: list[dict[str, Any]] = []
     dataset_nodes: list[tuple[dict[str, Any], Any]] = []
     with h5py.File(io.BytesIO(payload), "r") as handle:
-        groups.append({"path": "/", "attribute_keys": sorted(map(str, handle.attrs.keys())), "metadata": selected_attributes(handle.attrs)})
+        groups.append(
+            {
+                "path": "/",
+                "attribute_keys": sorted(map(str, handle.attrs.keys())),
+                "metadata": selected_attributes(handle.attrs),
+            }
+        )
 
         def visitor(path: str, node: Any) -> None:
             if isinstance(node, h5py.Group):
-                groups.append({"path": f"/{path}", "attribute_keys": sorted(map(str, node.attrs.keys())), "metadata": selected_attributes(node.attrs)})
+                groups.append(
+                    {
+                        "path": f"/{path}",
+                        "attribute_keys": sorted(map(str, node.attrs.keys())),
+                        "metadata": selected_attributes(node.attrs),
+                    }
+                )
                 return
             record = {
                 "path": f"/{path}",
@@ -176,18 +214,69 @@ def inspect_hdf5(payload: bytes) -> dict[str, Any]:
                 record["numeric_summary"] = summary
 
     fingerprint = {
-        "groups": [{"path": group["path"], "attribute_keys": group["attribute_keys"], "metadata": selected_attributes(group["metadata"], include_dynamic=False)} for group in groups],
-        "datasets": [{"path": dataset["path"], "shape": dataset["shape"], "dtype": dataset["dtype"], "attribute_keys": dataset["attribute_keys"], "metadata": selected_attributes(dataset["metadata"], include_dynamic=False)} for dataset in datasets],
+        "groups": [
+            {
+                "path": group["path"],
+                "attribute_keys": group["attribute_keys"],
+                "metadata": selected_attributes(group["metadata"], include_dynamic=False),
+            }
+            for group in groups
+        ],
+        "datasets": [
+            {
+                "path": dataset["path"],
+                "shape": dataset["shape"],
+                "dtype": dataset["dtype"],
+                "attribute_keys": dataset["attribute_keys"],
+                "metadata": selected_attributes(dataset["metadata"], include_dynamic=False),
+            }
+            for dataset in datasets
+        ],
     }
     return {
-        "schema_fingerprint_sha256": hashlib.sha256(json.dumps(fingerprint, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest(),
+        "schema_fingerprint_sha256": hashlib.sha256(
+            json.dumps(fingerprint, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
         "groups": groups,
         "datasets": datasets,
-        "quantity_values": sorted({str(record["metadata"]["quantity"]) for record in [*groups, *datasets] if record["metadata"].get("quantity") is not None}),
+        "quantity_values": sorted(
+            {
+                str(record["metadata"]["quantity"])
+                for record in [*groups, *datasets]
+                if record["metadata"].get("quantity") is not None
+            }
+        ),
         "altitude_metadata": [
-            {"path": record["path"], "metadata": {key: value for key, value in record["metadata"].items() if key in {"height", "height_min", "height_max", "levels", "interval", "nbins", "rscale"}}}
+            {
+                "path": record["path"],
+                "metadata": {
+                    key: value
+                    for key, value in record["metadata"].items()
+                    if key
+                    in {
+                        "height",
+                        "height_min",
+                        "height_max",
+                        "levels",
+                        "interval",
+                        "nbins",
+                        "rscale",
+                    }
+                },
+            }
             for record in [*groups, *datasets]
-            if any(key in record["metadata"] for key in {"height", "height_min", "height_max", "levels", "interval", "nbins", "rscale"})
+            if any(
+                key in record["metadata"]
+                for key in {
+                    "height",
+                    "height_min",
+                    "height_max",
+                    "levels",
+                    "interval",
+                    "nbins",
+                    "rscale",
+                }
+            )
         ],
         "quantity_summaries": {
             str(record["quantity"]): record.get("numeric_summary")
@@ -226,7 +315,9 @@ def vpts_url(*, public_base: str, radar: str, day: str) -> str:
     return f"{public_base.rstrip('/')}/baltrad/daily/{radar.lower()}/{day[:4]}/{radar.lower()}_vpts_{day}.csv"
 
 
-def vpts_rows_by_source(*, public_base: str, radar: str, day: str, timeout_seconds: float) -> tuple[str, dict[str, list[dict[str, str]]]]:
+def vpts_rows_by_source(
+    *, public_base: str, radar: str, day: str, timeout_seconds: float
+) -> tuple[str, dict[str, list[dict[str, str]]]]:
     """Stream one daily VPTS CSV and index it by immutable source VP filename."""
     url = vpts_url(public_base=public_base, radar=radar, day=day)
     with urlopen(url, timeout=timeout_seconds) as response:
@@ -249,7 +340,10 @@ def float_or_none(value: Any) -> float | None:
 
 def vp_value(value: Any, metadata: dict[str, Any]) -> float | None:
     parsed = float_or_none(value)
-    if parsed is None or parsed in {float_or_none(metadata.get("nodata")), float_or_none(metadata.get("undetect"))}:
+    if parsed is None or parsed in {
+        float_or_none(metadata.get("nodata")),
+        float_or_none(metadata.get("undetect")),
+    }:
         return None
     return parsed * float(metadata.get("gain", 1.0)) + float(metadata.get("offset", 0.0))
 
@@ -275,10 +369,13 @@ def compare_vp_to_vpts(payload: bytes, rows: list[dict[str, str]] | None) -> dic
         import h5py
         import numpy as np
     except ImportError as error:  # pragma: no cover - deployment dependency
-        raise RuntimeError("h5py and numpy are required for VP/VPTS reconstruction auditing") from error
+        raise RuntimeError(
+            "h5py and numpy are required for VP/VPTS reconstruction auditing"
+        ) from error
 
     profiles: dict[str, tuple[dict[str, Any], Any]] = {}
     with h5py.File(io.BytesIO(payload), "r") as handle:
+
         def visitor(path: str, node: Any) -> None:
             if not isinstance(node, h5py.Dataset) or not path.endswith("/data"):
                 return
@@ -373,10 +470,18 @@ def summarise_radar(samples: Iterable[dict[str, Any]]) -> dict[str, Any]:
         quantity: {
             "profile_count": len(metrics),
             "matched_value_count": sum(int(metric["matched_value_count"]) for metric in metrics),
-            "matched_missing_count": sum(int(metric["matched_missing_count"]) for metric in metrics),
-            "mismatched_missing_count": sum(int(metric["mismatched_missing_count"]) for metric in metrics),
+            "matched_missing_count": sum(
+                int(metric["matched_missing_count"]) for metric in metrics
+            ),
+            "mismatched_missing_count": sum(
+                int(metric["mismatched_missing_count"]) for metric in metrics
+            ),
             "max_absolute_difference": max(
-                (float(metric["max_absolute_difference"]) for metric in metrics if metric["max_absolute_difference"] is not None),
+                (
+                    float(metric["max_absolute_difference"])
+                    for metric in metrics
+                    if metric["max_absolute_difference"] is not None
+                ),
                 default=None,
             ),
             "within_1e-6_count": sum(int(metric["within_1e-6_count"]) for metric in metrics),
@@ -388,7 +493,9 @@ def summarise_radar(samples: Iterable[dict[str, Any]]) -> dict[str, Any]:
         "schema_fingerprint_count": len({row["schema_fingerprint_sha256"] for row in rows}),
         "schema_fingerprints": sorted({row["schema_fingerprint_sha256"] for row in rows}),
         "quantity_values": sorted({value for row in rows for value in row["quantity_values"]}),
-        "median_content_length_bytes": median([row["content_length"] for row in rows]) if rows else None,
+        "median_content_length_bytes": median([row["content_length"] for row in rows])
+        if rows
+        else None,
         "quantity_summary": quantity_summary,
         "vpts_reconstruction_summary": reconstruction_summary,
         "altitude_metadata": [row["altitude_metadata"] for row in rows],
@@ -409,7 +516,9 @@ def audit(
         samples: list[dict[str, Any]] = []
         unavailable: list[dict[str, str]] = []
         for day in days:
-            keys = s3_day_objects(public_base=public_base, radar=radar, day=day, timeout_seconds=timeout_seconds)
+            keys = s3_day_objects(
+                public_base=public_base, radar=radar, day=day, timeout_seconds=timeout_seconds
+            )
             if not keys:
                 unavailable.append({"day": day, "reason": "no_public_vp_objects"})
                 continue
@@ -423,16 +532,24 @@ def audit(
                         timeout_seconds=timeout_seconds,
                     )
                 except OSError as error:
-                    unavailable.append({"day": day, "reason": f"vpts_unavailable:{error.__class__.__name__}"})
+                    unavailable.append(
+                        {"day": day, "reason": f"vpts_unavailable:{error.__class__.__name__}"}
+                    )
             for key in sample_keys(keys, samples_per_day):
                 source_file = key.rsplit("/", 1)[-1]
-                samples.append(fetch_and_inspect(
-                    public_base=public_base,
-                    key=key,
-                    timeout_seconds=timeout_seconds,
-                    vpts_rows=vpts_rows.get(source_file, []) if vpts_rows is not None else None,
-                ))
-        results[radar] = {"summary": summarise_radar(samples), "samples": samples, "unavailable": unavailable}
+                samples.append(
+                    fetch_and_inspect(
+                        public_base=public_base,
+                        key=key,
+                        timeout_seconds=timeout_seconds,
+                        vpts_rows=vpts_rows.get(source_file, []) if vpts_rows is not None else None,
+                    )
+                )
+        results[radar] = {
+            "summary": summarise_radar(samples),
+            "samples": samples,
+            "unavailable": unavailable,
+        }
     return {
         "schema_version": "birdcast-euro-aloft-vp-structure-audit-1.1",
         "purpose": "Compare public VP schema and metadata at MTR scale outlier radars before modelling.",
@@ -445,12 +562,18 @@ def audit(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--radar", action="append", default=[], help="Aloft radar identifier; repeatable")
+    parser.add_argument(
+        "--radar", action="append", default=[], help="Aloft radar identifier; repeatable"
+    )
     parser.add_argument("--day", action="append", default=[], help="UTC day YYYYMMDD; repeatable")
     parser.add_argument("--samples-per-day", type=int, default=3)
     parser.add_argument("--public-base", default=PUBLIC_BASE)
     parser.add_argument("--timeout-seconds", type=float, default=60.0)
-    parser.add_argument("--compare-vpts", action="store_true", help="Compare sampled VP profiles with same-source daily VPTS rows")
+    parser.add_argument(
+        "--compare-vpts",
+        action="store_true",
+        help="Compare sampled VP profiles with same-source daily VPTS rows",
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     report = audit(
@@ -463,7 +586,16 @@ def main() -> None:
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps({"output": str(args.output), "radar_count": len(report["radars"]), "raw_source_persisted": False}, indent=2))
+    print(
+        json.dumps(
+            {
+                "output": str(args.output),
+                "radar_count": len(report["radars"]),
+                "raw_source_persisted": False,
+            },
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

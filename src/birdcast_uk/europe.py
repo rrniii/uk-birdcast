@@ -8,20 +8,23 @@ from __future__ import annotations
 
 import csv
 import gzip
-from collections import defaultdict
-from dataclasses import asdict, dataclass
-from datetime import date, datetime, timezone
 import hashlib
 import io
 import json
 import math
-from pathlib import Path
+import os
+import re
 import shutil
 import signal
 import time
+from collections import defaultdict
+from dataclasses import asdict, dataclass
+from datetime import date
+from pathlib import Path
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import Any, BinaryIO, Callable, Iterable, Iterator
-from urllib.request import urlopen
 from urllib.error import HTTPError, URLError
+from urllib.request import urlopen
 
 from .archive import VptsObject
 from .config import (
@@ -39,8 +42,21 @@ from .config import (
 from .observed import _hourly_rows, _profile_from_layers, _timestamp
 from .static_artifacts import utc_now, write_json
 
-
 OpenUrl = Callable[..., BinaryIO]
+
+
+_MODEL_ID_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?\Z")
+_PREDICTION_VALUE_FIELDS = (
+    "mtr_birds_km_h",
+    "vid_birds_per_km2",
+    "bird_u_ms",
+    "bird_v_ms",
+    "nearest_radar_km",
+)
+_PREDICTION_UNCERTAINTY_FIELDS = (
+    "uncertainty_mtr_birds_km_h",
+    "uncertainty_vid_birds_per_km2",
+)
 
 
 @dataclass(frozen=True)
@@ -148,8 +164,13 @@ def build_aloft_cohort(
                 advertised_day_count=count,
                 first_day=ordered[0],
                 last_day=ordered[-1],
-                role=("training" if count >= minimum_training_days else "transfer-validation"
-                      if count >= minimum_transfer_days else "excluded-insufficient-coverage"),
+                role=(
+                    "training"
+                    if count >= minimum_training_days
+                    else "transfer-validation"
+                    if count >= minimum_transfer_days
+                    else "excluded-insufficient-coverage"
+                ),
             )
         )
     return entries
@@ -177,7 +198,15 @@ def stream_aloft_hourly(
             profiles_by_time: dict[str, list[dict[str, Any]]] = defaultdict(list)
             with response:
                 text = io.TextIOWrapper(io.BufferedReader(hashing), encoding="utf-8", newline="")
-                for row in csv.DictReader(text):
+                reader = csv.DictReader(text)
+                required_columns = {"datetime", "height", "dens"}
+                missing_columns = required_columns - set(reader.fieldnames or [])
+                if missing_columns:
+                    raise ValueError(
+                        "Aloft VPTS CSV is missing required columns: "
+                        + ", ".join(sorted(missing_columns))
+                    )
+                for row in reader:
                     audit.row_count += 1
                     timestamp = str(row.get("datetime") or "")
                     if not timestamp:
@@ -195,6 +224,13 @@ def stream_aloft_hourly(
         return [], audit
     audit.bytes_read = hashing.bytes_read
     audit.sha256 = hashing.digest.hexdigest()
+    if audit.content_length is not None and audit.content_length != audit.bytes_read:
+        raise ValueError(
+            f"Aloft VPTS content length changed: expected {audit.content_length}, "
+            f"read {audit.bytes_read}"
+        )
+    if audit.row_count == 0:
+        raise ValueError("Aloft VPTS CSV contains no data rows")
 
     profiles = []
     for _, layers in sorted(profiles_by_time.items()):
@@ -212,6 +248,8 @@ def stream_aloft_hourly(
             )
         )
     audit.profile_count = len(profiles)
+    if not profiles:
+        raise ValueError("Aloft VPTS CSV contains no parseable profiles")
     rows = _hourly_rows(profiles, include_phenology=False)
     for row in rows:
         direction = _number(row.get("dominant_direction_deg"))
@@ -223,14 +261,20 @@ def stream_aloft_hourly(
                 "source_reference": EUROPE_REFERENCE_SOURCE,
                 "latitude": _profile_coordinate(profiles, "latitude"),
                 "longitude": _profile_coordinate(profiles, "longitude"),
-                "bird_u_ms": speed * math.sin(math.radians(direction)) if _finite(speed, direction) else None,
-                "bird_v_ms": speed * math.cos(math.radians(direction)) if _finite(speed, direction) else None,
+                "bird_u_ms": speed * math.sin(math.radians(direction))
+                if _finite(speed, direction)
+                else None,
+                "bird_v_ms": speed * math.cos(math.radians(direction))
+                if _finite(speed, direction)
+                else None,
                 "source_day": obj.day,
                 "source_url": obj.url,
                 "source_sha256": audit.sha256,
             }
         )
     audit.hourly_row_count = len(rows)
+    if not rows:
+        raise ValueError("Aloft VPTS CSV contains no usable hourly observations")
     return rows, audit
 
 
@@ -246,7 +290,9 @@ def write_aloft_cohort(entries: Iterable[AloftCohortEntry], output: Path) -> dic
         "entry_count": len(records),
         "training_count": sum(row["role"] == "training" for row in records),
         "transfer_validation_count": sum(row["role"] == "transfer-validation" for row in records),
-        "excluded_insufficient_coverage_count": sum(row["role"] == "excluded-insufficient-coverage" for row in records),
+        "excluded_insufficient_coverage_count": sum(
+            row["role"] == "excluded-insufficient-coverage" for row in records
+        ),
         "entries": records,
     }
     write_json(output, payload)
@@ -317,7 +363,9 @@ def stream_aloft_chunk(
     radar = str(chunk["radar"])
     year = str(chunk["year"])
     month = str(chunk["month"])
-    output = output_root / f"source={source}" / f"year={year}" / f"month={month}" / f"{radar}.parquet"
+    output = (
+        output_root / f"source={source}" / f"year={year}" / f"month={month}" / f"{radar}.parquet"
+    )
     manifest_path = output.with_suffix(output.suffix + ".manifest.json")
     if output.is_file() and manifest_path.is_file():
         existing = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -353,6 +401,8 @@ def stream_aloft_chunk(
                 time.sleep(retry_delay_seconds * (attempt + 1))
         for row in hourly:
             row["cohort_role"] = chunk.get("role")
+        if audit.availability != "available" or not hourly:
+            raise ValueError(f"advertised Aloft source day is unavailable or empty: {obj.day}")
         rows.extend(hourly)
         audits.append(audit.to_dict())
     try:
@@ -374,6 +424,8 @@ def stream_aloft_chunk(
         "role": chunk.get("role"),
         "derived_hourly_path": str(output),
         "day_count": len(audits),
+        "available_day_count": sum(audit.get("availability") == "available" for audit in audits),
+        "unavailable_day_count": sum(audit.get("availability") != "available" for audit in audits),
         "hourly_row_count": len(rows),
         "audits": audits,
     }
@@ -435,8 +487,42 @@ def build_europe_manifest(
     output: Path,
     release_status: str = "research-preview",
     radar_asset: str | None = None,
+    available_dates: Iterable[str] | None = None,
 ) -> dict[str, Any]:
-    payload = {
+    payload = _europe_manifest_payload(
+        model_id=model_id,
+        first_time_utc=first_time_utc,
+        latest_time_utc=latest_time_utc,
+        aloft_radar_count=aloft_radar_count,
+        uk_sp_radar_count=uk_sp_radar_count,
+        grid_asset=grid_asset,
+        daily_asset_template=daily_asset_template,
+        validation_url=validation_url,
+        release_status=release_status,
+        radar_asset=radar_asset,
+        available_dates=available_dates,
+    )
+    write_json(output, payload)
+    return payload
+
+
+def _europe_manifest_payload(
+    *,
+    model_id: str,
+    first_time_utc: str,
+    latest_time_utc: str,
+    aloft_radar_count: int,
+    uk_sp_radar_count: int,
+    grid_asset: str,
+    daily_asset_template: str,
+    validation_url: str,
+    release_status: str,
+    radar_asset: str | None,
+    available_dates: Iterable[str] | None,
+) -> dict[str, Any]:
+    model_id = _validate_model_id(model_id)
+    dates = sorted(set(available_dates or ()))
+    return {
         "schema_version": "birdcast-euro-reanalysis-1.0",
         "data_available": True,
         "generated_at_utc": utc_now(),
@@ -447,6 +533,7 @@ def build_europe_manifest(
         "training_sources": ["aloft-baltrad", "jasmin-uk-sp"],
         "first_time_utc": first_time_utc,
         "latest_time_utc": latest_time_utc,
+        "available_dates": dates,
         "aloft_radar_count": aloft_radar_count,
         "uk_sp_radar_count": uk_sp_radar_count,
         "crs": "EPSG:3035",
@@ -455,6 +542,11 @@ def build_europe_manifest(
             "interpolation_distance_km": EUROPE_INTERPOLATION_DISTANCE_KM,
             "maximum_distance_km": EUROPE_MAX_SUPPORT_DISTANCE_KM,
             "land_mask_applied": False,
+        },
+        "uncertainty_contract": {
+            "fields": list(_PREDICTION_UNCERTAINTY_FIELDS),
+            "scale": "model linear-predictor standard error",
+            "calibrated_prediction_uncertainty": False,
         },
         "assets": {
             "grid": grid_asset,
@@ -468,8 +560,6 @@ def build_europe_manifest(
             "reference scale. It is not a forecast or absolute biological calibration."
         ),
     }
-    write_json(output, payload)
-    return payload
 
 
 def publish_europe_predictions(
@@ -485,74 +575,32 @@ def publish_europe_predictions(
 ) -> dict[str, Any]:
     """Publish a fixed grid and immutable daily assets for the Europe page."""
 
+    model_id = _validate_model_id(model_id)
+    archive_root, assets = _europe_release_paths(output_root, model_id)
     with predictions_csv.open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     if not rows:
         raise ValueError("Europe prediction CSV has no rows")
-    coordinates = sorted(
-        {
-            (_number(row.get("longitude")), _number(row.get("latitude")))
-            for row in rows
-            if _finite(_number(row.get("longitude")), _number(row.get("latitude")))
-        }
-    )
+    coordinates = _prediction_coordinates_from_rows(rows, predictions_csv)
+    if not coordinates:
+        raise ValueError("Europe prediction CSV has no valid coordinates")
     cell_index = {coordinate: index for index, coordinate in enumerate(coordinates)}
+    daily_frames, row_count = _prediction_frames(rows, cell_index, predictions_csv)
+    published_days = sorted(daily_frames)
+    first = str(daily_frames[published_days[0]][0]["time_utc"])
+    latest_time = str(daily_frames[published_days[-1]][-1]["time_utc"])
     grid = {
         "schema_version": "birdcast-euro-grid-1.0",
         "crs": "EPSG:4326",
         "cells": [{"longitude": lon, "latitude": lat} for lon, lat in coordinates],
     }
-    assets = output_root / "archive" / "reanalysis" / model_id
-    latest = output_root / "latest"
-    assets.mkdir(parents=True, exist_ok=True)
-    latest.mkdir(parents=True, exist_ok=True)
-    _write_compact_json(assets / "grid.json", grid)
-    radar_asset = None
-    if radars_json is not None:
-        radar_payload = json.loads(radars_json.read_text(encoding="utf-8"))
-        _write_compact_json(assets / "radars.json", radar_payload)
-        radar_asset = f"archive/reanalysis/{model_id}/radars.json"
-
-    by_day: dict[str, dict[str, list[dict[str, str]]]] = defaultdict(lambda: defaultdict(list))
-    for row in rows:
-        timestamp = str(row.get("time_utc") or "")
-        if len(timestamp) < 10:
-            continue
-        by_day[timestamp[:10]][timestamp].append(row)
-    for day, times in sorted(by_day.items()):
-        frames = []
-        for timestamp, frame_rows in sorted(times.items()):
-            size = len(coordinates)
-            frame: dict[str, Any] = {
-                "time_utc": timestamp,
-                "mtr_birds_km_h": [None] * size,
-                "vid_birds_per_km2": [None] * size,
-                "bird_u_ms": [None] * size,
-                "bird_v_ms": [None] * size,
-                "uncertainty": [None] * size,
-                "support": [None] * size,
-                "nearest_radar_km": [None] * size,
-            }
-            for row in frame_rows:
-                coordinate = (_number(row.get("longitude")), _number(row.get("latitude")))
-                index = cell_index.get(coordinate)
-                if index is None:
-                    continue
-                for field in ("mtr_birds_km_h", "vid_birds_per_km2", "bird_u_ms", "bird_v_ms", "nearest_radar_km"):
-                    frame[field][index] = _optional_number(row.get(field))
-                frame["uncertainty"][index] = _optional_number(
-                    row.get("uncertainty_mtr_birds_km_h")
-                    or row.get("uncertainty_vid_birds_per_km2")
-                )
-                frame["support"][index] = str(row.get("prediction_class") or row.get("support") or "")
-            frames.append(frame)
-        _write_compact_json(
-            assets / f"{day}.json",
-            {"schema_version": "birdcast-euro-daily-1.0", "date": day, "frames": frames},
-        )
-    first = min(str(row["time_utc"]) for row in rows if row.get("time_utc"))
-    latest_time = max(str(row["time_utc"]) for row in rows if row.get("time_utc"))
-    manifest = build_europe_manifest(
+    radar_payload = (
+        json.loads(radars_json.read_text(encoding="utf-8")) if radars_json is not None else None
+    )
+    radar_asset = (
+        f"archive/reanalysis/{model_id}/radars.json" if radar_payload is not None else None
+    )
+    manifest = _europe_manifest_payload(
         model_id=model_id,
         first_time_utc=first,
         latest_time_utc=latest_time,
@@ -561,13 +609,28 @@ def publish_europe_predictions(
         grid_asset=f"archive/reanalysis/{model_id}/grid.json",
         daily_asset_template=f"archive/reanalysis/{model_id}/{{date}}.json",
         validation_url=validation_url,
-        output=latest / "reanalysis.json",
         release_status=release_status,
         radar_asset=radar_asset,
+        available_dates=published_days,
     )
+    with TemporaryDirectory(
+        prefix=f".{model_id}.", suffix=".staging", dir=archive_root
+    ) as temporary:
+        staging = Path(temporary)
+        _write_compact_json(staging / "grid.json", grid)
+        if radar_payload is not None:
+            _write_compact_json(staging / "radars.json", radar_payload)
+        for day, frames in sorted(daily_frames.items()):
+            _write_compact_json(
+                staging / f"{day}.json",
+                {"schema_version": "birdcast-euro-daily-1.0", "date": day, "frames": frames},
+            )
+        staging.rename(assets)
+    write_json(output_root / "latest" / "reanalysis.json", manifest)
     return {
         "ok": True,
-        "day_count": len(by_day),
+        "day_count": len(published_days),
+        "prediction_row_count": row_count,
         "cell_count": len(coordinates),
         "first_time_utc": first,
         "latest_time_utc": latest_time,
@@ -593,8 +656,11 @@ def publish_europe_prediction_partitions(
     layout from concealing dropped or shifted model values.
     """
 
+    model_id = _validate_model_id(model_id)
+    archive_root, assets = _europe_release_paths(output_root, model_id)
     paths = sorted(
-        path for path in predictions_root.glob("prediction_*.csv*")
+        path
+        for path in predictions_root.glob("prediction_*.csv*")
         if path.is_file() and path.stat().st_size
     )
     if not paths:
@@ -603,57 +669,63 @@ def publish_europe_prediction_partitions(
     if not coordinates:
         raise ValueError("Europe prediction partitions have no valid coordinates")
     cell_index = {coordinate: index for index, coordinate in enumerate(coordinates)}
-    assets = output_root / "archive" / "reanalysis" / model_id
-    latest = output_root / "latest"
-    assets.mkdir(parents=True, exist_ok=True)
-    latest.mkdir(parents=True, exist_ok=True)
-    _write_compact_json(
-        assets / "grid.json",
-        {
-            "schema_version": "birdcast-euro-grid-1.0",
-            "crs": "EPSG:4326",
-            "cells": [{"longitude": lon, "latitude": lat} for lon, lat in coordinates],
-        },
+    radar_payload = (
+        json.loads(radars_json.read_text(encoding="utf-8")) if radars_json is not None else None
     )
-    radar_asset = None
-    if radars_json is not None:
-        _write_compact_json(assets / "radars.json", json.loads(radars_json.read_text(encoding="utf-8")))
-        radar_asset = f"archive/reanalysis/{model_id}/radars.json"
+    radar_asset = (
+        f"archive/reanalysis/{model_id}/radars.json" if radar_payload is not None else None
+    )
 
     first_time: str | None = None
     latest_time: str | None = None
     frame_count = 0
     row_count = 0
     published_days: set[str] = set()
-    for path in paths:
-        day, frames, rows = _prediction_day_frames(path, cell_index)
-        if day in published_days:
-            raise ValueError(f"duplicate Europe prediction day: {day}")
-        published_days.add(day)
+    with TemporaryDirectory(
+        prefix=f".{model_id}.", suffix=".staging", dir=archive_root
+    ) as temporary:
+        staging = Path(temporary)
         _write_compact_json(
-            assets / f"{day}.json",
-            {"schema_version": "birdcast-euro-daily-1.0", "date": day, "frames": frames},
+            staging / "grid.json",
+            {
+                "schema_version": "birdcast-euro-grid-1.0",
+                "crs": "EPSG:4326",
+                "cells": [{"longitude": lon, "latitude": lat} for lon, lat in coordinates],
+            },
         )
-        frame_count += len(frames)
-        row_count += rows
-        times = [str(frame["time_utc"]) for frame in frames]
-        first_time = min([first_time, *times] if first_time else times)
-        latest_time = max([latest_time, *times] if latest_time else times)
-    if first_time is None or latest_time is None:
-        raise ValueError("Europe prediction partitions have no UTC frames")
-    manifest = build_europe_manifest(
-        model_id=model_id,
-        first_time_utc=first_time,
-        latest_time_utc=latest_time,
-        aloft_radar_count=aloft_radar_count,
-        uk_sp_radar_count=uk_sp_radar_count,
-        grid_asset=f"archive/reanalysis/{model_id}/grid.json",
-        daily_asset_template=f"archive/reanalysis/{model_id}/{{date}}.json",
-        validation_url=validation_url,
-        output=latest / "reanalysis.json",
-        release_status=release_status,
-        radar_asset=radar_asset,
-    )
+        if radar_payload is not None:
+            _write_compact_json(staging / "radars.json", radar_payload)
+        for path in paths:
+            day, frames, rows = _prediction_day_frames(path, cell_index)
+            if day in published_days:
+                raise ValueError(f"duplicate Europe prediction day: {day}")
+            published_days.add(day)
+            _write_compact_json(
+                staging / f"{day}.json",
+                {"schema_version": "birdcast-euro-daily-1.0", "date": day, "frames": frames},
+            )
+            frame_count += len(frames)
+            row_count += rows
+            times = [str(frame["time_utc"]) for frame in frames]
+            first_time = min([first_time, *times] if first_time else times)
+            latest_time = max([latest_time, *times] if latest_time else times)
+        if first_time is None or latest_time is None:
+            raise ValueError("Europe prediction partitions have no UTC frames")
+        manifest = _europe_manifest_payload(
+            model_id=model_id,
+            first_time_utc=first_time,
+            latest_time_utc=latest_time,
+            aloft_radar_count=aloft_radar_count,
+            uk_sp_radar_count=uk_sp_radar_count,
+            grid_asset=f"archive/reanalysis/{model_id}/grid.json",
+            daily_asset_template=f"archive/reanalysis/{model_id}/{{date}}.json",
+            validation_url=validation_url,
+            release_status=release_status,
+            radar_asset=radar_asset,
+            available_dates=sorted(published_days),
+        )
+        staging.rename(assets)
+    write_json(output_root / "latest" / "reanalysis.json", manifest)
     return {
         "ok": True,
         "day_count": len(published_days),
@@ -667,53 +739,105 @@ def publish_europe_prediction_partitions(
 
 
 def _prediction_coordinates(path: Path) -> list[tuple[float, float]]:
-    coordinates: set[tuple[float, float]] = set()
     with _prediction_text(path) as handle:
-        for row in csv.DictReader(handle):
-            coordinate = (_number(row.get("longitude")), _number(row.get("latitude")))
-            if not _finite(*coordinate):
-                raise ValueError(f"invalid Europe prediction coordinate in {path}")
-            coordinates.add(coordinate)
+        return _prediction_coordinates_from_rows(csv.DictReader(handle), path)
+
+
+def _prediction_coordinates_from_rows(
+    rows: Iterable[dict[str, str]], source: Path
+) -> list[tuple[float, float]]:
+    coordinates: set[tuple[float, float]] = set()
+    for row in rows:
+        coordinates.add(_prediction_coordinate(row, source))
     return sorted(coordinates)
+
+
+def _prediction_coordinate(row: dict[str, str], source: Path) -> tuple[float, float]:
+    longitude = _number(row.get("longitude"))
+    latitude = _number(row.get("latitude"))
+    if (
+        not _finite(longitude, latitude)
+        or not -180 <= longitude <= 180
+        or not -90 <= latitude <= 90
+    ):
+        raise ValueError(f"invalid Europe prediction coordinate in {source}")
+    return longitude, latitude
 
 
 def _prediction_day_frames(
     path: Path,
     cell_index: dict[tuple[float, float], int],
 ) -> tuple[str, list[dict[str, Any]], int]:
+    with _prediction_text(path) as handle:
+        by_day, row_count = _prediction_frames(csv.DictReader(handle), cell_index, path)
+    if len(by_day) != 1:
+        raise ValueError(f"Europe prediction partition must contain exactly one UTC day: {path}")
+    day = next(iter(by_day))
+    return day, by_day[day], row_count
+
+
+def _prediction_frames(
+    rows: Iterable[dict[str, str]],
+    cell_index: dict[tuple[float, float], int],
+    source: Path,
+) -> tuple[dict[str, list[dict[str, Any]]], int]:
     frames: dict[str, dict[str, Any]] = {}
     seen: dict[str, set[int]] = defaultdict(set)
     row_count = 0
-    with _prediction_text(path) as handle:
-        for row in csv.DictReader(handle):
-            timestamp = str(row.get("time_utc") or "")
-            if len(timestamp) < 10:
-                raise ValueError(f"Europe prediction row has no UTC timestamp in {path}")
-            day = timestamp[:10]
-            coordinate = (_number(row.get("longitude")), _number(row.get("latitude")))
-            index = cell_index.get(coordinate)
-            if index is None:
-                raise ValueError(f"Europe prediction coordinate is inconsistent: {coordinate}")
-            if str(row.get("prediction_class") or "") == "unsupported":
-                raise ValueError("unsupported Europe prediction leaked into a daily partition")
-            if index in seen[timestamp]:
-                raise ValueError(f"duplicate Europe prediction cell: {timestamp} {coordinate}")
-            seen[timestamp].add(index)
-            frame = frames.setdefault(timestamp, _empty_prediction_frame(timestamp, len(cell_index)))
-            for field in ("mtr_birds_km_h", "vid_birds_per_km2", "bird_u_ms", "bird_v_ms", "nearest_radar_km"):
-                frame[field][index] = _optional_number(row.get(field))
-            frame["uncertainty"][index] = _optional_number(
-                row.get("uncertainty_mtr_birds_km_h") or row.get("uncertainty_vid_birds_per_km2")
-            )
-            frame["support"][index] = str(row.get("prediction_class") or row.get("support") or "")
-            row_count += 1
+    for row in rows:
+        timestamp = str(row.get("time_utc") or "")
+        if len(timestamp) < 10:
+            raise ValueError(f"Europe prediction row has no UTC timestamp in {source}")
+        coordinate = _prediction_coordinate(row, source)
+        index = cell_index.get(coordinate)
+        if index is None:
+            raise ValueError(f"Europe prediction coordinate is inconsistent: {coordinate}")
+        support = str(row.get("prediction_class") or row.get("support") or "").strip()
+        if support.lower() == "unsupported":
+            raise ValueError("unsupported Europe prediction leaked into publication")
+        if index in seen[timestamp]:
+            raise ValueError(f"duplicate Europe prediction cell: {timestamp} {coordinate}")
+        seen[timestamp].add(index)
+        frame = frames.setdefault(timestamp, _empty_prediction_frame(timestamp, len(cell_index)))
+        for field in _PREDICTION_VALUE_FIELDS:
+            frame[field][index] = _optional_number(row.get(field))
+        for field in _PREDICTION_UNCERTAINTY_FIELDS:
+            frame[field][index] = _optional_number(row.get(field))
+        frame["support"][index] = support
+        row_count += 1
     days = {timestamp[:10] for timestamp in frames}
-    if len(days) != 1:
-        raise ValueError(f"Europe prediction partition must contain exactly one UTC day: {path}")
-    for timestamp, values in seen.items():
-        if len(values) != len(cell_index):
-            raise ValueError(f"Europe prediction frame is incomplete: {timestamp}")
-    return next(iter(days)), [frames[key] for key in sorted(frames)], row_count
+    if not days:
+        raise ValueError(f"Europe prediction input has no UTC frames: {source}")
+    result: dict[str, list[dict[str, Any]]] = {}
+    for day in sorted(days):
+        day_frames = {
+            timestamp: frame for timestamp, frame in frames.items() if timestamp[:10] == day
+        }
+        _require_complete_utc_day(day, day_frames, source)
+        for timestamp in day_frames:
+            if len(seen[timestamp]) != len(cell_index):
+                raise ValueError(f"Europe prediction frame is incomplete: {timestamp}")
+        result[day] = [day_frames[key] for key in sorted(day_frames)]
+    return result, row_count
+
+
+def _require_complete_utc_day(
+    day: str,
+    timestamps: Iterable[str],
+    source: Path,
+) -> None:
+    """Require the 24 canonical top-of-hour UTC timestamps for one day."""
+
+    expected = {f"{day}T{hour:02d}:00:00Z" for hour in range(24)}
+    actual = set(timestamps)
+    if actual == expected:
+        return
+    missing = sorted(expected - actual)
+    unexpected = sorted(actual - expected)
+    raise ValueError(
+        f"Europe prediction day must contain exactly 24 canonical UTC hourly frames: "
+        f"{source} day={day} missing={missing} unexpected={unexpected}"
+    )
 
 
 def _empty_prediction_frame(timestamp: str, size: int) -> dict[str, Any]:
@@ -723,14 +847,46 @@ def _empty_prediction_frame(timestamp: str, size: int) -> dict[str, Any]:
         "vid_birds_per_km2": [None] * size,
         "bird_u_ms": [None] * size,
         "bird_v_ms": [None] * size,
-        "uncertainty": [None] * size,
+        "uncertainty_mtr_birds_km_h": [None] * size,
+        "uncertainty_vid_birds_per_km2": [None] * size,
         "support": [None] * size,
         "nearest_radar_km": [None] * size,
     }
 
 
 def _prediction_text(path: Path):
-    return gzip.open(path, "rt", newline="") if path.suffix == ".gz" else path.open(newline="", encoding="utf-8")
+    return (
+        gzip.open(path, "rt", newline="")
+        if path.suffix == ".gz"
+        else path.open(newline="", encoding="utf-8")
+    )
+
+
+def _validate_model_id(model_id: str) -> str:
+    value = str(model_id)
+    if not _MODEL_ID_PATTERN.fullmatch(value) or value in {".", ".."}:
+        raise ValueError(
+            "Europe model_id must be a lowercase ASCII slug containing only letters, "
+            "digits, dots, underscores, and hyphens"
+        )
+    return value
+
+
+def _europe_release_paths(output_root: Path, model_id: str) -> tuple[Path, Path]:
+    archive_root = output_root / "archive" / "reanalysis"
+    archive_root.mkdir(parents=True, exist_ok=True)
+    try:
+        archive_root.resolve().relative_to(output_root.resolve())
+    except ValueError as exc:
+        raise ValueError("Europe release archive escapes the output root") from exc
+    release = archive_root / model_id
+    if release.exists() or release.is_symlink():
+        raise FileExistsError(f"Europe model release is immutable and already exists: {model_id}")
+    try:
+        release.resolve().relative_to(archive_root.resolve())
+    except ValueError as exc:
+        raise ValueError("Europe model release escapes the output root") from exc
+    return archive_root, release
 
 
 def install_europe_static_site(site_root: Path) -> dict[str, Any]:
@@ -824,7 +980,18 @@ def _optional_number(value: object) -> float | None:
 
 def _write_compact_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(payload, separators=(",", ":"), allow_nan=False) + "\n",
+    content = json.dumps(payload, separators=(",", ":"), allow_nan=False) + "\n"
+    with NamedTemporaryFile(
+        "w",
+        dir=path.parent,
         encoding="utf-8",
-    )
+        prefix=f".{path.name}.",
+        delete=False,
+    ) as handle:
+        handle.write(content)
+        temporary_path = Path(handle.name)
+    try:
+        temporary_path.chmod(0o644)
+        os.replace(temporary_path, path)
+    finally:
+        temporary_path.unlink(missing_ok=True)

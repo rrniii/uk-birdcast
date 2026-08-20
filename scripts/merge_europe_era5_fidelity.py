@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import argparse
-from datetime import date, timedelta
 import json
+from datetime import date, timedelta
 from pathlib import Path
 
 
@@ -18,16 +18,26 @@ def merge(
     release_id: str,
     radars_sha256: str,
 ) -> dict[str, object]:
-    expected = [date.fromisoformat(start_day) + timedelta(days=index) for index in range(
-        (date.fromisoformat(end_day) - date.fromisoformat(start_day)).days + 1
-    )]
-    reports = {path.stem: json.loads(path.read_text(encoding="utf-8")) for path in reports_root.glob("*.json")}
+    expected = [
+        date.fromisoformat(start_day) + timedelta(days=index)
+        for index in range((date.fromisoformat(end_day) - date.fromisoformat(start_day)).days + 1)
+    ]
+    reports = {
+        path.stem: json.loads(path.read_text(encoding="utf-8"))
+        for path in reports_root.glob("*.json")
+    }
     expected_stamps = {day.strftime("%Y%m%d") for day in expected}
     missing = sorted(expected_stamps - set(reports))
     unexpected = sorted(set(reports) - expected_stamps)
-    failed = sorted(stamp for stamp, payload in reports.items() if payload.get("status") != "passed")
-    stale = sorted(stamp for stamp, payload in reports.items() if payload.get("release_id") != release_id)
-    metadata_mismatch = sorted(stamp for stamp, payload in reports.items() if payload.get("radars_sha256") != radars_sha256)
+    failed = sorted(
+        stamp for stamp, payload in reports.items() if payload.get("status") != "passed"
+    )
+    stale = sorted(
+        stamp for stamp, payload in reports.items() if payload.get("release_id") != release_id
+    )
+    metadata_mismatch = sorted(
+        stamp for stamp, payload in reports.items() if payload.get("radars_sha256") != radars_sha256
+    )
     if missing or unexpected or failed or stale or metadata_mismatch:
         raise ValueError(
             f"Europe ERA5 fidelity is incomplete: missing={len(missing)}, unexpected={len(unexpected)}, "
@@ -40,7 +50,9 @@ def merge(
         "radars_sha256": radars_sha256,
         "expected_day_count": len(expected),
         "passed_day_count": len(reports),
-        "site_feature_row_count": sum(int(report.get("row_count") or 0) for report in reports.values()),
+        "site_feature_row_count": sum(
+            int(report.get("row_count") or 0) for report in reports.values()
+        ),
         "reports_root": str(reports_root),
         "raw_source_persisted": False,
     }
@@ -58,7 +70,16 @@ if __name__ == "__main__":
     parser.add_argument("--release-id", required=True)
     parser.add_argument("--radars-sha256", required=True)
     args = parser.parse_args()
-    print(json.dumps(merge(
-        Path(args.reports_root), Path(args.output), start_day=args.start_day, end_day=args.end_day,
-        release_id=args.release_id, radars_sha256=args.radars_sha256,
-    ), indent=2))
+    print(
+        json.dumps(
+            merge(
+                Path(args.reports_root),
+                Path(args.output),
+                start_day=args.start_day,
+                end_day=args.end_day,
+                release_id=args.release_id,
+                radars_sha256=args.radars_sha256,
+            ),
+            indent=2,
+        )
+    )

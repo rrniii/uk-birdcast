@@ -1,6 +1,7 @@
 [Unit]
 Description=Sync UK BirdCast static artifacts to JASMIN Object Store
 After=birdcast-uk-object-store-plan.service network-online.target
+Requires=birdcast-uk-object-store-plan.service
 Wants=network-online.target
 
 [Service]
@@ -9,6 +10,7 @@ User=birdcast
 Group=birdcast
 EnvironmentFile=/etc/birdcast-uk/birdcast-uk.env
 WorkingDirectory=/opt/birdcast-uk/repo
+ExecStartPre=/opt/birdcast-uk/venv/bin/birdcast-uk publish validate-plan --plan ${BIRDCAST_UK_OBJECT_STORE_PLAN}
 ExecStart=/bin/sh ${BIRDCAST_UK_OBJECT_STORE_SYNC_SCRIPT}
 
 NoNewPrivileges=true

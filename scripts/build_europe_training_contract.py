@@ -5,10 +5,10 @@ from __future__ import annotations
 
 import argparse
 import csv
-from datetime import datetime
 import hashlib
 import json
 import math
+from datetime import datetime
 from pathlib import Path
 
 
@@ -24,7 +24,9 @@ def build(training_csv: Path, model_spec: Path, output: Path) -> dict[str, objec
     columns = set(rows[0])
     missing_columns = sorted(set(predictors) - columns)
     if missing_columns:
-        raise ValueError(f"Europe training table lacks model predictors: {', '.join(missing_columns)}")
+        raise ValueError(
+            f"Europe training table lacks model predictors: {', '.join(missing_columns)}"
+        )
     values: dict[str, list[float]] = {name: [] for name in predictors}
     times = []
     for row in rows:
@@ -62,8 +64,8 @@ def build(training_csv: Path, model_spec: Path, output: Path) -> dict[str, objec
 def _percentile_range(values: list[float]) -> dict[str, float]:
     ordered = sorted(values)
     return {
-        "lower": ordered[max(0, int(len(ordered) * .01) - 1)],
-        "upper": ordered[min(len(ordered) - 1, int(len(ordered) * .99))],
+        "lower": ordered[max(0, int(len(ordered) * 0.01) - 1)],
+        "upper": ordered[min(len(ordered) - 1, int(len(ordered) * 0.99))],
     }
 
 
@@ -73,4 +75,8 @@ if __name__ == "__main__":
     parser.add_argument("--model-spec", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
-    print(json.dumps(build(Path(args.training_csv), Path(args.model_spec), Path(args.output)), indent=2))
+    print(
+        json.dumps(
+            build(Path(args.training_csv), Path(args.model_spec), Path(args.output)), indent=2
+        )
+    )

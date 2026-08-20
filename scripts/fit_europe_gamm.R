@@ -49,10 +49,6 @@ spatial_k <- if (!is.null(spec$spatial_k)) as.integer(spec$spatial_k) else 40L
 covariate_k <- if (!is.null(spec$covariate_k)) as.integer(spec$covariate_k) else 8L
 if (spatial_k < 3 || covariate_k < 3) stop("smooth basis dimensions must be at least 3")
 
-site_counts <- table(data$radar)
-data$site_equal_weight <- 1 / as.numeric(site_counts[data$radar])
-data$site_equal_weight <- data$site_equal_weight / mean(data$site_equal_weight)
-
 score <- function(observed, predicted) {
   keep <- is.finite(observed) & is.finite(predicted)
   observed <- observed[keep]
@@ -142,6 +138,12 @@ fit_target <- function(frame, target) {
   subset$radar <- droplevels(factor(subset$radar))
   subset$network <- droplevels(factor(subset$network))
   subset$country <- droplevels(factor(subset$country))
+  # Recompute weights after complete-case and fold filtering. Reusing weights
+  # from the full table would give sites unequal influence whenever their
+  # retained row fractions differ within a target or validation subset.
+  site_counts <- table(subset$radar)
+  subset$site_equal_weight <- 1 / as.numeric(site_counts[subset$radar])
+  subset$site_equal_weight <- subset$site_equal_weight / mean(subset$site_equal_weight)
   subset$response <- if (is_intensity) log1p(pmax(subset[[target]], 0)) else subset[[target]]
   formula_info <- model_formula(subset)
   model <- mgcv::bam(

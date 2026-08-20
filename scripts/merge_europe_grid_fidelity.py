@@ -9,7 +9,9 @@ from datetime import date, timedelta
 from pathlib import Path
 
 
-def merge(root: Path, output: Path, *, start_day: str, end_day: str, release_id: str) -> dict[str, object]:
+def merge(
+    root: Path, output: Path, *, start_day: str, end_day: str, release_id: str
+) -> dict[str, object]:
     start = date.fromisoformat(start_day)
     end = date.fromisoformat(end_day)
     days = [start + timedelta(days=index) for index in range((end - start).days + 1)]
@@ -18,7 +20,11 @@ def merge(root: Path, output: Path, *, start_day: str, end_day: str, release_id:
     if missing:
         raise ValueError(f"Europe grid fidelity is incomplete: missing={len(missing)}")
     payloads = [json.loads(path.read_text(encoding="utf-8")) for path in reports]
-    failed = [payload for payload in payloads if payload.get("status") != "passed" or payload.get("release_id") != release_id]
+    failed = [
+        payload
+        for payload in payloads
+        if payload.get("status") != "passed" or payload.get("release_id") != release_id
+    ]
     if failed:
         raise ValueError(f"Europe grid fidelity has {len(failed)} failed or mismatched reports")
     counts = {int(payload["row_count"]) for payload in payloads}
@@ -49,4 +55,15 @@ if __name__ == "__main__":
     parser.add_argument("--end-day", required=True)
     parser.add_argument("--release-id", required=True)
     args = parser.parse_args()
-    print(json.dumps(merge(Path(args.root), Path(args.output), start_day=args.start_day, end_day=args.end_day, release_id=args.release_id), indent=2))
+    print(
+        json.dumps(
+            merge(
+                Path(args.root),
+                Path(args.output),
+                start_day=args.start_day,
+                end_day=args.end_day,
+                release_id=args.release_id,
+            ),
+            indent=2,
+        )
+    )

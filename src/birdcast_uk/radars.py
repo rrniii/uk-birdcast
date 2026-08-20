@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from pathlib import Path
 import csv
 import json
+from dataclasses import asdict, dataclass
+from pathlib import Path
 from urllib.request import urlopen
 
 
@@ -72,10 +72,10 @@ def _radar_from_mapping(row: object) -> BirdcastRadar:
         slug=str(row.get("slug") or row.get("radar") or ""),
         radar_num=str(row.get("radar_num") or row.get("num") or ""),
         label=str(row.get("label") or row.get("name") or row.get("slug") or ""),
-        latitude=_optional_float(row.get("latitude") or row.get("lat")),
-        longitude=_optional_float(row.get("longitude") or row.get("lon")),
-        height_m=_optional_float(row.get("height_m") or row.get("height")),
-        max_range_m=_optional_float(row.get("max_range_m") or row.get("range_m")),
+        latitude=_optional_float(_first_defined(row.get("latitude"), row.get("lat"))),
+        longitude=_optional_float(_first_defined(row.get("longitude"), row.get("lon"))),
+        height_m=_optional_float(_first_defined(row.get("height_m"), row.get("height"))),
+        max_range_m=_optional_float(_first_defined(row.get("max_range_m"), row.get("range_m"))),
         range_source=str(row.get("range_source") or "") or None,
     )
 
@@ -84,6 +84,12 @@ def _optional_float(value: object) -> float | None:
     if value in ("", None):
         return None
     return float(value)  # type: ignore[arg-type]
+
+
+def _first_defined(*values: object) -> object:
+    """Return the first non-empty value while preserving numeric zero."""
+
+    return next((value for value in values if value not in (None, "")), None)
 
 
 def load_pvol_catalog(source: str | Path) -> dict[str, object]:

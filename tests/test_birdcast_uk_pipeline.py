@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import sys
+import zipfile
+from pathlib import Path
 from types import ModuleType
 
+import pytest
+
+from birdcast_uk.config import (
+    ERA5_PRESSURE_LEVEL_VARIABLES,
+    ERA5_PRESSURE_LEVELS,
+    ERA5_SINGLE_LEVEL_VARIABLES,
+    EUROPE_ERA5_AREA,
+)
 from birdcast_uk.era5 import (
     EARTHKIT_BACKEND,
     _features_for_radar,
@@ -12,24 +21,18 @@ from birdcast_uk.era5 import (
     _grid_weather_values_bulk,
     _open_datasets,
     _select_radar_sites,
-    _support_score,
     build_day,
     build_period_request,
     cds_readiness,
     download_request,
+    extract_zip_archive,
     radar_coverage_area,
     split_period_file,
     validate_day,
     write_request,
 )
-from birdcast_uk.config import (
-    ERA5_PRESSURE_LEVELS,
-    ERA5_PRESSURE_LEVEL_VARIABLES,
-    ERA5_SINGLE_LEVEL_VARIABLES,
-    EUROPE_ERA5_AREA,
-)
 from birdcast_uk.observed import build_observed_products
-from birdcast_uk.radars import BirdcastRadar, radars_from_pvol_catalog, write_radars
+from birdcast_uk.radars import BirdcastRadar, load_radars, radars_from_pvol_catalog, write_radars
 from birdcast_uk.vpts import validate_manifest
 
 
@@ -62,6 +65,32 @@ def test_radars_from_pvol_catalog_extracts_coordinates(tmp_path: Path) -> None:
     assert radars[0].height_m == 153.0
     assert radars[0].max_range_m == 255_000.0
     assert radars[0].range_source == "validated_odim_lp_geometry"
+
+
+def test_radar_alias_selection_preserves_explicit_zero_values(tmp_path: Path) -> None:
+    path = _write_json(
+        tmp_path / "radars.json",
+        [
+            {
+                "slug": "origin",
+                "latitude": 0.0,
+                "lat": 51.0,
+                "longitude": 0.0,
+                "lon": -1.0,
+                "height_m": 0.0,
+                "height": 100.0,
+                "max_range_m": 0.0,
+                "range_m": 255_000.0,
+            }
+        ],
+    )
+
+    radar = load_radars(path)[0]
+
+    assert radar.latitude == 0.0
+    assert radar.longitude == 0.0
+    assert radar.height_m == 0.0
+    assert radar.max_range_m == 0.0
 
 
 def test_radar_coverage_area_extends_in_all_directions() -> None:
@@ -134,9 +163,15 @@ def test_observed_products_from_rows(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result = build_observed_products(input_path=rows, output_dir=tmp_path / "out", radars_path=radars_path)
-    summary = json.loads((tmp_path / "out" / "latest" / "latest_nightly_summary.json").read_text(encoding="utf-8"))
-    geojson = json.loads((tmp_path / "out" / "latest" / "latest_observed.geojson").read_text(encoding="utf-8"))
+    result = build_observed_products(
+        input_path=rows, output_dir=tmp_path / "out", radars_path=radars_path
+    )
+    summary = json.loads(
+        (tmp_path / "out" / "latest" / "latest_nightly_summary.json").read_text(encoding="utf-8")
+    )
+    geojson = json.loads(
+        (tmp_path / "out" / "latest" / "latest_observed.geojson").read_text(encoding="utf-8")
+    )
 
     assert result["night_count"] == 1
     assert summary["data_available"] is True
@@ -389,7 +424,12 @@ def test_era5_vectorized_radar_selection_preserves_per_site_features() -> None:
     import xarray as xr
 
     dataset = xr.Dataset(
-        {"sp": (("valid_time", "latitude", "longitude"), np.array([[[1, 2], [3, 4]], [[5, 6], [7, 8]]]))},
+        {
+            "sp": (
+                ("valid_time", "latitude", "longitude"),
+                np.array([[[1, 2], [3, 4]], [[5, 6], [7, 8]]]),
+            )
+        },
         coords={
             "valid_time": [np.datetime64("2026-07-09T00:00"), np.datetime64("2026-07-09T01:00")],
             "latitude": [50.0, 51.0],
@@ -425,10 +465,19 @@ def test_era5_bulk_grid_weather_values_keep_grid_point_alignment() -> None:
     )
     pressure = xr.Dataset(
         {
-            "t": (("pressure_level", "grid_point"), np.array([[280.0, 281.0], [270.0, 271.0], [260.0, 261.0]])),
-            "r": (("pressure_level", "grid_point"), np.array([[80.0, 81.0], [70.0, 71.0], [60.0, 61.0]])),
+            "t": (
+                ("pressure_level", "grid_point"),
+                np.array([[280.0, 281.0], [270.0, 271.0], [260.0, 261.0]]),
+            ),
+            "r": (
+                ("pressure_level", "grid_point"),
+                np.array([[80.0, 81.0], [70.0, 71.0], [60.0, 61.0]]),
+            ),
             "u": (("pressure_level", "grid_point"), np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])),
-            "v": (("pressure_level", "grid_point"), np.array([[7.0, 8.0], [9.0, 10.0], [11.0, 12.0]])),
+            "v": (
+                ("pressure_level", "grid_point"),
+                np.array([[7.0, 8.0], [9.0, 10.0], [11.0, 12.0]]),
+            ),
         },
         coords={"pressure_level": [925, 850, 700]},
     )
@@ -446,9 +495,30 @@ def test_era5_build_status_identifies_earthkit_without_download(tmp_path: Path) 
         radars_path=None,
     )
 
-    assert result["ok"] is True
+    assert result["ok"] is False
     assert result["backend"] == EARTHKIT_BACKEND
     assert result["download_requested"] is False
+    assert result["validation"]["ok"] is False
+
+
+def test_era5_zip_extraction_is_atomic_and_rejects_unsafe_members(
+    tmp_path: Path,
+) -> None:
+    archive = tmp_path / "safe.zip"
+    with zipfile.ZipFile(archive, "w") as zipped:
+        zipped.writestr("nested/day.nc", b"netcdf")
+
+    result = extract_zip_archive(archive, tmp_path / "decoded")
+
+    assert result["ok"] is True
+    assert (tmp_path / "decoded" / "nested" / "day.nc").read_bytes() == b"netcdf"
+
+    unsafe = tmp_path / "unsafe.zip"
+    with zipfile.ZipFile(unsafe, "w") as zipped:
+        zipped.writestr("../escape.nc", b"no")
+    with pytest.raises(ValueError, match="unsafe ERA5 ZIP member"):
+        extract_zip_archive(unsafe, tmp_path / "unsafe-decoded")
+    assert not (tmp_path / "escape.nc").exists()
 
 
 def test_era5_day_validation_requires_both_feature_datasets(tmp_path: Path) -> None:
@@ -456,6 +526,11 @@ def test_era5_day_validation_requires_both_feature_datasets(tmp_path: Path) -> N
     for kind in ("single_levels", "pressure_levels"):
         (tmp_path / f"era5_{kind}_20260713_uk.nc").write_bytes(b"netcdf")
     feature_output = tmp_path / "features.json"
+    radars_path = tmp_path / "radars.json"
+    radars_path.write_text(
+        json.dumps({"radars": [{"slug": "chenies", "radar_num": "05", "label": "Chenies"}]}),
+        encoding="utf-8",
+    )
     rows = []
     for hour in range(24):
         common = {
@@ -487,7 +562,12 @@ def test_era5_day_validation_requires_both_feature_datasets(tmp_path: Path) -> N
         )
     feature_output.write_text(json.dumps({"rows": rows}), encoding="utf-8")
 
-    valid = validate_day(day=day, raw_dir=tmp_path, feature_output=feature_output)
+    valid = validate_day(
+        day=day,
+        raw_dir=tmp_path,
+        feature_output=feature_output,
+        radars_path=radars_path,
+    )
     assert valid["ok"] is True
     assert valid["radar_hour_count"] == 24
 
@@ -495,7 +575,12 @@ def test_era5_day_validation_requires_both_feature_datasets(tmp_path: Path) -> N
         json.dumps({"rows": [row for row in rows if "sp" in row]}),
         encoding="utf-8",
     )
-    invalid = validate_day(day=day, raw_dir=tmp_path, feature_output=feature_output)
+    invalid = validate_day(
+        day=day,
+        raw_dir=tmp_path,
+        feature_output=feature_output,
+        radars_path=radars_path,
+    )
     assert invalid["ok"] is False
     assert invalid["incomplete_radar_hour_count"] == 24
 
@@ -518,10 +603,7 @@ def test_cds_readiness_rejects_legacy_endpoint_and_uid_key(tmp_path: Path, monke
 
 def test_historical_reanalysis_submission_preflights_cds_credentials() -> None:
     script = (
-        Path(__file__).parents[1]
-        / "deploy"
-        / "slurm"
-        / "submit-historical-reanalysis.sh"
+        Path(__file__).parents[1] / "deploy" / "slurm" / "submit-historical-reanalysis.sh"
     ).read_text(encoding="utf-8")
 
     assert '"$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli era5 readiness' in script
@@ -531,16 +613,14 @@ def test_historical_reanalysis_submission_preflights_cds_credentials() -> None:
     assert 'gamm="$(sbatch --parsable --dependency="afterok:${merged}"' in script
     assert 'xgboost="$(sbatch --parsable --dependency="afterok:${merged}"' in script
     assert 'model="$(sbatch --parsable --dependency="afterok:${gamm}:${xgboost}"' in script
-    assert 'published="$(sbatch --parsable --dependency="afterok:${model}"' in script
-    assert "birdcast-uk-object-store-publish.sbatch" in script
+    assert 'model="$(sbatch --parsable --dependency="afterok:${gamm}:${xgboost}"' in script
+    assert "birdcast-uk-object-store-publish.sbatch" not in script
+    assert "published=" not in script
 
 
 def test_feature_join_slurm_uses_current_cli_command() -> None:
     script = (
-        Path(__file__).parents[1]
-        / "deploy"
-        / "slurm"
-        / "birdcast-uk-feature-join.sbatch"
+        Path(__file__).parents[1] / "deploy" / "slurm" / "birdcast-uk-feature-join.sbatch"
     ).read_text(encoding="utf-8")
 
     assert "-m birdcast_uk.cli features join-era5" in script
@@ -560,30 +640,73 @@ def test_slurm_scripts_initialise_jasmin_modules() -> None:
         content = script.read_text(encoding="utf-8")
         assert ". /etc/profile.d/modules.sh" in content, script.name
         assert ". /etc/profile.d/zz-modules.sh" in content, script.name
-        assert content.index(". /etc/profile.d/modules.sh") < content.index(". /etc/profile.d/zz-modules.sh")
+        assert content.index(". /etc/profile.d/modules.sh") < content.index(
+            ". /etc/profile.d/zz-modules.sh"
+        )
         assert content.index(". /etc/profile.d/zz-modules.sh") < content.index("set -u")
         assert content.index(". /etc/profile.d/modules.sh") < content.index("module load ")
 
 
 def test_static_refresh_imports_the_current_reversible_release() -> None:
     service = (
-        Path(__file__).parents[1]
-        / "deploy"
-        / "systemd"
-        / "birdcast-uk-static-site-refresh.service"
+        Path(__file__).parents[1] / "deploy" / "systemd" / "birdcast-uk-static-site-refresh.service"
     ).read_text(encoding="utf-8")
 
     assert "Environment=PYTHONPATH=/opt/birdcast-uk/repo/src" in service
     assert "-m birdcast_uk.cli static build" in service
     assert "-m birdcast_uk.cli static install-site" in service
+    assert "-m birdcast_uk.cli coastal install-site" in service
+    assert "--site-root /opt/birdcast-euro/site" in service
+
+
+def test_absolute_europe_promotion_files_are_retired() -> None:
+    root = Path(__file__).parents[1]
+    retired = (
+        root / "deploy/scripts/birdcast-euro-object-store-pull.sh",
+        root / "deploy/scripts/birdcast-euro-activate.sh",
+        root / "deploy/systemd/birdcast-euro-object-store-pull.service",
+        root / "deploy/systemd/birdcast-euro-object-store-pull.timer",
+        root / "deploy/env/birdcast-euro.env.example",
+    )
+
+    for path in retired:
+        assert not path.exists(), path
+
+    publish = (root / "deploy/slurm/birdcast-euro-publish.sbatch").read_text(encoding="utf-8")
+    assert "validate_europe_publication.py" in publish
+    assert "BIRDCAST_EURO_PUBLIC_HOST" not in publish
+    assert "birdcast-euro-activate.sh" not in publish
+    assert "\nrsync " not in publish
+    assert "\nssh " not in publish
+
+
+def test_relative_europe_activation_route_remains() -> None:
+    script = (
+        Path(__file__).parents[1] / "deploy" / "scripts" / "birdcast-coastal-activate.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "latest/relative-flow.json" in script
+    assert "published-relative-research-product" in script
+    assert "birdcast-europe-relative-flow-1.1" in script
+    assert "relative-flow asset integrity failed" in script
+    assert 'mktemp -d "$stage_root/.${release_id}.XXXXXX"' in script
+    assert "os.replace(sys.argv[1], sys.argv[2])" in script
+
+
+def test_forecast_service_selects_only_a_validated_ecmwf_cycle() -> None:
+    service = (
+        Path(__file__).parents[1] / "deploy" / "systemd" / "birdcast-uk-forecast-build.service"
+    ).read_text(encoding="utf-8")
+
+    assert "newest_validated_cycle_manifest" in service
+    assert "find " not in service
+    assert "No validated ECMWF cycle is available" in service
+    assert "--ecmwf-manifest" in service
 
 
 def test_grid_reconcile_validates_radar_range_status_not_legacy_land_mask_size() -> None:
     script = (
-        Path(__file__).parents[1]
-        / "deploy"
-        / "slurm"
-        / "birdcast-uk-era5-grid-reconcile.sbatch"
+        Path(__file__).parents[1] / "deploy" / "slurm" / "birdcast-uk-era5-grid-reconcile.sbatch"
     ).read_text(encoding="utf-8")
 
     assert "12841" not in script
@@ -601,7 +724,7 @@ def test_vpts_inventory_accepts_a_pinned_common_end_date() -> None:
         / "birdcast-uk-vpts-historical-inventory.sbatch"
     ).read_text(encoding="utf-8")
 
-    assert 'BIRDCAST_UK_REANALYSIS_END_DATE:-' in script
+    assert "BIRDCAST_UK_REANALYSIS_END_DATE:-" in script
     assert 'inventory_args+=(--end-date "$BIRDCAST_UK_REANALYSIS_END_DATE")' in script
 
 

@@ -13,7 +13,6 @@ import hashlib
 import json
 from pathlib import Path
 
-
 REQUIRED = {"radar", "country", "longitude", "time_utc"}
 
 
@@ -26,8 +25,12 @@ def digest(path: Path) -> str:
 
 
 def prepare(
-    *, input_csvs: list[Path], output_csv: Path, output_manifest: Path,
-    countries: set[str] | None, western_germany_longitude_max: float,
+    *,
+    input_csvs: list[Path],
+    output_csv: Path,
+    output_manifest: Path,
+    countries: set[str] | None,
+    western_germany_longitude_max: float,
 ) -> dict:
     if not input_csvs:
         raise ValueError("at least one derived input CSV is required")
@@ -56,25 +59,36 @@ def prepare(
                     country = str(row["country"]).upper()
                     if countries is not None and country not in countries:
                         continue
-                    if countries is not None and country == "DE" and float(row["longitude"]) > western_germany_longitude_max:
+                    if (
+                        countries is not None
+                        and country == "DE"
+                        and float(row["longitude"]) > western_germany_longitude_max
+                    ):
                         continue
                     assert writer is not None
                     writer.writerow(row)
                     row_count += 1
-                    radars.setdefault(row["radar"].lower(), {
-                        "radar": row["radar"].lower(), "country": country,
-                        "latitude": float(row["latitude"]), "longitude": float(row["longitude"]),
-                    })
+                    radars.setdefault(
+                        row["radar"].lower(),
+                        {
+                            "radar": row["radar"].lower(),
+                            "country": country,
+                            "latitude": float(row["latitude"]),
+                            "longitude": float(row["longitude"]),
+                        },
+                    )
     if not row_count:
         raise ValueError("regional selector retained no derived rows")
     manifest = {
         "schema_version": "birdcast-relative-europe-region-1.0",
         "input_csvs": [{"path": str(path), "sha256": digest(path)} for path in input_csvs],
-        "output_csv": str(output_csv), "output_csv_sha256": digest(output_csv),
+        "output_csv": str(output_csv),
+        "output_csv_sha256": digest(output_csv),
         "countries": sorted(countries) if countries is not None else "all_available_europe_sources",
         "western_germany_longitude_max": western_germany_longitude_max,
         "radars": [radars[key] for key in sorted(radars)],
-        "radar_count": len(radars), "retained_row_count": row_count,
+        "radar_count": len(radars),
+        "retained_row_count": row_count,
         "raw_radar_products_written": False,
     }
     output_manifest.parent.mkdir(parents=True, exist_ok=True)
@@ -95,11 +109,18 @@ def main() -> None:
         parser.error("provide --country at least once or use --all-europe")
     if args.all_europe and args.country:
         parser.error("--all-europe cannot be combined with --country")
-    print(json.dumps(prepare(
-        input_csvs=args.input_csv, output_csv=args.output_csv, output_manifest=args.output_manifest,
-        countries=None if args.all_europe else {value.upper() for value in args.country},
-        western_germany_longitude_max=args.western_germany_longitude_max,
-    ), indent=2))
+    print(
+        json.dumps(
+            prepare(
+                input_csvs=args.input_csv,
+                output_csv=args.output_csv,
+                output_manifest=args.output_manifest,
+                countries=None if args.all_europe else {value.upper() for value in args.country},
+                western_germany_longitude_max=args.western_germany_longitude_max,
+            ),
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

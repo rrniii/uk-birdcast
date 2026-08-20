@@ -29,7 +29,11 @@ def verify(
     stamp = day.replace("-", "")
     single = raw_dir / f"era5_single_levels_{stamp}_uk.nc"
     pressure = raw_dir / f"era5_pressure_levels_{stamp}_uk.nc"
-    for label, path in (("single-level", single), ("pressure-level", pressure), ("grid", grid_output)):
+    for label, path in (
+        ("single-level", single),
+        ("pressure-level", pressure),
+        ("grid", grid_output),
+    ):
         if not path.is_file() or path.stat().st_size == 0:
             raise ValueError(f"Europe {label} input is missing or empty: {path}")
     with TemporaryDirectory(prefix="birdcast-euro-grid-fidelity-") as temporary:
@@ -88,7 +92,17 @@ if __name__ == "__main__":
     parser.add_argument("--output", required=True)
     parser.add_argument("--release-id", required=True)
     args = parser.parse_args()
-    print(json.dumps(verify(
-        args.day, Path(args.raw_dir), Path(args.radars), Path(args.training_contract),
-        Path(args.grid_output), Path(args.output), release_id=args.release_id,
-    ), indent=2))
+    print(
+        json.dumps(
+            verify(
+                args.day,
+                Path(args.raw_dir),
+                Path(args.radars),
+                Path(args.training_contract),
+                Path(args.grid_output),
+                Path(args.output),
+                release_id=args.release_id,
+            ),
+            indent=2,
+        )
+    )

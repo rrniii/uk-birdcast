@@ -14,7 +14,7 @@
         <img src="live-uk-bird-maps-logo.jpg" alt="">
         <span><strong>European Bird Maps</strong><small>Historical Aloft, UK SP and ERA5 reanalysis</small></span>
       </a>
-      <span id="statusBadge" class="badge">Loading archive</span>
+      <span id="statusBadge" class="badge" role="status" aria-live="polite">Loading archive</span>
     </header>
     <main>
       <section class="toolbar" aria-label="Map controls">
@@ -22,22 +22,22 @@
         <label><span>Map variable</span><select id="metricSelect"><option value="mtr_birds_km_h">MTR</option><option value="vid_birds_per_km2">VID</option></select></label>
         <label><span>Colour scheme</span><select id="colourSelect"><option value="robin">Robin passage</option><option value="night">Night-flight</option><option value="atlantic">Atlantic blue</option><option value="thermal">Thermal migration</option><option value="viridis">Viridis</option></select></label>
         <label class="toggle"><input id="vectorsToggle" type="checkbox" checked><span>Bird vectors</span></label>
-        <label class="toggle"><input id="uncertaintyToggle" type="checkbox"><span>Uncertainty</span></label>
-        <label class="toggle"><input id="supportToggle" type="checkbox" checked><span>Data support</span></label>
+        <label class="toggle"><input id="supportToggle" type="checkbox" checked><span>Model support</span></label>
       </section>
       <section class="map-stage">
         <header class="map-heading">
           <div><p>Historical cross-network reanalysis</p><h1>Modelled migration</h1><span id="subtitle">Aloft BALTRAD reference scale</span></div>
           <span>ERA5 0.25° · UTC</span>
         </header>
-        <canvas id="mapCanvas" aria-label="European modelled bird migration map"></canvas>
-        <div class="zoom-controls"><button id="zoomIn" title="Zoom in">+</button><button id="zoomOut" title="Zoom out">−</button><button id="resetMap" title="Reset map">⌂</button></div>
+        <canvas id="mapCanvas" aria-label="European modelled bird migration map" aria-describedby="mapStatus"></canvas>
+        <p id="mapStatus" class="visually-hidden" role="status" aria-live="polite"></p>
+        <div class="zoom-controls"><button id="zoomIn" type="button" title="Zoom in">+</button><button id="zoomOut" type="button" title="Zoom out">−</button><button id="resetMap" type="button" title="Reset map">⌂</button></div>
         <div class="readout"><strong id="timestamp">--</strong><span id="meanValue">--</span></div>
         <div class="legend"><strong id="legendTitle">Migration traffic rate</strong><div><i id="legendRamp"></i><ol id="legendTicks"></ol></div><small id="legendUnit">birds km⁻¹ h⁻¹ · log scale</small></div>
         <div class="support-key"><span><i class="supported"></i>Interpolation</span><span><i class="extrapolated"></i>Extrapolation</span></div>
       </section>
       <section class="timeline">
-        <button id="resetTime" title="First hour">↺</button><button id="previous" title="Previous hour">‹</button><button id="play" class="play" title="Play">▶</button><button id="next" title="Next hour">›</button>
+        <button id="resetTime" type="button" title="First published hour">↺</button><button id="previous" type="button" title="Previous published hour">‹</button><button id="play" class="play" type="button" title="Play hourly animation" aria-label="Play hourly animation" aria-pressed="false">Play</button><button id="next" type="button" title="Next published hour">›</button>
         <label><span>UTC timeline</span><input id="hourInput" type="range" min="0" max="23" value="0"><output id="hourOutput">00:00</output></label>
       </section>
       <footer><span id="coverage">Coverage unavailable</span><span id="model">Research preview</span></footer>

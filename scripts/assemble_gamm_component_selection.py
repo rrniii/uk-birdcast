@@ -9,7 +9,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-
 SP_VECTOR_TARGETS = ("bird_u_ms", "bird_v_ms")
 
 
@@ -48,6 +47,14 @@ def component(
     return {
         "model_rds": str(model),
         "sha256": fingerprint(model),
+        "prediction_transform": (
+            "square_nonnegative"
+            if target == "mtr_birds_km_h"
+            else "cube_nonnegative"
+            if target == "vid_birds_per_km2"
+            else "identity"
+        ),
+        "uncertainty_scale": "model_linear_predictor_standard_error",
         "leave_one_radar_out": {
             field: metrics[metric_key][field] for field in ("r_squared", "rmse", "mae", "bias")
         },

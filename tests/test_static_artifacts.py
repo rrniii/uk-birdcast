@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
+
+import pytest
 
 from birdcast_uk.static_artifacts import (
     build_static_artifacts,
@@ -17,6 +20,16 @@ def test_write_json_creates_web_readable_file(tmp_path: Path) -> None:
     write_json(output, {"data_available": True})
 
     assert output.stat().st_mode & 0o777 == 0o644
+
+
+def test_write_json_rejects_non_standard_nan_without_replacing_file(tmp_path: Path) -> None:
+    output = tmp_path / "status.json"
+    write_json(output, {"value": 1})
+
+    with pytest.raises(ValueError, match="Out of range float values"):
+        write_json(output, {"value": math.nan})
+
+    assert json.loads(output.read_text(encoding="utf-8")) == {"value": 1}
 
 
 def test_placeholder_does_not_replace_data_bearing_geojson(tmp_path: Path) -> None:
@@ -50,6 +63,34 @@ def test_placeholder_does_not_replace_historical_manifest(tmp_path: Path) -> Non
     assert json.loads(output.read_text(encoding="utf-8")) == historical
 
 
+def test_static_refresh_forces_forecast_off_and_preserves_bto_validation(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "artifacts"
+    (root / "latest").mkdir(parents=True)
+    write_json(
+        root / "latest" / "forecast.json",
+        {"data_available": True, "valid_times_utc": ["2026-08-20T00:00:00Z"]},
+    )
+    validated = {
+        "bto_data_available": True,
+        "latest_bto_validation_date": "2026-08-19",
+        "status": "validated",
+    }
+    write_json(root / "latest" / "validation_status.json", validated)
+
+    build_static_artifacts(root, public_base_url="https://example.invalid/bucket")
+
+    forecast = json.loads((root / "latest" / "forecast.json").read_text(encoding="utf-8"))
+    assert forecast["data_available"] is False
+    assert forecast["mode"] == "disabled"
+    assert forecast["valid_times_utc"] == []
+    assert (
+        json.loads((root / "latest" / "validation_status.json").read_text(encoding="utf-8"))
+        == validated
+    )
+
+
 def test_install_static_site_uses_same_origin_data_url(tmp_path: Path) -> None:
     artifact_root = tmp_path / "artifacts"
     site_root = tmp_path / "site"
@@ -57,6 +98,8 @@ def test_install_static_site_uses_same_origin_data_url(tmp_path: Path) -> None:
         artifact_root,
         public_base_url="https://example.invalid/bucket",
     )
+    site_root.mkdir()
+    (site_root / "operator-note.txt").write_text("keep me\n", encoding="utf-8")
 
     result = install_static_site(
         artifact_root,
@@ -79,7 +122,8 @@ def test_install_static_site_uses_same_origin_data_url(tmp_path: Path) -> None:
     html = (site_root / "index.html").read_text(encoding="utf-8")
     assert 'href="live-uk-bird-maps-favicon.png?v=3" type="image/png"' in html
     assert 'rel="icon" href="live-uk-bird-maps-logo.jpg"' not in html
-    assert 'data-view="europe">European analysis' in html
+    assert 'data-view="europe"' in html
+    assert ">European analysis</button>" in html
     assert 'data-view="coastal"' not in html
     assert (site_root / "radar-marker.svg").is_file()
     radar_marker = (site_root / "radar-marker.svg").read_text(encoding="utf-8")
@@ -89,27 +133,34 @@ def test_install_static_site_uses_same_origin_data_url(tmp_path: Path) -> None:
     assert (site_root / "crow-radar-detail.js").is_file()
     crow_detail = (site_root / "crow-radar-detail.js").read_text(encoding="utf-8")
     assert "drawTimeAxis" in crow_detail
-    assert 'intervalHours === 72 ? 6 : 3' in crow_detail
-    assert 'formatAxisHour' in crow_detail
-    assert 'formatAxisDate' in crow_detail
-    assert 'this.data.axisFirst = first.getTime()' in crow_detail
+    assert "intervalHours === 72 ? 6 : 3" in crow_detail
+    assert "formatAxisHour" in crow_detail
+    assert "formatAxisDate" in crow_detail
+    assert "this.data.axisFirst = first.getTime()" in crow_detail
     app = (site_root / "app.js").read_text(encoding="utf-8")
     styles = (site_root / "styles.css").read_text(encoding="utf-8")
     assert "if (!event.ctrlKey && !event.metaKey) return;" in app
     assert "touch-action: pan-y" in styles
-    nginx = (Path(__file__).parents[1] / "deploy" / "nginx" / "birdcast-uk.conf").read_text(encoding="utf-8")
+    nginx = (Path(__file__).parents[1] / "deploy" / "nginx" / "birdcast-uk.conf").read_text(
+        encoding="utf-8"
+    )
     assert "location ^~ /birdcast-uk/data/" in nginx
     assert "alias /opt/birdcast-uk/data/static-artifacts/;" in nginx
-    assert 'this.data.axisLast = plusDays(first, days.length).getTime()' in crow_detail
+    assert "this.data.axisLast = plusDays(first, days.length).getTime()" in crow_detail
     assert (site_root / "regional-boundaries.geojson").is_file()
     assert "ukmo-nimrod/vpts/current_ci_le4" in config["vpts_object_url_template"]
     assert config["archive_sources"]["jasmin-uk"]["kind"] == "vpts"
     assert config["archive_sources"]["aloft"]["coverage_url"].endswith("coverage.csv")
-    assert config["archive_comparison_index_url"] == "/birdcast-uk/data/archive/comparisons/latest.json"
+    assert (
+        config["archive_comparison_index_url"]
+        == "/birdcast-uk/data/archive/comparisons/latest.json"
+    )
     regional = json.loads((site_root / "regional-boundaries.geojson").read_text(encoding="utf-8"))
     regional_codes = {feature["properties"]["ADM0_A3"] for feature in regional["features"]}
     assert {"GBR", "IRL", "JEY", "FRA", "DEU", "ESP", "SWE", "POL"} <= regional_codes
     assert (site_root / "config.json").stat().st_mode & 0o777 == 0o644
+    assert (site_root / ".birdcast-uk-site.json").is_file()
+    assert (site_root / "operator-note.txt").read_text(encoding="utf-8") == "keep me\n"
 
 
 def test_install_static_site_rejects_incomplete_artifacts(tmp_path: Path) -> None:

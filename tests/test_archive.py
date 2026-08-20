@@ -36,9 +36,30 @@ def test_aloft_daily_objects_resolve_existing_daily_vpts_paths() -> None:
 
 def test_vp_selection_is_an_in_memory_view_of_existing_vpts_rows() -> None:
     rows = [
-        {"datetime": "2026-07-18T01:00:00Z", "height": "200", "dens": "2", "source": "jasmin-uk", "source_url": "https://example/uk.csv", "pulse": "lp"},
-        {"datetime": "2026-07-18T01:00:00Z", "height": "400", "dens": "3", "source": "jasmin-uk", "source_url": "https://example/uk.csv", "pulse": "lp"},
-        {"datetime": "2026-07-18T01:10:00Z", "height": "200", "dens": "4", "source": "jasmin-uk", "source_url": "https://example/uk.csv", "pulse": "lp"},
+        {
+            "datetime": "2026-07-18T01:00:00Z",
+            "height": "200",
+            "dens": "2",
+            "source": "jasmin-uk",
+            "source_url": "https://example/uk.csv",
+            "pulse": "lp",
+        },
+        {
+            "datetime": "2026-07-18T01:00:00Z",
+            "height": "400",
+            "dens": "3",
+            "source": "jasmin-uk",
+            "source_url": "https://example/uk.csv",
+            "pulse": "lp",
+        },
+        {
+            "datetime": "2026-07-18T01:10:00Z",
+            "height": "200",
+            "dens": "4",
+            "source": "jasmin-uk",
+            "source_url": "https://example/uk.csv",
+            "pulse": "lp",
+        },
     ]
 
     profile = select_vp(rows, "2026-07-18T01:04:00Z")
@@ -62,27 +83,91 @@ def test_load_rows_keeps_source_objects_immutable_and_adds_memory_provenance() -
 
 def test_comparison_reports_only_matched_existing_profile_statistics() -> None:
     uk_rows = [
-        {"datetime": "2026-07-18T01:00:00Z", "height": "200", "dens": "3", "eta": "4", "source": "jasmin-uk", "source_url": "https://example/uk.csv", "pulse": "lp"},
-        {"datetime": "2026-07-18T01:00:00Z", "height": "400", "dens": "5", "eta": "8", "source": "jasmin-uk", "source_url": "https://example/uk.csv", "pulse": "lp"},
+        {
+            "datetime": "2026-07-18T01:00:00Z",
+            "height": "200",
+            "dens": "3",
+            "eta": "4",
+            "dd": "359",
+            "source": "jasmin-uk",
+            "source_url": "https://example/uk.csv",
+            "pulse": "lp",
+        },
+        {
+            "datetime": "2026-07-18T01:00:00Z",
+            "height": "400",
+            "dens": "5",
+            "eta": "8",
+            "dd": "359",
+            "source": "jasmin-uk",
+            "source_url": "https://example/uk.csv",
+            "pulse": "lp",
+        },
     ]
     aloft_rows = [
-        {"datetime": "2026-07-18T01:00:00Z", "height": "200", "dens": "2", "eta": "3", "source": "baltrad", "source_url": "https://example/aloft.csv"},
-        {"datetime": "2026-07-18T01:00:00Z", "height": "400", "dens": "4", "eta": "7", "source": "baltrad", "source_url": "https://example/aloft.csv"},
+        {
+            "datetime": "2026-07-18T01:00:00Z",
+            "height": "200",
+            "dens": "2",
+            "eta": "3",
+            "dd": "1",
+            "source": "baltrad",
+            "source_url": "https://example/aloft.csv",
+        },
+        {
+            "datetime": "2026-07-18T01:00:00Z",
+            "height": "400",
+            "dens": "4",
+            "eta": "7",
+            "dd": "1",
+            "source": "baltrad",
+            "source_url": "https://example/aloft.csv",
+        },
     ]
 
     report = compare_vpts_profiles(uk_rows, aloft_rows, requested="2026-07-18T01:03:00Z")
 
-    assert report["match_class"] == "exact"
+    assert report["match_class"] == "cadence-adjusted"
+    assert report["within_time_tolerance"] is True
     assert report["common_altitude_count"] == 2
     assert report["metrics"]["dens"] == {"count": 2, "bias": 1.0, "mae": 1.0, "rmse": 1.0}
+    assert report["metrics"]["dd"] == {"count": 2, "bias": -2.0, "mae": 2.0, "rmse": 2.0}
     assert report["uk"]["provenance"]["source_url"] == "https://example/uk.csv"
     assert report["aloft"]["provenance"]["source_url"] == "https://example/aloft.csv"
+
+
+def test_comparison_requires_each_source_to_be_close_to_requested_time() -> None:
+    common = {
+        "datetime": "2026-07-18T01:10:00Z",
+        "height": "200",
+        "dens": "3",
+    }
+
+    report = compare_vpts_profiles(
+        [{**common, "source": "jasmin-uk"}],
+        [{**common, "source": "baltrad"}],
+        requested="2026-07-18T01:00:00Z",
+        max_time_offset_seconds=300,
+    )
+
+    assert report["time_difference_seconds"] == 0
+    assert report["uk"]["time_offset_seconds"] == 600
+    assert report["aloft"]["time_offset_seconds"] == 600
+    assert report["match_class"] == "cadence-adjusted"
+    assert report["within_time_tolerance"] is False
 
 
 def test_crosswalk_requires_explicit_mapping_and_keeps_unmatched_radars_visible() -> None:
     payload = build_crosswalk(
         [{"slug": "chenies", "label": "Chenies"}, {"slug": "jersey", "label": "Jersey"}],
-        [{"uk_radar": "chenies", "aloft_source": "baltrad", "aloft_radar": "ukche", "comparison_class": "exact"}],
+        [
+            {
+                "uk_radar": "chenies",
+                "aloft_source": "baltrad",
+                "aloft_radar": "ukche",
+                "comparison_class": "exact",
+            }
+        ],
     )
 
     assert payload["entry_count"] == 1
@@ -93,22 +178,82 @@ def test_crosswalk_requires_explicit_mapping_and_keeps_unmatched_radars_visible(
 def test_comparison_index_only_publishes_reports_that_match_the_explicit_crosswalk() -> None:
     crosswalk = build_crosswalk(
         [{"slug": "chenies", "label": "Chenies"}],
-        [{"uk_radar": "chenies", "aloft_source": "baltrad", "aloft_radar": "ukche", "comparison_class": "exact"}],
+        [
+            {
+                "uk_radar": "chenies",
+                "aloft_source": "baltrad",
+                "aloft_radar": "ukche",
+                "comparison_class": "exact",
+            }
+        ],
     )
     report = {
+        "schema_version": "birdcast-uk-vpts-comparison-1.0",
         "generated_at_utc": "2026-07-21T10:00:00Z",
         "requested_time_utc": "2026-07-18T01:00:00Z",
         "common_altitude_count": 25,
         "time_difference_seconds": 0,
         "within_time_tolerance": True,
-        "uk": {"provenance": {"radar": "chenies"}},
-        "aloft": {"provenance": {"source": "baltrad", "radar": "ukche"}},
+        "uk": {
+            "time_offset_seconds": 0,
+            "provenance": {"source": "jasmin-uk", "radar": "chenies"},
+        },
+        "aloft": {
+            "time_offset_seconds": 0,
+            "provenance": {"source": "baltrad", "radar": "ukche"},
+        },
         "metrics": {"dens": {"count": 25, "bias": 1.0}},
+        "source_policy": "Existing VPTS objects remain read only.",
     }
 
-    index = build_comparison_index(crosswalk, [report, {**report, "uk": {"provenance": {"radar": "jersey"}}}])
+    index = build_comparison_index(
+        crosswalk, [report, {**report, "uk": {"provenance": {"radar": "jersey"}}}]
+    )
 
     assert index["status"] == "ready"
     assert index["report_count"] == 1
     assert index["entries"][0]["report_available"] is True
     assert "rows" not in index["entries"][0]
+
+
+def test_comparison_index_rejects_unusable_or_out_of_tolerance_reports() -> None:
+    crosswalk = build_crosswalk(
+        [{"slug": "chenies", "label": "Chenies"}],
+        [
+            {
+                "uk_radar": "chenies",
+                "aloft_source": "baltrad",
+                "aloft_radar": "ukche",
+                "comparison_class": "cadence-adjusted",
+                "max_time_offset_seconds": 300,
+            }
+        ],
+    )
+    report = {
+        "schema_version": "birdcast-uk-vpts-comparison-1.0",
+        "generated_at_utc": "2026-07-21T10:00:00Z",
+        "requested_time_utc": "2026-07-18T01:00:00Z",
+        "common_altitude_count": 2,
+        "time_difference_seconds": 0,
+        "within_time_tolerance": True,
+        "uk": {
+            "time_offset_seconds": 600,
+            "provenance": {"source": "jasmin-uk", "radar": "chenies"},
+        },
+        "aloft": {
+            "time_offset_seconds": 600,
+            "provenance": {"source": "baltrad", "radar": "ukche"},
+        },
+        "metrics": {"dens": {"count": 2, "bias": 1.0, "mae": 1.0, "rmse": 1.0}},
+        "source_policy": "Existing VPTS objects remain read only.",
+    }
+
+    index = build_comparison_index(crosswalk, [report])
+
+    assert index["status"] == "no_verified_reports"
+    assert index["report_count"] == 0
+    assert index["rejected_report_count"] == 1
+    assert index["entries"][0]["report_available"] is False
+    assert index["entries"][0]["report_status"] == "rejected"
+    assert "insufficient_common_altitude_levels" in index["entries"][0]["rejection_reasons"]
+    assert "uk_outside_requested_time_tolerance" in index["entries"][0]["rejection_reasons"]

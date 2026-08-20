@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
-from pathlib import Path
+import math
 import re
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from .config import PROCESSING_VERSION
+from .era5 import SITE_PRESSURE_LEVEL_KEYS, SITE_SINGLE_LEVEL_KEYS
 from .static_artifacts import utc_now, write_json
 
 
@@ -24,6 +26,8 @@ def join_observed_to_era5(
         raise ValueError("observed hourly artifact has no rows")
 
     era5_index: dict[tuple[str, str], dict[str, Any]] = {}
+    seen_sources: set[tuple[str, str, str]] = set()
+    integrity_errors: list[str] = []
     source_files = []
     for path in sorted(era5_dir.glob("era5_site_features_[0-9]*.json")):
         payload = _read_payload(path)
@@ -38,6 +42,15 @@ def join_observed_to_era5(
             hour = _hour_key(row.get("time_utc"))
             if not radar or hour is None:
                 continue
+            source_kind = _source_kind(row)
+            if source_kind is None:
+                integrity_errors.append(f"{radar} {hour}: unknown ERA5 source kind")
+                continue
+            source_key = (radar, hour, source_kind)
+            if source_key in seen_sources:
+                integrity_errors.append(f"{radar} {hour}: duplicate {source_kind} feature row")
+                continue
+            seen_sources.add(source_key)
             joined = era5_index.setdefault(
                 (radar, hour),
                 {
@@ -47,13 +60,15 @@ def join_observed_to_era5(
                     "era5_pressure_levels_available": False,
                 },
             )
-            dataset_index = int(row.get("dataset_index") or 0)
-            if dataset_index == 0:
+            if source_kind == "single_levels":
                 joined["era5_single_levels_available"] = True
-            elif dataset_index == 1:
+            else:
                 joined["era5_pressure_levels_available"] = True
             for key, value in row.items():
-                if key in {"radar", "time_utc", "dataset_index"}:
+                if key in {"radar", "time_utc", "dataset_index", "source_kind"}:
+                    continue
+                if key in joined and joined[key] != value:
+                    integrity_errors.append(f"{radar} {hour}: conflicting ERA5 value for {key}")
                     continue
                 joined[key] = value
 
@@ -65,8 +80,18 @@ def join_observed_to_era5(
         radar = str(observed.get("radar") or "")
         hour = _hour_key(observed.get("time_utc"))
         era5 = era5_index.get((radar, hour or ""))
-        if era5 is None:
-            unmatched_observed.append({"radar": radar, "time_utc": hour})
+        missing_predictors = _missing_predictors(era5) if era5 is not None else []
+        if era5 is None or missing_predictors:
+            unmatched_observed.append(
+                {
+                    "radar": radar,
+                    "time_utc": hour,
+                    "reason": "missing ERA5 radar-hour"
+                    if era5 is None
+                    else "incomplete ERA5 predictor set",
+                    "missing_predictors": missing_predictors,
+                }
+            )
             continue
         row = dict(era5)
         for key, value in observed.items():
@@ -78,7 +103,7 @@ def join_observed_to_era5(
     matched_keys = {(str(row["radar"]), str(row["time_utc"])) for row in matched_rows}
     unmatched_era5_count = len(set(era5_index) - matched_keys)
     radar_count = len({str(row["radar"]) for row in matched_rows})
-    ok = bool(matched_rows)
+    ok = bool(matched_rows) and not unmatched_observed and not integrity_errors
     result = {
         "ok": ok,
         "data_available": ok,
@@ -94,6 +119,8 @@ def join_observed_to_era5(
         "unmatched_observed_count": len(unmatched_observed),
         "unmatched_observed_sample": unmatched_observed[:25],
         "unmatched_era5_count": unmatched_era5_count,
+        "integrity_error_count": len(integrity_errors),
+        "integrity_error_sample": integrity_errors[:25],
         "rows": matched_rows,
     }
     write_json(output, result)
@@ -107,8 +134,36 @@ def join_observed_to_era5(
     return {
         key: value
         for key, value in result.items()
-        if key not in {"rows", "unmatched_observed_sample"}
+        if key not in {"rows", "unmatched_observed_sample", "integrity_error_sample"}
     }
+
+
+def _source_kind(row: dict[str, Any]) -> str | None:
+    source_kind = str(row.get("source_kind") or "")
+    if source_kind in {"single_levels", "pressure_levels"}:
+        return source_kind
+    try:
+        dataset_index = int(row["dataset_index"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if dataset_index == 0:
+        return "single_levels"
+    if dataset_index == 1:
+        return "pressure_levels"
+    return None
+
+
+def _missing_predictors(row: dict[str, Any]) -> list[str]:
+    missing = []
+    if not row.get("era5_single_levels_available"):
+        missing.append("single_levels")
+    if not row.get("era5_pressure_levels_available"):
+        missing.append("pressure_levels")
+    for key in sorted(SITE_SINGLE_LEVEL_KEYS | SITE_PRESSURE_LEVEL_KEYS):
+        value = row.get(key)
+        if not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+            missing.append(key)
+    return missing
 
 
 def _hour_key(value: object) -> str | None:

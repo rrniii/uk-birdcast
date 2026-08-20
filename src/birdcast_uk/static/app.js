@@ -18,6 +18,7 @@ const state = {
   boundary: null,
   yearPayload: null,
   modelDayPayload: null,
+  modelDayKey: null,
   view: "observed",
   dates: {observed: null, modelled: null},
   date: null,
@@ -27,18 +28,20 @@ const state = {
   modelMetric: "mtr_birds_km_h",
   colourScheme: "robin",
   showArrows: true,
-  showUncertainty: false,
+  showSupport: false,
   visibleRows: [],
   statusRows: [],
   modelFrame: null,
   points: [],
   animation: null,
+  animationGeneration: 0,
   mapView: {zoom: 1, panX: 0, panY: 0},
   mapDrag: null,
   mapWasDragged: false,
   selectedRadar: null,
   vptsObjectUrlTemplate: "",
   archiveComparisonIndex: null,
+  loadGeneration: 0,
 };
 
 const MTR_CUTOFF_BIRDS_KM_H = 10;
@@ -61,8 +64,8 @@ const MTR_CUTOFF_BIRDS_KM_H = 10;
   state.archiveComparisonIndex = archiveComparisonIndex;
   if (!state.historical && !state.model && !state.europe) {
     showUnavailable();
-    configureControls();
     setViewAvailability();
+    setDataControlsDisabled(true);
     return;
   }
   if (!state.historical) state.view = state.model ? "modelled" : "europe";
@@ -111,6 +114,13 @@ function assetUrl(path) {
   return path.startsWith("http") ? path : `${state.base}/${path.replace(/^\//, "")}`;
 }
 
+function finiteNumber(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" && !value.trim()) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function activeManifest() {
   return state.view === "modelled" ? state.model : state.historical;
 }
@@ -128,6 +138,11 @@ function setViewAvailability() {
   });
 }
 
+function setDataControlsDisabled(disabled) {
+  document.querySelectorAll(".control-bar input, .control-bar select, .control-bar button, .timeline input, .timeline button, .map-controls button")
+    .forEach((control) => { control.disabled = disabled; });
+}
+
 function setRangeForView() {
   const manifest = activeManifest();
   if (!manifest) return;
@@ -142,31 +157,75 @@ function setRangeForView() {
   input.value = state.date;
 }
 
-async function loadYear(year) {
-  const path = state.historical && state.historical.assets.daily_by_year[String(year)];
-  state.yearPayload = path ? await fetchJson(assetUrl(path), {year, rows: []}) : {year, rows: []};
+async function fetchYearPayload(year) {
+  const dailyByYear = state.historical && state.historical.assets && state.historical.assets.daily_by_year;
+  const path = dailyByYear && dailyByYear[String(year)];
+  return path ? await fetchJson(assetUrl(path), {year, rows: []}) : {year, rows: []};
 }
 
-async function loadModelDay() {
-  const assets = state.model && state.model.assets && state.model.assets[state.pulse];
-  const path = assets && assets[state.date];
-  state.modelDayPayload = path ? await fetchJson(assetUrl(path), {frames: []}) : {frames: []};
-  const available = (state.modelDayPayload.frames || []).map((frame) => new Date(frame.time_utc).getUTCHours());
-  state.hour = available.includes(state.hour) ? state.hour : (available[0] ?? 0);
+async function fetchModelDayPayload(date, pulse) {
+  const assets = state.model && state.model.assets && state.model.assets[pulse];
+  const path = assets && assets[date];
+  return path ? await fetchJson(assetUrl(path), {frames: []}) : {frames: []};
+}
+
+async function fetchHistoricalPayloadForDate(date) {
+  const inHistoricalRange = state.historical
+    && state.historical.first_date <= date
+    && date <= state.historical.latest_date;
+  return inHistoricalRange ? await fetchYearPayload(Number(date.slice(0, 4))) : {rows: []};
+}
+
+function modelDayKey(date = state.date, pulse = state.pulse) {
+  return `${date || ""}|${pulse || ""}`;
+}
+
+function currentModelDayPayload() {
+  return state.modelDayKey === modelDayKey() ? state.modelDayPayload : null;
+}
+
+function loadRequest() {
+  return {
+    generation: ++state.loadGeneration,
+    view: state.view,
+    date: state.date,
+    pulse: state.pulse,
+  };
+}
+
+function loadIsCurrent(request) {
+  return request.generation === state.loadGeneration
+    && request.view === state.view
+    && request.date === state.date
+    && request.pulse === state.pulse;
+}
+
+function invalidateLoads() {
+  state.loadGeneration += 1;
 }
 
 async function loadCurrentData() {
-  if (state.view === "europe") return;
-  if (state.view === "modelled") {
-    await loadModelDay();
-    if (state.historical && state.historical.first_date <= state.date && state.date <= state.historical.latest_date) {
-      await loadYear(Number(state.date.slice(0, 4)));
-    } else {
-      state.yearPayload = {rows: []};
-    }
-    return;
+  if (state.view === "europe" || !state.date) return false;
+  const request = loadRequest();
+  if (request.view === "modelled") {
+    state.modelFrame = null;
+    state.modelDayKey = null;
+    const [modelDayPayload, yearPayload] = await Promise.all([
+      fetchModelDayPayload(request.date, request.pulse),
+      fetchHistoricalPayloadForDate(request.date),
+    ]);
+    if (!loadIsCurrent(request)) return false;
+    state.modelDayPayload = modelDayPayload;
+    state.modelDayKey = modelDayKey(request.date, request.pulse);
+    state.yearPayload = yearPayload;
+    const available = availableHours();
+    state.hour = available.includes(state.hour) ? state.hour : (available[0] ?? 0);
+    return true;
   }
-  await loadYear(Number(state.date.slice(0, 4)));
+  const yearPayload = await fetchYearPayload(Number(request.date.slice(0, 4)));
+  if (!loadIsCurrent(request)) return false;
+  state.yearPayload = yearPayload;
+  return true;
 }
 
 function configureControls() {
@@ -177,11 +236,13 @@ function configureControls() {
       state.dates[state.view] = state.date;
       state.view = next;
       stopAnimation();
-      if (state.view !== "europe") {
-        setRangeForView();
-        await loadCurrentData();
+      if (state.view === "europe") {
+        invalidateLoads();
+        render();
+        return;
       }
-      render();
+      setRangeForView();
+      if (await loadCurrentData()) render();
     });
   });
   const dateInput = document.getElementById("dateInput");
@@ -190,10 +251,12 @@ function configureControls() {
     stopAnimation();
     state.date = dateInput.value;
     state.dates[state.view] = state.date;
-    await loadCurrentData();
-    render();
+    if (await loadCurrentData()) render();
   });
-  bindSegment("pulseControl", "pulse", async () => { await loadCurrentData(); });
+  bindSegment("pulseControl", "pulse", async () => {
+    stopAnimation();
+    return await loadCurrentData();
+  });
   bindSegment("modelMetricControl", "modelMetric");
   document.getElementById("metricSelect").addEventListener("change", (event) => {
     state.metric = event.target.value;
@@ -211,15 +274,20 @@ function configureControls() {
     state.showArrows = event.target.checked;
     drawMap();
   });
-  document.getElementById("uncertaintyToggle").addEventListener("change", (event) => {
-    state.showUncertainty = event.target.checked;
+  document.getElementById("supportToggle").addEventListener("change", (event) => {
+    state.showSupport = event.target.checked;
     drawMap();
   });
   document.getElementById("playButton").addEventListener("click", toggleAnimation);
   document.getElementById("previousButton").addEventListener("click", async () => { await stepHour(-1); });
   document.getElementById("nextButton").addEventListener("click", async () => { await stepHour(1); });
-  document.getElementById("resetButton").addEventListener("click", () => {
+  document.getElementById("resetButton").addEventListener("click", async () => {
+    stopAnimation();
     const hours = availableHours();
+    if (!hours.length) {
+      await selectPublishedModelDate(availableModelDates(), 1);
+      return;
+    }
     state.hour = hours[0] ?? 0;
     render();
   });
@@ -229,8 +297,8 @@ function bindSegment(id, key, beforeRender) {
   document.getElementById(id).querySelectorAll("button").forEach((button) => {
     button.addEventListener("click", async () => {
       state[key] = button.dataset.value;
-      if (beforeRender) await beforeRender();
-      render();
+      const loaded = beforeRender ? await beforeRender() : true;
+      if (loaded !== false) render();
     });
   });
 }
@@ -242,17 +310,25 @@ function render() {
   explorer.classList.toggle("europe-active", isEurope);
   europePanel.hidden = !isEurope;
   document.querySelectorAll(".map-stage, .timeline, .details, .crow-detail").forEach((element) => { element.hidden = isEurope; });
-  document.querySelectorAll(".view-tabs button").forEach((button) => button.classList.toggle("active", button.dataset.view === state.view));
+  updatePressedButtons(".view-tabs button", state.view);
   document.querySelectorAll(".model-control").forEach((element) => { element.hidden = state.view !== "modelled"; });
   document.querySelectorAll(".observed-control").forEach((element) => { element.hidden = state.view !== "observed"; });
   if (isEurope) {
     const frame = document.getElementById("europeFrame");
-    if (!frame.src) frame.src = state.europePageUrl;
+    if (!frame.getAttribute("src")) frame.src = state.europePageUrl;
+    const relative = state.europe && state.europe.release_status === "published-relative-research-product";
+    const badge = document.getElementById("statusBadge");
+    badge.textContent = relative ? "European relative activity research product" : "European historical analysis";
+    badge.className = "badge ok";
+    document.getElementById("mapTitle").textContent = relative ? "European relative bird activity and observed flow" : "European historical bird migration analysis";
+    document.getElementById("mapSummary").textContent = relative
+      ? "European historical relative activity and observed flow are shown in the embedded analysis. Values are not an absolute cross-radar migration scale."
+      : "European historical bird migration analysis is shown in the embedded panel.";
     document.getElementById("plotsSection").hidden = true;
     return;
   }
-  document.querySelectorAll("#pulseControl button").forEach((button) => button.classList.toggle("active", button.dataset.value === state.pulse));
-  document.querySelectorAll("#modelMetricControl button").forEach((button) => button.classList.toggle("active", button.dataset.value === state.modelMetric));
+  updatePressedButtons("#pulseControl button", state.pulse);
+  updatePressedButtons("#modelMetricControl button", state.modelMetric);
   document.getElementById("colourSchemeSelect").value = state.colourScheme;
   document.getElementById("dateInput").value = state.date;
   document.getElementById("hourInput").value = state.hour;
@@ -260,10 +336,20 @@ function render() {
   const vectorsValidated = state.view !== "modelled" || state.pulse === "sp";
   const arrowsToggle = document.getElementById("arrowsToggle");
   arrowsToggle.disabled = !vectorsValidated;
+  arrowsToggle.setAttribute("aria-disabled", String(!vectorsValidated));
   arrowsToggle.title = vectorsValidated ? "" : "LP vector transfer is not validated away from reporting radars";
   document.getElementById("arrowsLabel").textContent = vectorsValidated ? "Bird vectors" : "Bird vectors (SP only)";
   document.getElementById("plotsSection").hidden = state.view === "modelled";
   if (state.view === "modelled") renderModelled(); else renderObserved();
+}
+
+function updatePressedButtons(selector, activeValue) {
+  document.querySelectorAll(selector).forEach((button) => {
+    const value = button.dataset.view || button.dataset.value;
+    const active = value === activeValue;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
 }
 
 function renderObserved() {
@@ -272,14 +358,18 @@ function renderObserved() {
   state.statusRows = state.visibleRows;
   state.modelFrame = null;
   const metric = observedMetric();
-  const values = state.visibleRows.map((row) => Number(row[state.metric])).filter(Number.isFinite);
+  const values = state.visibleRows.map((row) => finiteNumber(row[state.metric])).filter((value) => value !== null);
   const mean = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
   document.getElementById("mapTitle").textContent = "Radar observations";
   document.getElementById("mapSubtitle").textContent = `${state.pulse.toUpperCase()} · all available hours · ${state.visibleRows.length} reporting radars`;
   document.getElementById("mapTimestamp").textContent = `${formatDate(state.date)} · UTC`;
   document.getElementById("networkValue").textContent = mean === null ? "No observations" : metric.format(mean);
-  document.getElementById("networkUnit").textContent = mean === null ? "Choose another date or pulse" : `${metric.meanLabel} across reporting radars`;
+  document.getElementById("networkUnit").textContent = mean === null ? "Choose another date or pulse" : `${metric.meanLabel} across ${values.length} radar${values.length === 1 ? "" : "s"} with data`;
   document.getElementById("radarHeading").textContent = "Reporting radars";
+  document.getElementById("mapResolution").textContent = "Radar-site daily aggregation · UTC";
+  document.getElementById("mapSummary").textContent = mean === null
+    ? `${state.pulse.toUpperCase()} radar observations for ${formatDate(state.date)} have no value for ${metric.label}.`
+    : `${state.pulse.toUpperCase()} radar observations for ${formatDate(state.date)}: ${metric.meanLabel.toLowerCase()} ${metric.format(mean)} across ${values.length} radar${values.length === 1 ? "" : "s"} with data.`;
   renderStatus();
   renderRadarList(metric);
   renderPlots((state.historical.assets && state.historical.assets.plots) || []);
@@ -291,34 +381,58 @@ function renderObserved() {
 function aggregateObservedRows(rows) {
   const byRadar = new Map();
   for (const row of rows) {
-    const current = byRadar.get(row.radar) || {...row, profiles: 0, vid: 0, _heightTotal: 0, _speedTotal: 0, _weightedProfiles: 0};
-    const profiles = Number(row.profiles) || 0;
-    const vid = Number(row.vid);
-    if (Number.isFinite(vid)) current.vid += vid;
-    current.profiles += profiles;
-    for (const [metric, total] of [["height_m", "_heightTotal"], ["speed_ms", "_speedTotal"]]) {
-      const value = Number(row[metric]);
-      if (Number.isFinite(value) && profiles > 0) current[total] += value * profiles;
+    const current = byRadar.get(row.radar) || {
+      ...row,
+      profiles: 0,
+      _vidTotal: 0,
+      _vidCount: 0,
+      _heightTotal: 0,
+      _heightProfiles: 0,
+      _speedTotal: 0,
+      _speedProfiles: 0,
+    };
+    const parsedProfiles = finiteNumber(row.profiles);
+    const profiles = parsedProfiles !== null && parsedProfiles > 0 ? parsedProfiles : 0;
+    const vid = finiteNumber(row.vid);
+    if (vid !== null) {
+      current._vidTotal += vid;
+      current._vidCount += 1;
     }
-    current._weightedProfiles += profiles;
+    current.profiles += profiles;
+    for (const [metric, total, denominator] of [
+      ["height_m", "_heightTotal", "_heightProfiles"],
+      ["speed_ms", "_speedTotal", "_speedProfiles"],
+    ]) {
+      const value = finiteNumber(row[metric]);
+      if (value !== null && profiles > 0) {
+        current[total] += value * profiles;
+        current[denominator] += profiles;
+      }
+    }
     byRadar.set(row.radar, current);
   }
-  return [...byRadar.values()].map((row) => ({
-    ...row,
-    height_m: row._weightedProfiles ? row._heightTotal / row._weightedProfiles : null,
-    speed_ms: row._weightedProfiles ? row._speedTotal / row._weightedProfiles : null,
-  }));
+  return [...byRadar.values()].map((row) => {
+    const result = {
+      ...row,
+      vid: row._vidCount ? row._vidTotal : null,
+      height_m: row._heightProfiles ? row._heightTotal / row._heightProfiles : null,
+      speed_ms: row._speedProfiles ? row._speedTotal / row._speedProfiles : null,
+    };
+    for (const key of ["_vidTotal", "_vidCount", "_heightTotal", "_heightProfiles", "_speedTotal", "_speedProfiles"]) delete result[key];
+    return result;
+  });
 }
 
 function renderModelled() {
-  const frames = state.modelDayPayload && state.modelDayPayload.frames || [];
+  const payload = currentModelDayPayload();
+  const frames = payload && payload.frames || [];
   state.modelFrame = frames.find((frame) => new Date(frame.time_utc).getUTCHours() === state.hour) || null;
   const historicalRows = state.yearPayload && state.yearPayload.rows || [];
   state.statusRows = aggregateObservedRows(historicalRows.filter((row) => row.date === state.date && row.pulse === state.pulse));
   state.visibleRows = [];
   const metric = modelMetric();
   const cells = visibleModelCells(state.modelFrame && state.modelFrame.cells || []);
-  const values = cells.map((cell) => Number(cell[state.modelMetric])).filter(Number.isFinite);
+  const values = cells.map((cell) => finiteNumber(cell[state.modelMetric])).filter((value) => value !== null);
   const mean = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
   document.getElementById("mapTitle").textContent = "Modelled migration";
   document.getElementById("mapSubtitle").textContent = state.modelFrame
@@ -328,6 +442,10 @@ function renderModelled() {
   document.getElementById("networkValue").textContent = mean === null ? "No modelled frame" : metric.format(mean);
   document.getElementById("networkUnit").textContent = "Spatial mean across in-range ERA5 cells";
   document.getElementById("radarHeading").textContent = "Radar status";
+  document.getElementById("mapResolution").textContent = (state.model.grid && state.model.grid.resolution) || "ERA5 native 0.25° · UTC";
+  document.getElementById("mapSummary").textContent = mean === null
+    ? `No ${state.pulse.toUpperCase()} modelled ${metric.label.toLowerCase()} frame is available for ${formatDate(state.date)} at ${String(state.hour).padStart(2, "0")}:00 UTC.`
+    : `${state.pulse.toUpperCase()} modelled migration for ${formatDate(state.date)} at ${String(state.hour).padStart(2, "0")}:00 UTC: spatial mean ${metric.format(mean)} across in-range cells.`;
   renderStatus();
   renderRadarListForStatus();
   setLegend(activeScale(values), metric);
@@ -336,7 +454,10 @@ function renderModelled() {
 }
 
 function visibleModelCells(cells) {
-  return cells.filter((cell) => Number(cell.mtr_birds_km_h) >= MTR_CUTOFF_BIRDS_KM_H);
+  return cells.filter((cell) => {
+    const mtr = finiteNumber(cell.mtr_birds_km_h);
+    return mtr !== null && mtr >= MTR_CUTOFF_BIRDS_KM_H;
+  });
 }
 
 function observedMetric() {
@@ -411,8 +532,9 @@ function renderRadarList(metric) {
   const bySlug = new Map(state.visibleRows.map((row) => [row.radar, row]));
   document.getElementById("radarList").innerHTML = state.historical.radars.map((radar) => {
     const row = bySlug.get(radar.slug);
-    const value = row && Number(row[state.metric]);
-    return `<button type="button" data-radar="${escapeHtml(radar.slug)}"><span>${escapeHtml(radar.label)}</span><strong>${Number.isFinite(value) ? escapeHtml(metric.format(value)) : "Unavailable"}</strong></button>`;
+    const value = row ? finiteNumber(row[state.metric]) : null;
+    const selected = Boolean(state.selectedRadar && state.selectedRadar.slug === radar.slug);
+    return `<button type="button" data-radar="${escapeHtml(radar.slug)}" class="${selected ? "selected" : ""}" aria-pressed="${selected}"><span>${escapeHtml(radar.label)}</span><strong>${value !== null ? escapeHtml(metric.format(value)) : "Unavailable"}</strong></button>`;
   }).join("");
   bindRadarList();
 }
@@ -420,8 +542,9 @@ function renderRadarList(metric) {
 function renderRadarListForStatus() {
   const bySlug = new Map(state.statusRows.map((row) => [row.radar, row]));
   const radars = (state.historical && state.historical.radars) || [];
-  document.getElementById("radarList").innerHTML = radars.map((radar) => `<button type="button" data-radar="${escapeHtml(radar.slug)}"><span>${escapeHtml(radar.label)}</span><strong>${bySlug.has(radar.slug) ? "Available" : "Unavailable"}</strong></button>`).join("");
-  bindRadarList();
+  document.getElementById("radarList").innerHTML = radars.length
+    ? radars.map((radar) => `<div class="radar-status-item"><span>${escapeHtml(radar.label)}</span><strong>${bySlug.has(radar.slug) ? "Available" : "Unavailable"}</strong></div>`).join("")
+    : '<p class="empty-state">Radar-status observations are unavailable for this model date.</p>';
 }
 
 function bindRadarList() {
@@ -456,20 +579,26 @@ function drawMap() {
 
 function currentBounds() {
   const bounds = state.model && state.model.grid && state.model.grid.bounds;
-  if (bounds && ["west", "east", "south", "north"].every((key) => Number.isFinite(Number(bounds[key])))) {
-    return Object.fromEntries(Object.entries(bounds).map(([key, value]) => [key, Number(value)]));
+  if (bounds) {
+    const parsed = Object.fromEntries(["west", "east", "south", "north"].map((key) => [key, finiteNumber(bounds[key])]));
+    if (Object.values(parsed).every((value) => value !== null) && parsed.west < parsed.east && parsed.south < parsed.north) return parsed;
   }
   const radars = state.historical && state.historical.radars || [];
-  if (radars.length && radars.every((radar) => Number.isFinite(Number(radar.max_range_m)))) {
+  const locatedRadars = radars.map((radar) => ({
+    latitude: finiteNumber(radar.latitude),
+    longitude: finiteNumber(radar.longitude),
+    maxRangeMetres: finiteNumber(radar.max_range_m),
+  })).filter((radar) => radar.latitude !== null && radar.longitude !== null && radar.maxRangeMetres !== null && radar.maxRangeMetres > 0);
+  if (locatedRadars.length) {
     let west = 180, east = -180, south = 90, north = -90;
-    for (const radar of radars) {
-      const rangeKm = Number(radar.max_range_m) / 1000;
+    for (const radar of locatedRadars) {
+      const rangeKm = radar.maxRangeMetres / 1000;
       const latDelta = rangeKm / 111.195;
-      const lonDelta = rangeKm / (111.195 * Math.max(Math.cos(Number(radar.latitude) * Math.PI / 180), .01));
-      west = Math.min(west, Number(radar.longitude) - lonDelta);
-      east = Math.max(east, Number(radar.longitude) + lonDelta);
-      south = Math.min(south, Number(radar.latitude) - latDelta);
-      north = Math.max(north, Number(radar.latitude) + latDelta);
+      const lonDelta = rangeKm / (111.195 * Math.max(Math.cos(radar.latitude * Math.PI / 180), .01));
+      west = Math.min(west, radar.longitude - lonDelta);
+      east = Math.max(east, radar.longitude + lonDelta);
+      south = Math.min(south, radar.latitude - latDelta);
+      north = Math.max(north, radar.latitude + latDelta);
     }
     return {west: west - .25, east: east + .25, south: south - .25, north: north + .25};
   }
@@ -524,20 +653,25 @@ function traceGeometry(ctx, geometry, width, height) {
 function drawModelledField(ctx, width, height) {
   const cells = visibleModelCells(state.modelFrame && state.modelFrame.cells || []);
   if (!cells.length) return;
-  const scale = activeScale(cells.map((cell) => Number(cell[state.modelMetric])));
-  const grid = state.modelDayPayload && state.modelDayPayload.grid || {};
-  const lonStep = Number(grid.longitude_step || .25);
-  const latStep = Number(grid.latitude_step || .25);
+  const scale = activeScale(cells.map((cell) => finiteNumber(cell[state.modelMetric])));
+  const payload = currentModelDayPayload();
+  const grid = payload && payload.grid || {};
+  const parsedLonStep = finiteNumber(grid.longitude_step);
+  const parsedLatStep = finiteNumber(grid.latitude_step);
+  const lonStep = parsedLonStep !== null && parsedLonStep > 0 ? parsedLonStep : .25;
+  const latStep = parsedLatStep !== null && parsedLatStep > 0 ? parsedLatStep : .25;
   for (const cell of cells) {
-    const value = Number(cell[state.modelMetric]);
-    if (!Number.isFinite(value)) continue;
-    const northWest = project(Number(cell.longitude) - lonStep / 2, Number(cell.latitude) + latStep / 2, width, height);
-    const southEast = project(Number(cell.longitude) + lonStep / 2, Number(cell.latitude) - latStep / 2, width, height);
-    const support = Number(cell.support);
-    ctx.globalAlpha = state.showUncertainty && Number.isFinite(support) ? .2 + .8 * Math.max(0, Math.min(1, support)) : .94;
+    const value = finiteNumber(cell[state.modelMetric]);
+    const longitude = finiteNumber(cell.longitude);
+    const latitude = finiteNumber(cell.latitude);
+    if (value === null || longitude === null || latitude === null) continue;
+    const northWest = project(longitude - lonStep / 2, latitude + latStep / 2, width, height);
+    const southEast = project(longitude + lonStep / 2, latitude - latStep / 2, width, height);
+    const support = finiteNumber(cell.support);
+    ctx.globalAlpha = state.showSupport && support !== null ? .2 + .8 * Math.max(0, Math.min(1, support)) : .94;
     ctx.fillStyle = quantitativeColor(value, scale);
     ctx.fillRect(northWest.x, northWest.y, southEast.x - northWest.x + 1, southEast.y - northWest.y + 1);
-    if (state.showUncertainty && Number.isFinite(support) && support < .5) {
+    if (state.showSupport && support !== null && support < .5) {
       ctx.globalAlpha = .42;
       ctx.strokeStyle = "#dce4df";
       ctx.lineWidth = .45;
@@ -552,9 +686,10 @@ function drawVectors(ctx, width, height, cells, scale) {
   const stride = width <= 650 ? 12 : 8;
   cells.forEach((cell, index) => {
     if (index % stride) return;
-    const u = Number(cell.bird_u_ms), v = Number(cell.bird_v_ms), intensity = Number(cell.mtr_birds_km_h);
-    if (!Number.isFinite(u) || !Number.isFinite(v) || !Number.isFinite(intensity) || scalePosition(intensity, scale) < .08) return;
-    const start = project(Number(cell.longitude), Number(cell.latitude), width, height);
+    const u = finiteNumber(cell.bird_u_ms), v = finiteNumber(cell.bird_v_ms), intensity = finiteNumber(cell.mtr_birds_km_h);
+    const longitude = finiteNumber(cell.longitude), latitude = finiteNumber(cell.latitude);
+    if (u === null || v === null || intensity === null || longitude === null || latitude === null || scalePosition(intensity, scale) < .08) return;
+    const start = project(longitude, latitude, width, height);
     const magnitude = Math.hypot(u, v);
     const length = Math.min(22, 7 + magnitude * .8);
     const end = {x: start.x + u * length / Math.max(1, magnitude), y: start.y - v * length / Math.max(1, magnitude)};
@@ -569,13 +704,14 @@ function drawVectors(ctx, width, height, cells, scale) {
 
 function drawRadarValues(ctx, width, height) {
   const rows = new Map(state.visibleRows.map((row) => [row.radar, row]));
-  const scale = activeScale(state.visibleRows.map((row) => Number(row[state.metric])));
+  const scale = activeScale(state.visibleRows.map((row) => finiteNumber(row[state.metric])));
   const radars = state.historical && state.historical.radars || [];
   for (const radar of radars) {
     const row = rows.get(radar.slug);
-    const value = row && Number(row[state.metric]);
-    if (!Number.isFinite(value)) continue;
-    const point = project(radar.longitude, radar.latitude, width, height);
+    const value = row ? finiteNumber(row[state.metric]) : null;
+    const longitude = finiteNumber(radar.longitude), latitude = finiteNumber(radar.latitude);
+    if (value === null || longitude === null || latitude === null) continue;
+    const point = project(longitude, latitude, width, height);
     const radius = radarRadiusPixels(radar, width, height, 50);
     const footprint = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, radius);
     const colour = quantitativeColor(value, scale);
@@ -595,8 +731,11 @@ function drawRadarValues(ctx, width, height) {
 }
 
 function radarRadiusPixels(radar, width, height, radiusKm) {
-  const centre = project(Number(radar.longitude), Number(radar.latitude), width, height);
-  const north = project(Number(radar.longitude), Number(radar.latitude) + radiusKm / 111.195, width, height);
+  const longitude = finiteNumber(radar.longitude);
+  const latitude = finiteNumber(radar.latitude);
+  if (longitude === null || latitude === null) return 2;
+  const centre = project(longitude, latitude, width, height);
+  const north = project(longitude, latitude + radiusKm / 111.195, width, height);
   return Math.max(2, Math.hypot(north.x - centre.x, north.y - centre.y));
 }
 
@@ -605,7 +744,9 @@ function drawRadarMarkers(ctx, width, height) {
   const available = new Set(state.statusRows.map((row) => row.radar));
   state.points = [];
   for (const radar of radars) {
-    const point = project(radar.longitude, radar.latitude, width, height);
+    const longitude = finiteNumber(radar.longitude), latitude = finiteNumber(radar.latitude);
+    if (longitude === null || latitude === null) continue;
+    const point = project(longitude, latitude, width, height);
     const isAvailable = available.has(radar.slug);
     if (isAvailable) drawRadarIcon(ctx, point.x, point.y, "#22ed5a");
     state.points.push({radar, row: state.statusRows.find((row) => row.radar === radar.slug), x: point.x, y: point.y, available: isAvailable});
@@ -761,8 +902,14 @@ function logTicks(minimum, maximum) {
   return ticks;
 }
 
+function hoursForModelPayload(payload) {
+  return [...new Set((payload && payload.frames || [])
+    .map((frame) => new Date(frame.time_utc).getUTCHours())
+    .filter(Number.isFinite))].sort((left, right) => left - right);
+}
+
 function availableHours() {
-  return (state.modelDayPayload && state.modelDayPayload.frames || []).map((frame) => new Date(frame.time_utc).getUTCHours());
+  return hoursForModelPayload(currentModelDayPayload());
 }
 
 function availableModelDates() {
@@ -770,57 +917,80 @@ function availableModelDates() {
   return Object.keys(assets || {}).sort();
 }
 
-async function stepHour(direction) {
-  const hours = availableHours();
-  if (!hours.length) return;
-  const index = Math.max(0, hours.indexOf(state.hour));
-  const nextIndex = index + direction;
-  if (0 <= nextIndex && nextIndex < hours.length) {
-    state.hour = hours[nextIndex];
+async function selectPublishedModelDate(candidates, direction) {
+  if (!candidates.length) return false;
+  const request = loadRequest();
+  for (const date of candidates) {
+    const modelDayPayload = await fetchModelDayPayload(date, request.pulse);
+    if (!loadIsCurrent(request)) return false;
+    const hours = hoursForModelPayload(modelDayPayload);
+    if (!hours.length) continue;
+    const yearPayload = await fetchHistoricalPayloadForDate(date);
+    if (!loadIsCurrent(request)) return false;
+    state.date = date;
+    state.dates.modelled = date;
+    state.modelDayPayload = modelDayPayload;
+    state.modelDayKey = modelDayKey(date, request.pulse);
+    state.yearPayload = yearPayload;
+    state.hour = direction > 0 ? hours[0] : hours[hours.length - 1];
     render();
-    return;
+    return true;
+  }
+  return false;
+}
+
+async function stepHour(direction) {
+  if (state.view !== "modelled" || !state.model || ![-1, 1].includes(direction)) return false;
+  const hours = availableHours();
+  const adjacentHour = direction > 0
+    ? hours.find((hour) => hour > state.hour)
+    : [...hours].reverse().find((hour) => hour < state.hour);
+  if (adjacentHour !== undefined) {
+    state.hour = adjacentHour;
+    render();
+    return true;
   }
 
   const dates = availableModelDates();
-  if (!dates.length) return;
-  let dateIndex = Math.max(0, dates.indexOf(state.date));
-  for (let attempts = 0; attempts < dates.length; attempts += 1) {
-    dateIndex = (dateIndex + direction + dates.length) % dates.length;
-    state.date = dates[dateIndex];
-    state.dates.modelled = state.date;
-    await loadModelDay();
-    const targetYear = Number(state.date.slice(0, 4));
-    if (state.historical && state.historical.first_date <= state.date && state.date <= state.historical.latest_date
-        && (!state.yearPayload || Number(state.yearPayload.year) !== targetYear)) {
-      await loadYear(targetYear);
-    }
-    const nextHours = availableHours();
-    if (!nextHours.length) continue;
-    state.hour = direction > 0 ? nextHours[0] : nextHours[nextHours.length - 1];
-    render();
-    return;
-  }
+  if (!dates.length) return false;
+  const candidates = direction > 0
+    ? dates.filter((date) => date > state.date)
+    : dates.filter((date) => date < state.date).reverse();
+  return await selectPublishedModelDate(candidates, direction);
 }
 
 function toggleAnimation() {
   if (state.animation) return stopAnimation();
-  const button = document.getElementById("playButton");
-  button.textContent = "❚❚";
-  button.classList.add("active");
-  state.animation = window.setTimeout(advanceAnimation, 900);
+  const generation = ++state.animationGeneration;
+  setAnimationButton(true);
+  state.animation = window.setTimeout(() => advanceAnimation(generation), 900);
 }
 
-async function advanceAnimation() {
-  if (!state.animation) return;
-  await stepHour(1);
-  if (state.animation) state.animation = window.setTimeout(advanceAnimation, 900);
+async function advanceAnimation(generation) {
+  if (!state.animation || generation !== state.animationGeneration) return;
+  const advanced = await stepHour(1);
+  if (generation !== state.animationGeneration || !state.animation) return;
+  if (!advanced) return stopAnimation();
+  state.animation = window.setTimeout(() => advanceAnimation(generation), 900);
 }
 
 function stopAnimation() {
+  const wasPlaying = Boolean(state.animation);
   if (state.animation) window.clearTimeout(state.animation);
   state.animation = null;
+  state.animationGeneration += 1;
+  if (wasPlaying) invalidateLoads();
+  setAnimationButton(false);
+}
+
+function setAnimationButton(playing) {
   const button = document.getElementById("playButton");
-  if (button) { button.textContent = "▶"; button.classList.remove("active"); }
+  if (!button) return;
+  button.textContent = playing ? "❚❚" : "▶";
+  button.classList.toggle("active", playing);
+  button.title = playing ? "Pause hourly animation" : "Play hourly animation";
+  button.setAttribute("aria-label", button.title);
+  button.setAttribute("aria-pressed", String(playing));
 }
 
 function nearestRadar(event) {
@@ -837,8 +1007,8 @@ function showRadarTooltip(event) {
   if (!nearest || nearest.distance > 22) return hideRadarTooltip();
   const row = nearest.point.row;
   const valueKey = state.view === "observed" ? state.metric : null;
-  const value = valueKey && row ? Number(row[valueKey]) : null;
-  const formatted = Number.isFinite(value) ? observedMetric().format(value) : nearest.point.available ? "Observation available" : "No observation for selected date";
+  const value = valueKey && row ? finiteNumber(row[valueKey]) : null;
+  const formatted = value !== null ? observedMetric().format(value) : nearest.point.available ? "Observation available" : "No observation for selected date";
   tooltip.innerHTML = `<strong>${escapeHtml(nearest.point.radar.label)}</strong>${escapeHtml(formatted)}<br>${escapeHtml(state.pulse.toUpperCase())} · ${escapeHtml(state.date)}`;
   tooltip.hidden = false;
   const rect = event.currentTarget.getBoundingClientRect();
@@ -857,9 +1027,10 @@ function selectRadarAtPoint(event) {
 
 function highlightRadar(point) {
   document.querySelectorAll("#radarList button").forEach((button) => button.classList.toggle("selected", button.dataset.radar === point.radar.slug));
+  document.querySelectorAll("#radarList button").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.radar === point.radar.slug)));
   if (state.view === "observed") {
-    const value = point.row && Number(point.row[state.metric]);
-    document.getElementById("networkValue").textContent = Number.isFinite(value) ? observedMetric().format(value) : "No observation";
+    const value = point.row ? finiteNumber(point.row[state.metric]) : null;
+    document.getElementById("networkValue").textContent = value !== null ? observedMetric().format(value) : "No observation";
     document.getElementById("networkUnit").textContent = point.radar.label;
     state.selectedRadar = point.radar;
     syncCrowRadarDetail();
@@ -904,14 +1075,25 @@ function showUnavailable() {
   const badge = document.getElementById("statusBadge");
   badge.textContent = "Historical data unavailable";
   badge.className = "badge waiting";
+  document.getElementById("mapTitle").textContent = "Historical data unavailable";
   document.getElementById("mapSubtitle").textContent = "Historical artifacts have not been published.";
+  document.getElementById("mapResolution").textContent = "No map data";
+  document.getElementById("mapSummary").textContent = "Historical radar, modelled migration, and European analysis artifacts are unavailable.";
+  document.getElementById("statusList").innerHTML = "<dt>Status</dt><dd>No published artifacts</dd>";
+  document.getElementById("radarList").innerHTML = '<p class="empty-state">No radar observations are available.</p>';
+  document.getElementById("plotsSection").hidden = true;
+  document.getElementById("crowDetailSection").hidden = true;
+  document.querySelectorAll(".view-tabs button").forEach((button) => {
+    button.classList.remove("active");
+    button.setAttribute("aria-pressed", "false");
+  });
 }
 
 function formatDate(value) {
   if (!value) return "Unknown";
   return new Date(`${value}T12:00:00Z`).toLocaleDateString([], {day: "numeric", month: "short", year: "numeric"});
 }
-function formatInteger(value) { return Number.isFinite(Number(value)) ? Number(value).toLocaleString() : "Unknown"; }
+function formatInteger(value) { const parsed = finiteNumber(value); return parsed === null ? "Unknown" : parsed.toLocaleString(); }
 function formatTick(value) {
   if (Math.abs(value) >= 1000) return `${Number((value / 1000).toPrecision(3))}k`;
   if (Math.abs(value) >= 1) return String(Number(value.toPrecision(4)));

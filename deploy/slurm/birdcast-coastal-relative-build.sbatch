@@ -11,9 +11,10 @@
 #SBATCH --output=logs/birdcast-coastal-relative-%j.out
 #SBATCH --error=logs/birdcast-coastal-relative-%j.err
 
-set -eu
+set -e
 . /etc/profile.d/modules.sh
 . /etc/profile.d/zz-modules.sh
+set -u
 : "${BIRDCAST_EURO_ROOT:?Set the immutable BirdCast Europe checkout}"
 : "${BIRDCAST_EURO_PYTHON:?Set the branch Python executable}"
 : "${BIRDCAST_COASTAL_TRAINING_CSV:?Set the frozen coastal derived table}"

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
 import json
 import math
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from statistics import median
 from typing import Any
@@ -48,8 +48,7 @@ def build_observed_products(
         inventory = json.loads(input_path.read_text(encoding="utf-8"))
         if inventory.get("ok") is not True:
             raise ValueError(
-                "refusing unhealthy VPTS inventory: "
-                + "; ".join(inventory.get("errors") or [])
+                "refusing unhealthy VPTS inventory: " + "; ".join(inventory.get("errors") or [])
             )
         if inventory.get("no_change") is True and not inventory.get("records"):
             return _record_no_change(output_dir, inventory)
@@ -79,7 +78,7 @@ def build_observed_products(
         raise ValueError("VPTS input produced no parseable profiles")
 
     source_max_by_radar = _source_max_dates(inventory)
-    groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    pulse_groups: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for profile in profiles:
         night_date = profile.get("night_date")
         if not night_date:
@@ -89,7 +88,26 @@ def build_observed_products(
             # A sunset-to-sunrise night is complete only after the following
             # source date has arrived.
             continue
-        groups[(radar, str(night_date))].append(profile)
+        pulse_groups[(radar, str(night_date), str(profile.get("pulse") or "unknown"))].append(
+            profile
+        )
+
+    # A nightly integral must use one sampling mode from start to finish. The
+    # declared policy selects LP when present and falls back to SP; it never
+    # splices the two pulse modes into one time series.
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    night_keys = {(radar, night_date) for radar, night_date, _ in pulse_groups}
+    for radar, night_date in sorted(night_keys):
+        available = {
+            pulse: pulse_groups[(radar, night_date, pulse)]
+            for pulse in ("lp", "sp", "unknown")
+            if (radar, night_date, pulse) in pulse_groups
+        }
+        selected_pulse = next(
+            (pulse for pulse in ("lp", "sp", "unknown") if pulse in available), None
+        )
+        if selected_pulse is not None:
+            groups[(radar, night_date)] = available[selected_pulse]
 
     radars = {radar.slug: radar for radar in load_radars(radars_path)}
     nights = [
@@ -222,7 +240,9 @@ def build_hourly_observations(
 
     inventory = _read_json(inventory_path)
     if inventory.get("ok") is not True:
-        raise ValueError("refusing unhealthy VPTS inventory: " + "; ".join(inventory.get("errors") or []))
+        raise ValueError(
+            "refusing unhealthy VPTS inventory: " + "; ".join(inventory.get("errors") or [])
+        )
     hourly_rows: list[dict[str, object]] = []
     input_row_count = 0
     file_count = 0
@@ -276,8 +296,7 @@ def build_hourly_observations(
         "row_count": len(hourly_rows),
         "radar_count": len({str(row["radar"]) for row in hourly_rows}),
         "pulse_counts": {
-            pulse: sum(str(row["pulse"]) == pulse for row in hourly_rows)
-            for pulse in ("lp", "sp")
+            pulse: sum(str(row["pulse"]) == pulse for row in hourly_rows) for pulse in ("lp", "sp")
         },
         "first_time_utc": min(str(row["time_utc"]) for row in hourly_rows),
         "last_time_utc": max(str(row["time_utc"]) for row in hourly_rows),
@@ -390,7 +409,7 @@ def _profile_from_layers(
         profile_mtr: float | None = None
     elif vid == 0:
         profile_mtr = 0.0
-    elif mtr_layer_count == 0 or rain_suspect:
+    elif mtr_layer_count != density_layer_count or rain_suspect:
         profile_mtr = None
     else:
         profile_mtr = mtr
@@ -415,14 +434,15 @@ def _profile_from_layers(
         "vid_birds_per_km2": vid if density_layer_count else None,
         "mtr_birds_km_h": profile_mtr,
         "mean_ground_speed_ms": (
-            speed_weight_sum / speed_weight_denominator
-            if speed_weight_denominator > 0
-            else None
+            speed_weight_sum / speed_weight_denominator if speed_weight_denominator > 0 else None
         ),
         "dominant_direction_deg": _weighted_circular_mean(direction_values, direction_weights),
         "density_weighted_mean_height_m": height_weight_sum / vid if vid > 0 else None,
         "density_layer_count": density_layer_count,
         "mtr_layer_count": mtr_layer_count,
+        "mtr_layer_coverage_fraction": (
+            mtr_layer_count / density_layer_count if density_layer_count else None
+        ),
         "gap_layer_count": gap_layer_count,
         "layer_width_km": layer_width_km,
         "rain_suspect": rain_suspect,
@@ -467,6 +487,7 @@ def _profile_from_summary(
         "density_weighted_mean_height_m": _number(row, "height_m", "height"),
         "density_layer_count": 0,
         "mtr_layer_count": 0,
+        "mtr_layer_coverage_fraction": None,
         "gap_layer_count": 0,
         "layer_width_km": None,
         "rain_suspect": False,
@@ -498,9 +519,7 @@ def _night_metrics(
         if delta_hours <= 0 or delta_hours * 60.0 > max_integration_gap_minutes:
             continue
         migration_traffic += (
-            (float(left["mtr_birds_km_h"]) + float(right["mtr_birds_km_h"]))
-            / 2.0
-            * delta_hours
+            (float(left["mtr_birds_km_h"]) + float(right["mtr_birds_km_h"])) / 2.0 * delta_hours
         )
         integrated_hours += delta_hours
         interval_count += 1
@@ -543,9 +562,19 @@ def _night_metrics(
     latitude = getattr(site, "latitude", None)
     longitude = getattr(site, "longitude", None)
     if latitude is None:
-        latitude = next((profile.get("latitude") for profile in ordered if profile.get("latitude") is not None), None)
+        latitude = next(
+            (profile.get("latitude") for profile in ordered if profile.get("latitude") is not None),
+            None,
+        )
     if longitude is None:
-        longitude = next((profile.get("longitude") for profile in ordered if profile.get("longitude") is not None), None)
+        longitude = next(
+            (
+                profile.get("longitude")
+                for profile in ordered
+                if profile.get("longitude") is not None
+            ),
+            None,
+        )
     return {
         "radar": radar,
         "night_date": night_date,
@@ -567,8 +596,11 @@ def _night_metrics(
         "quality_class": quality_class,
         "intensity_class": _intensity_class(mean_mtr),
         "pulse_products": sorted({str(profile["pulse"]) for profile in ordered}),
+        "selected_pulse": str(ordered[0].get("pulse") or "unknown"),
         "pulse_policy": VPTS_PULSE_POLICY,
-        "source_keys": sorted({str(profile["source_key"]) for profile in ordered if profile.get("source_key")}),
+        "source_keys": sorted(
+            {str(profile["source_key"]) for profile in ordered if profile.get("source_key")}
+        ),
         "latitude": latitude,
         "longitude": longitude,
         "processing_version": PROCESSING_VERSION,
@@ -595,7 +627,9 @@ def _hourly_rows(
     grouped: dict[tuple[str, str, datetime], list[dict[str, Any]]] = defaultdict(list)
     for profile in profiles:
         timestamp = profile["timestamp"].replace(minute=0, second=0, microsecond=0)
-        grouped[(str(profile["radar"]), str(profile.get("pulse") or "unknown"), timestamp)].append(profile)
+        grouped[(str(profile["radar"]), str(profile.get("pulse") or "unknown"), timestamp)].append(
+            profile
+        )
     rows = []
     for (radar, pulse, hour), values in sorted(grouped.items()):
         valid_mtr = [
@@ -613,16 +647,15 @@ def _hourly_rows(
             for value in values
             if _finite(value.get("mean_ground_speed_ms"))
         ]
-        directions = [
-            float(value["dominant_direction_deg"])
-            for value in values
-            if _finite(value.get("dominant_direction_deg"))
-        ]
-        direction_weights = [
-            float(value["mtr_birds_km_h"])
+        direction_mtr_pairs = [
+            (
+                float(value["dominant_direction_deg"]),
+                float(value["mtr_birds_km_h"]),
+            )
             for value in values
             if _finite(value.get("dominant_direction_deg"))
             and _finite(value.get("mtr_birds_km_h"))
+            and not value.get("rain_suspect")
         ]
         row: dict[str, object] = {
             "radar": radar,
@@ -633,7 +666,10 @@ def _hourly_rows(
             "mean_mtr_birds_km_h": _rounded_mean(valid_mtr),
             "mean_vid_birds_per_km2": _rounded_mean(valid_vid),
             "mean_ground_speed_ms": _rounded_mean(speeds),
-            "dominant_direction_deg": _weighted_circular_mean(directions, direction_weights),
+            "dominant_direction_deg": _weighted_circular_mean(
+                [direction for direction, _ in direction_mtr_pairs],
+                [mtr for _, mtr in direction_mtr_pairs],
+            ),
             "rain_suspect_fraction": round(
                 sum(bool(value.get("rain_suspect")) for value in values) / len(values),
                 6,
@@ -752,7 +788,11 @@ def _expected_night_window(
             _format_datetime(sunset),
             _format_datetime(sunrise),
         )
-    return None, _format_datetime(sunset) if sunset else None, _format_datetime(sunrise) if sunrise else None
+    return (
+        None,
+        _format_datetime(sunset) if sunset else None,
+        _format_datetime(sunrise) if sunrise else None,
+    )
 
 
 def _day_state(
@@ -786,7 +826,9 @@ def _night_date(
         value = timestamp.date()
     else:
         local_solar = timestamp + timedelta(minutes=4 * (longitude or 0.0))
-        value = local_solar.date() - timedelta(days=1) if local_solar.hour < 12 else local_solar.date()
+        value = (
+            local_solar.date() - timedelta(days=1) if local_solar.hour < 12 else local_solar.date()
+        )
     return value.strftime("%Y%m%d")
 
 

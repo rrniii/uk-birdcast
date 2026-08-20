@@ -10,7 +10,6 @@ import math
 from pathlib import Path
 from statistics import median
 
-
 INTENSITY_TARGETS = {"mtr_birds_km_h", "vid_birds_per_km2"}
 
 
@@ -24,7 +23,12 @@ def circular_error(u_obs: float, v_obs: float, u_pred: float, v_pred: float) -> 
     return abs((predicted - observed + 180) % 360 - 180)
 
 
-def direction_summary(path: Path, *, validation: str) -> dict[str, object]:
+def direction_summary(
+    path: Path,
+    *,
+    validation: str,
+    minimum_observed_speed_ms: float = 1.0,
+) -> dict[str, object]:
     paired: dict[tuple[str, str], dict[str, tuple[float, float]]] = {}
     with path.open(newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
@@ -43,6 +47,8 @@ def direction_summary(path: Path, *, validation: str) -> dict[str, object]:
             continue
         u_obs, u_pred = values["bird_u_ms"]
         v_obs, v_pred = values["bird_v_ms"]
+        if math.hypot(u_obs, v_obs) < minimum_observed_speed_ms:
+            continue
         site_errors.setdefault(radar, []).append(circular_error(u_obs, v_obs, u_pred, v_pred))
     medians = {radar: median(values) for radar, values in site_errors.items() if values}
     return {
@@ -50,17 +56,32 @@ def direction_summary(path: Path, *, validation: str) -> dict[str, object]:
         "site_count": len(medians),
         "median_site_direction_error_deg": median(medians.values()) if medians else None,
         "site_median_direction_error_deg": medians,
+        "minimum_observed_speed_ms": minimum_observed_speed_ms,
     }
 
 
 def validate(metrics_path: Path, output: Path) -> dict[str, object]:
     metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
     folds = [
-        row for row in metrics.get("folds", [])
+        row
+        for row in metrics.get("folds", [])
         if row.get("validation") == "transfer_validation" and row.get("target") in INTENSITY_TARGETS
     ]
-    log_skill = finite(row.get("log1p_r_squared") for row in folds)
-    f1 = finite(row.get("top_decile_f1") for row in folds)
+    target_summaries = {}
+    for target in sorted(INTENSITY_TARGETS):
+        target_folds = [row for row in folds if row.get("target") == target]
+        target_skill = finite(row.get("log1p_r_squared") for row in target_folds)
+        target_f1 = finite(row.get("top_decile_f1") for row in target_folds)
+        target_summaries[target] = {
+            "fold_count": len(target_folds),
+            "median_log1p_r_squared": median(target_skill) if target_skill else None,
+            "positive_log1p_skill_fraction": (
+                sum(value > 0 for value in target_skill) / len(target_skill)
+                if target_skill
+                else None
+            ),
+            "median_top_decile_f1": median(target_f1) if target_f1 else None,
+        }
     direction_path = metrics.get("heldout_radar_vectors")
     direction = (
         direction_summary(Path(direction_path), validation="transfer_validation")
@@ -81,13 +102,26 @@ def validate(metrics_path: Path, output: Path) -> dict[str, object]:
         "external_transfer_radars_available": expected_transfer_radars > 0,
         "all_transfer_radars_scored_for_each_intensity_target": bool(
             expected_transfer_radars
-            and all(len(sites) == expected_transfer_radars for sites in transfer_sites_by_target.values())
+            and all(
+                len(sites) == expected_transfer_radars
+                for sites in transfer_sites_by_target.values()
+            )
         ),
-        "median_site_log1p_skill_positive": bool(log_skill and median(log_skill) > 0),
-        "positive_site_fraction_at_least_0_75": bool(
-            log_skill and sum(value > 0 for value in log_skill) / len(log_skill) >= 0.75
+        "each_intensity_target_median_site_log1p_skill_positive": all(
+            summary["median_log1p_r_squared"] is not None
+            and float(summary["median_log1p_r_squared"]) > 0
+            for summary in target_summaries.values()
         ),
-        "median_top_decile_f1_at_least_0_50": bool(f1 and median(f1) >= 0.50),
+        "each_intensity_target_positive_site_fraction_at_least_0_75": all(
+            summary["positive_log1p_skill_fraction"] is not None
+            and float(summary["positive_log1p_skill_fraction"]) >= 0.75
+            for summary in target_summaries.values()
+        ),
+        "each_intensity_target_median_top_decile_f1_at_least_0_50": all(
+            summary["median_top_decile_f1"] is not None
+            and float(summary["median_top_decile_f1"]) >= 0.50
+            for summary in target_summaries.values()
+        ),
         "median_direction_error_at_most_30_deg": bool(
             direction_error is not None
             and int(direction["site_count"]) == expected_transfer_radars
@@ -106,11 +140,7 @@ def validate(metrics_path: Path, output: Path) -> dict[str, object]:
             "scored_transfer_radars_by_target": {
                 target: sorted(sites) for target, sites in transfer_sites_by_target.items()
             },
-            "median_log1p_r_squared": median(log_skill) if log_skill else None,
-            "positive_log1p_skill_fraction": (
-                sum(value > 0 for value in log_skill) / len(log_skill) if log_skill else None
-            ),
-            "median_top_decile_f1": median(f1) if f1 else None,
+            "by_intensity_target": target_summaries,
             **direction,
         },
         "gates": gates,

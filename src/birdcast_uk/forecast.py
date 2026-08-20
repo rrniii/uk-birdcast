@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import math
 import os
-from pathlib import Path
 import shutil
 import subprocess
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from tempfile import mkdtemp
 from typing import Any
 
@@ -52,11 +52,20 @@ def build_forecast(
     if not isinstance(rows, list) or not rows:
         raise ValueError("observed hourly input contains no rows")
     radar_metadata = {radar.slug: radar for radar in load_radars(radars_path)}
-    newest_observation = max(_parse_time(str(row["time_utc"])) for row in rows)
-    age = radar_age_hours(analysis, newest_observation)
-    mode = operational_mode(age)
     latest_rows = _latest_radar_rows(rows)
-    observations = _radar_observations(latest_rows, radar_metadata, grid)
+    radar_ages = {
+        str(row.get("radar")): radar_age_hours(analysis, _parse_time(str(row["time_utc"])))
+        for row in latest_rows
+    }
+    newest_observation = max(_parse_time(str(row["time_utc"])) for row in latest_rows)
+    age = min(radar_ages.values())
+    mode = operational_mode(age)
+    observations = _radar_observations(
+        latest_rows,
+        radar_metadata,
+        grid,
+        analysis_time=analysis,
+    )
     usable_observations = observations if mode == "assimilated" else []
     climatology = _seasonal_climatology(rows, analysis.month)
     seed = int(analysis.strftime("%Y%m%d%H"))
@@ -68,17 +77,20 @@ def build_forecast(
         climatology=climatology,
     )
     if mode == "propagated":
-        ensemble *= np.random.default_rng(seed + 7).lognormal(0, 0.55, ensemble.shape).astype("float32")
+        ensemble *= (
+            np.random.default_rng(seed + 7).lognormal(0, 0.55, ensemble.shape).astype("float32")
+        )
 
-    wind_u, wind_v, weather_cycle, weather_source = _weather_winds(
-        ecmwf_manifest, grid, latest_rows, radar_metadata
-    )
+    wind_u, wind_v, weather_cycle, weather_source = _weather_winds(ecmwf_manifest, grid)
     if mode == "assimilated":
         ensemble, influence = assimilate_localised(ensemble, observations)
     else:
         influence = np.zeros((grid.height, grid.width), dtype="float32")
 
-    valid_times = [analysis + timedelta(hours=hour) for hour in range(0, FORECAST_HORIZON_HOURS + 1, FORECAST_STEP_HOURS)]
+    valid_times = [
+        analysis + timedelta(hours=hour)
+        for hour in range(0, FORECAST_HORIZON_HOURS + 1, FORECAST_STEP_HOURS)
+    ]
     fields: dict[str, list[Any]] = {
         "bird_density_p10": [],
         "bird_density_p50": [],
@@ -116,7 +128,9 @@ def build_forecast(
         fields["migration_v"].append(step_v.astype("float32"))
         fields["median_flight_height_m"].append(np.full(quantiles[0].shape, 850.0, dtype="float32"))
         fields["flight_height_iqr_m"].append(np.full(quantiles[0].shape, 700.0, dtype="float32"))
-        fields["contamination_probability"].append(np.full(quantiles[0].shape, contamination, dtype="float32"))
+        fields["contamination_probability"].append(
+            np.full(quantiles[0].shape, contamination, dtype="float32")
+        )
         fields["observation_influence"].append(influence * math.exp(-index / 4.0))
         fields["quality_flag"].append(np.full(quantiles[0].shape, quality_value, dtype="uint8"))
 
@@ -124,7 +138,10 @@ def build_forecast(
     issue_stamp = analysis.strftime("%Y%m%dT%H00Z")
     archive_relative = Path("archive") / "forecast" / issue_stamp
     archive_dir = output_root / archive_relative
-    staging = Path(mkdtemp(prefix=f".{issue_stamp}.", dir=archive_dir.parent if archive_dir.parent.exists() else output_root))
+    archive_dir.parent.mkdir(parents=True, exist_ok=True)
+    if archive_dir.exists():
+        raise FileExistsError(f"forecast issue is immutable and already exists: {archive_dir}")
+    staging = Path(mkdtemp(prefix=f".{issue_stamp}.", dir=archive_dir.parent))
     try:
         science_assets = _write_scientific_assets(staging, grid, valid_times, arrays)
         public_assets = _write_public_frames(staging, grid, valid_times, arrays, mode)
@@ -135,6 +152,11 @@ def build_forecast(
             "analysis_time_utc": analysis.isoformat().replace("+00:00", "Z"),
             "radar_observation_time_utc": newest_observation.isoformat().replace("+00:00", "Z"),
             "radar_age_hours": round(age, 3),
+            "radar_age_hours_by_site": {
+                radar: round(site_age, 3) for radar, site_age in sorted(radar_ages.items())
+            },
+            "radar_observation_count": len(observations),
+            "radar_assimilation_count": len(usable_observations),
             "weather_cycle_utc": weather_cycle,
             "weather_source": weather_source,
             "model_id": FORECAST_MODEL_ID,
@@ -149,19 +171,20 @@ def build_forecast(
             "assets": {**science_assets, **public_assets},
             "freshness": {
                 "radar": "fresh" if age <= 6 else "stale",
-                "weather": "available" if weather_cycle else "fallback",
+                "weather": "available",
             },
             "quality": {
-                "quality_flag_meanings": {"0": "assimilated", "1": "propagated", "2": "weather_only"},
+                "quality_flag_meanings": {
+                    "0": "assimilated",
+                    "1": "propagated",
+                    "2": "weather_only",
+                },
                 "year_round_taxon": "biological_targets_not_species_resolved",
                 "warning": "Weather radar cannot fully separate birds from insects; uncertainty is wider in summer.",
             },
         }
         write_json(staging / "manifest.json", run_manifest)
         staging.chmod(0o755)
-        if archive_dir.exists():
-            shutil.rmtree(archive_dir)
-        archive_dir.parent.mkdir(parents=True, exist_ok=True)
         os.replace(staging, archive_dir)
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
@@ -170,8 +193,7 @@ def build_forecast(
     latest = dict(run_manifest)
     latest["archive_prefix"] = str(archive_relative)
     latest["assets"] = {
-        key: _prefix_asset(archive_relative, value)
-        for key, value in run_manifest["assets"].items()
+        key: _prefix_asset(archive_relative, value) for key, value in run_manifest["assets"].items()
     }
     write_json(output_root / "latest" / "forecast.json", latest)
     return latest
@@ -190,18 +212,40 @@ def _map_overlay(grid: ForecastGrid, radar_metadata) -> dict[str, object]:
     # grid so the browser does not need a projection library.
     coastlines_lonlat = [
         [
-            (-5.7, 50.0), (-3.6, 50.1), (-2.0, 50.6), (0.9, 51.1),
-            (1.6, 52.8), (0.2, 53.8), (-1.7, 55.0), (-2.0, 56.2),
-            (-3.0, 58.7), (-5.0, 58.6), (-6.2, 57.5), (-5.1, 55.7),
-            (-3.0, 54.8), (-4.8, 53.3), (-5.7, 51.8), (-5.7, 50.0),
+            (-5.7, 50.0),
+            (-3.6, 50.1),
+            (-2.0, 50.6),
+            (0.9, 51.1),
+            (1.6, 52.8),
+            (0.2, 53.8),
+            (-1.7, 55.0),
+            (-2.0, 56.2),
+            (-3.0, 58.7),
+            (-5.0, 58.6),
+            (-6.2, 57.5),
+            (-5.1, 55.7),
+            (-3.0, 54.8),
+            (-4.8, 53.3),
+            (-5.7, 51.8),
+            (-5.7, 50.0),
         ],
         [
-            (-8.2, 54.0), (-6.1, 54.0), (-5.4, 54.8), (-6.0, 55.3),
-            (-7.5, 55.3), (-8.2, 54.7), (-8.2, 54.0),
+            (-8.2, 54.0),
+            (-6.1, 54.0),
+            (-5.4, 54.8),
+            (-6.0, 55.3),
+            (-7.5, 55.3),
+            (-8.2, 54.7),
+            (-8.2, 54.0),
         ],
         [
-            (-3.2, 51.4), (-2.7, 51.5), (-3.0, 52.0), (-4.1, 52.5),
-            (-4.8, 52.0), (-4.1, 51.6), (-3.2, 51.4),
+            (-3.2, 51.4),
+            (-2.7, 51.5),
+            (-3.0, 52.0),
+            (-4.1, 52.5),
+            (-4.8, 52.0),
+            (-4.1, 51.6),
+            (-3.2, 51.4),
         ],
     ]
     coastlines = []
@@ -216,7 +260,9 @@ def _map_overlay(grid: ForecastGrid, radar_metadata) -> dict[str, object]:
             continue
         cell = grid.cell_for_lonlat(radar.longitude, radar.latitude)
         if cell is not None:
-            radars.append({"slug": radar.slug, "label": radar.label, "row": cell[0], "col": cell[1]})
+            radars.append(
+                {"slug": radar.slug, "label": radar.label, "row": cell[0], "col": cell[1]}
+            )
     return {"coastlines": coastlines, "radars": radars}
 
 
@@ -240,12 +286,22 @@ def _latest_radar_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         radar = str(row.get("radar") or "")
         if not radar:
             continue
-        if radar not in latest or str(row.get("time_utc", "")) > str(latest[radar].get("time_utc", "")):
+        if radar not in latest or str(row.get("time_utc", "")) > str(
+            latest[radar].get("time_utc", "")
+        ):
             latest[radar] = row
     return list(latest.values())
 
 
-def _radar_observations(rows, radar_metadata, grid: ForecastGrid) -> list[RadarObservation]:
+def _radar_observations(
+    rows,
+    radar_metadata,
+    grid: ForecastGrid,
+    *,
+    analysis_time: datetime | None = None,
+) -> list[RadarObservation]:
+    from .config import FORECAST_FRESH_RADAR_HOURS
+
     observations = []
     for row in rows:
         radar = radar_metadata.get(str(row.get("radar")))
@@ -254,9 +310,28 @@ def _radar_observations(rows, radar_metadata, grid: ForecastGrid) -> list[RadarO
         cell = grid.cell_for_lonlat(radar.longitude, radar.latitude)
         if cell is None:
             continue
-        speed = float(row.get("mean_ground_speed_ms") or 0.0)
-        direction = math.radians(float(row.get("dominant_direction_deg") or 0.0))
-        density = max(float(row.get("mean_vid_birds_per_km2") or 0.0), 0.0)
+        observed_at = _parse_time(str(row.get("time_utc") or ""))
+        age_hours = (
+            radar_age_hours(analysis_time, observed_at) if analysis_time is not None else 0.0
+        )
+        if analysis_time is not None and age_hours > FORECAST_FRESH_RADAR_HOURS:
+            continue
+        density_value = row.get("mean_vid_birds_per_km2")
+        if not isinstance(density_value, (int, float)) or not math.isfinite(float(density_value)):
+            continue
+        speed_value = row.get("mean_ground_speed_ms")
+        direction_value = row.get("dominant_direction_deg")
+        speed = (
+            float(speed_value)
+            if isinstance(speed_value, (int, float)) and math.isfinite(float(speed_value))
+            else 0.0
+        )
+        direction = math.radians(
+            float(direction_value)
+            if isinstance(direction_value, (int, float)) and math.isfinite(float(direction_value))
+            else 0.0
+        )
+        density = max(float(density_value), 0.0)
         observations.append(
             RadarObservation(
                 row=cell[0],
@@ -265,6 +340,8 @@ def _radar_observations(rows, radar_metadata, grid: ForecastGrid) -> list[RadarO
                 observation_variance=max(0.04, density * 0.5) ** 2,
                 u_ms=speed * math.sin(direction),
                 v_ms=speed * math.cos(direction),
+                observed_at=observed_at,
+                age_hours=age_hours,
             )
         )
     return observations
@@ -283,27 +360,32 @@ def _seasonal_climatology(rows: list[dict[str, Any]], month: int) -> float:
     return max(values[len(values) // 2], 0.02)
 
 
-def _weather_winds(manifest_path, grid, rows, radar_metadata):
-    import numpy as np
+def _weather_winds(manifest_path, grid):
+    """Decode the declared ECMWF cycle; operational forecasts never improvise wind."""
 
-    if manifest_path and manifest_path.is_file():
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if manifest.get("status") == "complete":
-            pressure = next((Path(item["path"]) for item in manifest.get("files", []) if item.get("kind") == "pressure"), None)
-            if pressure and pressure.is_file():
-                try:
-                    return (*_earthkit_wind_grid(pressure, grid), manifest.get("cycle_time_utc"), "ECMWF Open Data")
-                except Exception:
-                    pass
-    observations = _radar_observations(rows, radar_metadata, grid)
-    if observations:
-        weights = np.array([max(obs.density_birds_km2, 0.05) for obs in observations])
-        u = float(np.average([obs.u_ms for obs in observations], weights=weights))
-        v = float(np.average([obs.v_ms for obs in observations], weights=weights))
-    else:
-        u = v = 0.0
-    shape = (FORECAST_HORIZON_HOURS // FORECAST_STEP_HOURS + 1, grid.height, grid.width)
-    return np.full(shape, u, dtype="float32"), np.full(shape, v, dtype="float32"), None, "radar_climatological_wind_fallback"
+    if manifest_path is None or not manifest_path.is_file():
+        raise ValueError("a complete ECMWF manifest is required for forecast production")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("status") != "complete":
+        raise ValueError("ECMWF manifest is not complete")
+    pressure = next(
+        (
+            Path(item["path"])
+            for item in manifest.get("files", [])
+            if isinstance(item, dict) and item.get("kind") == "pressure"
+        ),
+        None,
+    )
+    if pressure is None or not pressure.is_file():
+        raise ValueError("ECMWF manifest has no readable pressure-level asset")
+    try:
+        winds = _earthkit_wind_grid(pressure, grid)
+    except Exception as exc:
+        raise ValueError(f"ECMWF pressure-level wind decoding failed: {exc}") from exc
+    cycle = manifest.get("cycle_time_utc")
+    if not cycle:
+        raise ValueError("ECMWF manifest has no cycle_time_utc")
+    return (*winds, cycle, "ECMWF Open Data")
 
 
 def _earthkit_wind_grid(path: Path, grid: ForecastGrid):
@@ -311,9 +393,7 @@ def _earthkit_wind_grid(path: Path, grid: ForecastGrid):
     import numpy as np
 
     fields = ekd.from_source("file", str(path)).to_fieldlist()
-    selected = fields.sel(
-        {"vertical.level": 850, "parameter.variable": ["u", "v"]}
-    ).to_xarray()
+    selected = fields.sel({"vertical.level": 850, "parameter.variable": ["u", "v"]}).to_xarray()
     u_name = next(name for name in ("u", "u_component_of_wind") if name in selected)
     v_name = next(name for name in ("v", "v_component_of_wind") if name in selected)
     lon, lat = grid.lonlat()
@@ -324,8 +404,12 @@ def _earthkit_wind_grid(path: Path, grid: ForecastGrid):
     if u_values.ndim == 2:
         u_values = u_values[None, :, :]
         v_values = v_values[None, :, :]
-    u = np.stack([_nearest_regular_grid(item, source_lon, source_lat, lon, lat) for item in u_values])
-    v = np.stack([_nearest_regular_grid(item, source_lon, source_lat, lon, lat) for item in v_values])
+    u = np.stack(
+        [_nearest_regular_grid(item, source_lon, source_lat, lon, lat) for item in u_values]
+    )
+    v = np.stack(
+        [_nearest_regular_grid(item, source_lon, source_lat, lon, lat) for item in v_values]
+    )
     return np.asarray(u, dtype="float32"), np.asarray(v, dtype="float32")
 
 
@@ -366,9 +450,15 @@ def _write_scientific_assets(root, grid, valid_times, arrays):
     dataset = xr.Dataset(
         {name: (("time", "y", "x"), values) for name, values in arrays.items()},
         coords=coordinates,
-        attrs={"crs": grid.crs, "schema_version": FORECAST_SCHEMA_VERSION, "model_id": FORECAST_MODEL_ID},
+        attrs={
+            "crs": grid.crs,
+            "schema_version": FORECAST_SCHEMA_VERSION,
+            "model_id": FORECAST_MODEL_ID,
+        },
     )
-    encoding = {name: {"chunks": (1, min(120, grid.height), min(120, grid.width))} for name in arrays}
+    encoding = {
+        name: {"chunks": (1, min(120, grid.height), min(120, grid.width))} for name in arrays
+    }
     zarr_path = root / "forecast.zarr"
     dataset.to_zarr(
         zarr_path,
@@ -441,7 +531,9 @@ def _write_public_frames(root, grid, valid_times, arrays, mode):
 
 def _git_commit() -> str:
     try:
-        return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL).strip()
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
+        ).strip()
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
 

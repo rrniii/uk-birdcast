@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from io import BytesIO
 import csv
 import importlib.util
 import json
-from pathlib import Path
 import time
+from io import BytesIO
+from pathlib import Path
 
 import pytest
 
@@ -16,8 +16,8 @@ from birdcast_uk.europe import (
     build_europe_manifest,
     install_europe_static_site,
     iter_aloft_coverage,
-    publish_europe_predictions,
     publish_europe_prediction_partitions,
+    publish_europe_predictions,
     read_jsonl_record,
     stream_aloft_chunk,
     stream_aloft_hourly,
@@ -105,6 +105,14 @@ def test_missing_advertised_vpts_is_recorded_as_unavailable_not_zero() -> None:
     assert audit.unavailable_reason == "source_vpts_object_not_found"
 
 
+def test_empty_or_malformed_aloft_csv_is_rejected() -> None:
+    obj = VptsObject("baltrad", "bejab", "20260701", "https://example/empty.csv")
+    with pytest.raises(ValueError, match="missing required columns"):
+        stream_aloft_hourly(obj, opener=opener(""))
+    with pytest.raises(ValueError, match="no data rows"):
+        stream_aloft_hourly(obj, opener=opener("datetime,height,dens\n"))
+
+
 def test_stream_deadline_prevents_a_stuck_source_read() -> None:
     def slow(_url: str, **_kwargs):
         time.sleep(0.05)
@@ -118,14 +126,23 @@ def test_stream_deadline_prevents_a_stuck_source_read() -> None:
         )
 
 
-def test_chunk_retries_transient_transport_errors_but_denies_a_persistent_one(tmp_path: Path) -> None:
+def test_chunk_retries_transient_transport_errors_but_denies_a_persistent_one(
+    tmp_path: Path,
+) -> None:
     from urllib.error import URLError
 
     source = (
         "radar,datetime,height,ff,dd,gap,dens,dbz,radar_latitude,radar_longitude\n"
         "bejab,2026-07-01T00:00:00Z,200,10,90,FALSE,2,-10,51.1,3.1\n"
     )
-    chunk = {"source": "baltrad", "radar": "bejab", "year": "2026", "month": "07", "role": "training", "days": ["20260701"]}
+    chunk = {
+        "source": "baltrad",
+        "radar": "bejab",
+        "year": "2026",
+        "month": "07",
+        "role": "training",
+        "days": ["20260701"],
+    }
     calls = 0
 
     def flaky(_url: str, **_kwargs):
@@ -136,7 +153,11 @@ def test_chunk_retries_transient_transport_errors_but_denies_a_persistent_one(tm
         return ChunkOnlyResponse(source.encode())
 
     result = stream_aloft_chunk(
-        chunk, output_root=tmp_path, public_base_url="https://example", opener=flaky, retry_delay_seconds=0
+        chunk,
+        output_root=tmp_path,
+        public_base_url="https://example",
+        opener=flaky,
+        retry_delay_seconds=0,
     )
     assert result["hourly_row_count"] == 1
     assert calls == 2
@@ -178,11 +199,21 @@ def test_chunk_manifest_can_be_limited_to_the_published_model_year(tmp_path: Pat
     ]
     cohort = {"entries": [{"source": "baltrad", "radar": "bejab", "role": "training"}]}
     result = write_aloft_chunk_manifest(
-        objects, cohort=cohort, output=tmp_path / "chunks.jsonl", start_day="2025-07-14", end_day="2026-07-13"
+        objects,
+        cohort=cohort,
+        output=tmp_path / "chunks.jsonl",
+        start_day="2025-07-14",
+        end_day="2026-07-13",
     )
 
     assert result["source_object_count"] == 2
-    assert [record["days"] for record in [read_jsonl_record(tmp_path / "chunks.jsonl", 0), read_jsonl_record(tmp_path / "chunks.jsonl", 1)]] == [["20250714"], ["20260713"]]
+    assert [
+        record["days"]
+        for record in [
+            read_jsonl_record(tmp_path / "chunks.jsonl", 0),
+            read_jsonl_record(tmp_path / "chunks.jsonl", 1),
+        ]
+    ] == [["20250714"], ["20260713"]]
 
 
 def test_fidelity_restreams_chunk_and_rejects_a_changed_derivative(tmp_path: Path) -> None:
@@ -191,10 +222,21 @@ def test_fidelity_restreams_chunk_and_rejects_a_changed_derivative(tmp_path: Pat
         "bejab,2026-07-01T00:00:00Z,200,10,90,FALSE,2,-10,51.1,3.1\n"
         "bejab,2026-07-01T00:00:00Z,400,10,90,FALSE,2,-10,51.1,3.1\n"
     )
-    chunk = {"source": "baltrad", "radar": "bejab", "year": "2026", "month": "07", "role": "training", "days": ["20260701"]}
-    stream_aloft_chunk(chunk, output_root=tmp_path, public_base_url="https://example", opener=opener(source))
+    chunk = {
+        "source": "baltrad",
+        "radar": "bejab",
+        "year": "2026",
+        "month": "07",
+        "role": "training",
+        "days": ["20260701"],
+    }
+    stream_aloft_chunk(
+        chunk, output_root=tmp_path, public_base_url="https://example", opener=opener(source)
+    )
 
-    result = verify_aloft_chunk(chunk, hourly_root=tmp_path, public_base_url="https://example", opener=opener(source))
+    result = verify_aloft_chunk(
+        chunk, hourly_root=tmp_path, public_base_url="https://example", opener=opener(source)
+    )
     assert result["status"] == "passed"
     assert result["raw_source_persisted"] is False
 
@@ -205,7 +247,9 @@ def test_fidelity_restreams_chunk_and_rejects_a_changed_derivative(tmp_path: Pat
     changed[0]["mean_vid_birds_per_km2"] = 999.0
     parquet.write_table(pyarrow.Table.from_pylist(changed), path)
     try:
-        verify_aloft_chunk(chunk, hourly_root=tmp_path, public_base_url="https://example", opener=opener(source))
+        verify_aloft_chunk(
+            chunk, hourly_root=tmp_path, public_base_url="https://example", opener=opener(source)
+        )
     except ValueError as error:
         assert "hourly reconstruction mismatch" in str(error)
     else:
@@ -219,8 +263,17 @@ def test_fidelity_retries_transient_transport_errors_before_comparing(tmp_path: 
         "radar,datetime,height,ff,dd,gap,dens,dbz,radar_latitude,radar_longitude\n"
         "bejab,2026-07-01T00:00:00Z,200,10,90,FALSE,2,-10,51.1,3.1\n"
     )
-    chunk = {"source": "baltrad", "radar": "bejab", "year": "2026", "month": "07", "role": "training", "days": ["20260701"]}
-    stream_aloft_chunk(chunk, output_root=tmp_path, public_base_url="https://example", opener=opener(source))
+    chunk = {
+        "source": "baltrad",
+        "radar": "bejab",
+        "year": "2026",
+        "month": "07",
+        "role": "training",
+        "days": ["20260701"],
+    }
+    stream_aloft_chunk(
+        chunk, output_root=tmp_path, public_base_url="https://example", opener=opener(source)
+    )
     calls = 0
 
     def flaky(_url: str, **_kwargs):
@@ -241,15 +294,26 @@ def test_fidelity_retries_transient_transport_errors_before_comparing(tmp_path: 
     assert calls == 2
 
 
-def test_fidelity_retries_transient_http_service_unavailable_before_comparing(tmp_path: Path) -> None:
+def test_fidelity_retries_transient_http_service_unavailable_before_comparing(
+    tmp_path: Path,
+) -> None:
     from urllib.error import HTTPError
 
     source = (
         "radar,datetime,height,ff,dd,gap,dens,dbz,radar_latitude,radar_longitude\n"
         "bejab,2026-07-01T00:00:00Z,200,10,90,FALSE,2,-10,51.1,3.1\n"
     )
-    chunk = {"source": "baltrad", "radar": "bejab", "year": "2026", "month": "07", "role": "training", "days": ["20260701"]}
-    stream_aloft_chunk(chunk, output_root=tmp_path, public_base_url="https://example", opener=opener(source))
+    chunk = {
+        "source": "baltrad",
+        "radar": "bejab",
+        "year": "2026",
+        "month": "07",
+        "role": "training",
+        "days": ["20260701"],
+    }
+    stream_aloft_chunk(
+        chunk, output_root=tmp_path, public_base_url="https://example", opener=opener(source)
+    )
     calls = 0
 
     def flaky(_url: str, **_kwargs):
@@ -277,8 +341,17 @@ def test_fidelity_fails_closed_on_missing_source_object(tmp_path: Path) -> None:
         "radar,datetime,height,ff,dd,gap,dens,dbz,radar_latitude,radar_longitude\n"
         "bejab,2026-07-01T00:00:00Z,200,10,90,FALSE,2,-10,51.1,3.1\n"
     )
-    chunk = {"source": "baltrad", "radar": "bejab", "year": "2026", "month": "07", "role": "training", "days": ["20260701"]}
-    stream_aloft_chunk(chunk, output_root=tmp_path, public_base_url="https://example", opener=opener(source))
+    chunk = {
+        "source": "baltrad",
+        "radar": "bejab",
+        "year": "2026",
+        "month": "07",
+        "role": "training",
+        "days": ["20260701"],
+    }
+    stream_aloft_chunk(
+        chunk, output_root=tmp_path, public_base_url="https://example", opener=opener(source)
+    )
     calls = 0
 
     def missing(url: str, **_kwargs):
@@ -304,10 +377,21 @@ def test_fidelity_reads_hive_partition_without_merging_source_column(tmp_path: P
         "radar,datetime,height,ff,dd,gap,dens,dbz,radar_latitude,radar_longitude\n"
         "bejab,2026-07-01T00:00:00Z,200,10,90,FALSE,2,-10,51.1,3.1\n"
     )
-    chunk = {"source": "baltrad", "radar": "bejab", "year": "2026", "month": "07", "role": "training", "days": ["20260701"]}
-    stream_aloft_chunk(chunk, output_root=tmp_path, public_base_url="https://example", opener=opener(source))
+    chunk = {
+        "source": "baltrad",
+        "radar": "bejab",
+        "year": "2026",
+        "month": "07",
+        "role": "training",
+        "days": ["20260701"],
+    }
+    stream_aloft_chunk(
+        chunk, output_root=tmp_path, public_base_url="https://example", opener=opener(source)
+    )
 
-    result = verify_aloft_chunk(chunk, hourly_root=tmp_path, public_base_url="https://example", opener=opener(source))
+    result = verify_aloft_chunk(
+        chunk, hourly_root=tmp_path, public_base_url="https://example", opener=opener(source)
+    )
     assert result["hourly_row_count"] == 1
 
 
@@ -316,13 +400,28 @@ def test_fidelity_denies_a_partition_from_a_different_release(tmp_path: Path) ->
         "radar,datetime,height,ff,dd,gap,dens,dbz,radar_latitude,radar_longitude\n"
         "bejab,2026-07-01T00:00:00Z,200,10,90,FALSE,2,-10,51.1,3.1\n"
     )
-    chunk = {"source": "baltrad", "radar": "bejab", "year": "2026", "month": "07", "role": "training", "days": ["20260701"]}
+    chunk = {
+        "source": "baltrad",
+        "radar": "bejab",
+        "year": "2026",
+        "month": "07",
+        "role": "training",
+        "days": ["20260701"],
+    }
     stream_aloft_chunk(
-        chunk, output_root=tmp_path, public_base_url="https://example", opener=opener(source), release_id="release-a"
+        chunk,
+        output_root=tmp_path,
+        public_base_url="https://example",
+        opener=opener(source),
+        release_id="release-a",
     )
     try:
         verify_aloft_chunk(
-            chunk, hourly_root=tmp_path, public_base_url="https://example", opener=opener(source), release_id="release-b"
+            chunk,
+            hourly_root=tmp_path,
+            public_base_url="https://example",
+            opener=opener(source),
+            release_id="release-b",
         )
     except ValueError as error:
         assert "declared Europe release" in str(error)
@@ -330,7 +429,11 @@ def test_fidelity_denies_a_partition_from_a_different_release(tmp_path: Path) ->
         raise AssertionError("a partition from another release must be denied")
 
     result = stream_aloft_chunk(
-        chunk, output_root=tmp_path, public_base_url="https://example", opener=opener(source), release_id="release-b"
+        chunk,
+        output_root=tmp_path,
+        public_base_url="https://example",
+        opener=opener(source),
+        release_id="release-b",
     )
     assert result["skipped"] is False
     assert result["release_id"] == "release-b"
@@ -338,16 +441,25 @@ def test_fidelity_denies_a_partition_from_a_different_release(tmp_path: Path) ->
 
 def test_training_fidelity_rejects_transfer_and_non_sp_uk_rows(tmp_path: Path) -> None:
     cohort = tmp_path / "cohort.json"
-    cohort.write_text(json.dumps({"entries": [
-        {"source": "baltrad", "radar": "bejab", "role": "training"},
-        {"source": "baltrad", "radar": "nlhrw", "role": "transfer-validation"},
-    ]}), encoding="utf-8")
+    cohort.write_text(
+        json.dumps(
+            {
+                "entries": [
+                    {"source": "baltrad", "radar": "bejab", "role": "training"},
+                    {"source": "baltrad", "radar": "nlhrw", "role": "transfer-validation"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
     training = tmp_path / "training.csv"
     training.write_text(
         "radar,source,pulse,weather_x\nbejab,aloft-baltrad,aloft,1\nchenies,jasmin-uk-sp,sp,2\n",
         encoding="utf-8",
     )
-    result = verify_training_input_policy(training, cohort_json=cohort, required_predictors=["weather_x"])
+    result = verify_training_input_policy(
+        training, cohort_json=cohort, required_predictors=["weather_x"]
+    )
     assert result["status"] == "passed"
 
     training.write_text(
@@ -355,7 +467,9 @@ def test_training_fidelity_rejects_transfer_and_non_sp_uk_rows(tmp_path: Path) -
         encoding="utf-8",
     )
     try:
-        verify_training_input_policy(training, cohort_json=cohort, required_predictors=["weather_x"])
+        verify_training_input_policy(
+            training, cohort_json=cohort, required_predictors=["weather_x"]
+        )
     except ValueError as error:
         assert "not permitted" in str(error)
     else:
@@ -383,12 +497,14 @@ def test_europe_manifest_is_source_explicit_and_not_land_clipped(tmp_path: Path)
 
 def test_prediction_publication_writes_fixed_grid_and_daily_assets(tmp_path: Path) -> None:
     source = tmp_path / "predictions.csv"
+    rows = "".join(
+        f"2026-07-01T{hour:02d}:00:00Z,3.0,51.0,0.9,10,interpolation,{5 + hour},2,1,2,0.2,0.7\n"
+        for hour in range(24)
+    )
     source.write_text(
         "time_utc,longitude,latitude,support,nearest_radar_km,prediction_class,"
         "mtr_birds_km_h,vid_birds_per_km2,bird_u_ms,bird_v_ms,"
-        "uncertainty_mtr_birds_km_h\n"
-        "2026-07-01T00:00:00Z,3.0,51.0,0.9,10,interpolation,5,2,1,2,0.2\n"
-        "2026-07-01T01:00:00Z,3.0,51.0,0.9,10,interpolation,6,3,2,1,0.3\n",
+        "uncertainty_mtr_birds_km_h,uncertainty_vid_birds_per_km2\n" + rows,
         encoding="utf-8",
     )
 
@@ -402,19 +518,26 @@ def test_prediction_publication_writes_fixed_grid_and_daily_assets(tmp_path: Pat
     )
 
     assert result["day_count"] == 1
+    assert result["prediction_row_count"] == 24
     assert result["manifest"]["release_status"] == "research-preview"
+    assert result["manifest"]["available_dates"] == ["2026-07-01"]
     day = json.loads((tmp_path / "out/archive/reanalysis/euro-v1/2026-07-01.json").read_text())
-    assert len(day["frames"]) == 2
+    assert len(day["frames"]) == 24
     assert day["frames"][0]["mtr_birds_km_h"] == [5.0]
+    assert day["frames"][0]["uncertainty_mtr_birds_km_h"] == [0.2]
+    assert day["frames"][0]["uncertainty_vid_birds_per_km2"] == [0.7]
+    assert "uncertainty" not in day["frames"][0]
 
 
 def test_partitioned_prediction_publication_reconciles_every_daily_cell(tmp_path: Path) -> None:
     root = tmp_path / "predictions"
     root.mkdir()
+    rows = "".join(
+        f"2026-07-01T{hour:02d}:00:00Z,3,51,interpolation,{5 + hour},2,1,2\n" for hour in range(24)
+    )
     (root / "prediction_20260701.csv").write_text(
         "time_utc,longitude,latitude,prediction_class,mtr_birds_km_h,vid_birds_per_km2,bird_u_ms,bird_v_ms\n"
-        "2026-07-01T00:00:00Z,3,51,interpolation,5,2,1,2\n"
-        "2026-07-01T01:00:00Z,3,51,interpolation,6,3,2,1\n",
+        + rows,
         encoding="utf-8",
     )
     result = publish_europe_prediction_partitions(
@@ -425,9 +548,10 @@ def test_partitioned_prediction_publication_reconciles_every_daily_cell(tmp_path
         uk_sp_radar_count=1,
         validation_url="validation.json",
     )
-    assert result["prediction_row_count"] == 2
-    assert result["frame_count"] == 2
+    assert result["prediction_row_count"] == 24
+    assert result["frame_count"] == 24
     assert result["cell_count"] == 1
+    assert result["manifest"]["available_dates"] == ["2026-07-01"]
 
     (root / "prediction_20260702.csv").write_text(
         "time_utc,longitude,latitude,prediction_class,mtr_birds_km_h\n"
@@ -443,6 +567,177 @@ def test_partitioned_prediction_publication_reconciles_every_daily_cell(tmp_path
             uk_sp_radar_count=1,
             validation_url="validation.json",
         )
+
+
+def test_prediction_publication_rejects_incomplete_or_noncanonical_days(tmp_path: Path) -> None:
+    header = "time_utc,longitude,latitude,prediction_class,mtr_birds_km_h\n"
+    incomplete = tmp_path / "incomplete.csv"
+    incomplete.write_text(
+        header
+        + "".join(f"2026-07-01T{hour:02d}:00:00Z,3,51,interpolation,5\n" for hour in range(23)),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="exactly 24 canonical UTC hourly frames"):
+        publish_europe_predictions(
+            predictions_csv=incomplete,
+            output_root=tmp_path / "incomplete-out",
+            model_id="euro-v1",
+            aloft_radar_count=1,
+            uk_sp_radar_count=1,
+            validation_url="validation.json",
+        )
+
+    partition_root = tmp_path / "noncanonical"
+    partition_root.mkdir()
+    timestamps = [f"2026-07-02T{hour:02d}:00:00Z" for hour in range(23)]
+    timestamps.append("2026-07-02T23:30:00Z")
+    (partition_root / "prediction_20260702.csv").write_text(
+        header + "".join(f"{timestamp},3,51,interpolation,5\n" for timestamp in timestamps),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="exactly 24 canonical UTC hourly frames"):
+        publish_europe_prediction_partitions(
+            predictions_root=partition_root,
+            output_root=tmp_path / "noncanonical-out",
+            model_id="euro-v1",
+            aloft_radar_count=1,
+            uk_sp_radar_count=1,
+            validation_url="validation.json",
+        )
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    ("../escape", "/tmp/escape", "Euro-v1", "model id", ".", "euro/v1"),
+)
+def test_europe_model_id_is_a_strict_safe_slug(tmp_path: Path, model_id: str) -> None:
+    output = tmp_path / "manifest.json"
+
+    with pytest.raises(ValueError, match="model_id"):
+        build_europe_manifest(
+            model_id=model_id,
+            first_time_utc="2026-07-01T00:00:00Z",
+            latest_time_utc="2026-07-01T23:00:00Z",
+            aloft_radar_count=1,
+            uk_sp_radar_count=1,
+            grid_asset="archive/reanalysis/euro-v1/grid.json",
+            daily_asset_template="archive/reanalysis/euro-v1/{date}.json",
+            validation_url="validation.json",
+            output=output,
+        )
+
+    assert not output.exists()
+
+
+def test_monolithic_prediction_publication_reconciles_every_cell(tmp_path: Path) -> None:
+    header = (
+        "time_utc,longitude,latitude,prediction_class,mtr_birds_km_h,"
+        "vid_birds_per_km2,bird_u_ms,bird_v_ms\n"
+    )
+    rows = [
+        f"2026-07-01T{hour:02d}:00:00Z,{longitude},51,interpolation,5,2,1,2\n"
+        for hour in range(24)
+        for longitude in (3, 4)
+    ]
+    cases = {
+        "missing": (rows[:-1], "frame is incomplete"),
+        "duplicate": ([*rows, rows[0]], "duplicate Europe prediction cell"),
+        "unsupported": (
+            [rows[0].replace("interpolation", "unsupported"), *rows[1:]],
+            "unsupported",
+        ),
+        "invalid": (
+            [rows[0].replace(",3,51,", ",bad,51,"), *rows[1:]],
+            "invalid Europe prediction coordinate",
+        ),
+    }
+
+    for name, (case_rows, message) in cases.items():
+        source = tmp_path / f"{name}.csv"
+        source.write_text(header + "".join(case_rows), encoding="utf-8")
+        output_root = tmp_path / f"{name}-out"
+        with pytest.raises(ValueError, match=message):
+            publish_europe_predictions(
+                predictions_csv=source,
+                output_root=output_root,
+                model_id=f"euro-{name}",
+                aloft_radar_count=1,
+                uk_sp_radar_count=1,
+                validation_url="validation.json",
+            )
+        assert not (output_root / "archive/reanalysis" / f"euro-{name}").exists()
+
+
+def test_europe_model_release_is_immutable(tmp_path: Path) -> None:
+    source = tmp_path / "predictions.csv"
+    source.write_text(
+        "time_utc,longitude,latitude,prediction_class,mtr_birds_km_h\n"
+        + "".join(
+            f"2026-07-01T{hour:02d}:00:00Z,3,51,interpolation,{hour + 1}\n" for hour in range(24)
+        ),
+        encoding="utf-8",
+    )
+    output_root = tmp_path / "out"
+    publish_europe_predictions(
+        predictions_csv=source,
+        output_root=output_root,
+        model_id="euro-immutable",
+        aloft_radar_count=1,
+        uk_sp_radar_count=1,
+        validation_url="validation.json",
+    )
+    daily_path = output_root / "archive/reanalysis/euro-immutable/2026-07-01.json"
+    manifest_path = output_root / "latest/reanalysis.json"
+    original_daily = daily_path.read_bytes()
+    original_manifest = manifest_path.read_bytes()
+
+    with pytest.raises(FileExistsError, match="immutable"):
+        publish_europe_predictions(
+            predictions_csv=source,
+            output_root=output_root,
+            model_id="euro-immutable",
+            aloft_radar_count=1,
+            uk_sp_radar_count=1,
+            validation_url="validation.json",
+        )
+
+    assert daily_path.read_bytes() == original_daily
+    assert manifest_path.read_bytes() == original_manifest
+
+
+def test_failed_partition_publication_discards_staging_and_preserves_latest(tmp_path: Path) -> None:
+    predictions = tmp_path / "predictions"
+    predictions.mkdir()
+    header = "time_utc,longitude,latitude,prediction_class,mtr_birds_km_h\n"
+    (predictions / "prediction_20260701.csv").write_text(
+        header
+        + "".join(f"2026-07-01T{hour:02d}:00:00Z,3,51,interpolation,5\n" for hour in range(24)),
+        encoding="utf-8",
+    )
+    (predictions / "prediction_20260702.csv").write_text(
+        header
+        + "".join(f"2026-07-02T{hour:02d}:00:00Z,3,51,interpolation,5\n" for hour in range(23)),
+        encoding="utf-8",
+    )
+    output_root = tmp_path / "out"
+    latest = output_root / "latest/reanalysis.json"
+    latest.parent.mkdir(parents=True)
+    latest.write_text('{"sentinel":true}\n', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="exactly 24 canonical UTC hourly frames"):
+        publish_europe_prediction_partitions(
+            predictions_root=predictions,
+            output_root=output_root,
+            model_id="euro-transaction",
+            aloft_radar_count=1,
+            uk_sp_radar_count=1,
+            validation_url="validation.json",
+        )
+
+    archive_root = output_root / "archive/reanalysis"
+    assert not (archive_root / "euro-transaction").exists()
+    assert not list(archive_root.glob(".euro-transaction.*.staging"))
+    assert latest.read_text(encoding="utf-8") == '{"sentinel":true}\n'
 
 
 def test_europe_page_is_separate_and_installable(tmp_path: Path) -> None:
@@ -462,10 +757,30 @@ def test_europe_cli_contracts_are_registered() -> None:
     args = parser.parse_args(["europe", "cohort", "--output", "cohort.json"])
     assert args.minimum_training_days == 365
     args = parser.parse_args(
-        ["europe", "stream-day", "--radar", "bejab", "--day", "2026-07-01", "--output", "day.parquet"]
+        [
+            "europe",
+            "stream-day",
+            "--radar",
+            "bejab",
+            "--day",
+            "2026-07-01",
+            "--output",
+            "day.parquet",
+        ]
     )
     assert args.radar == "bejab"
-    args = parser.parse_args(["coastal", "build-relative-flow", "--training-csv", "training.csv", "--cohort", "cohort.json", "--output-root", "out"])
+    args = parser.parse_args(
+        [
+            "coastal",
+            "build-relative-flow",
+            "--training-csv",
+            "training.csv",
+            "--cohort",
+            "cohort.json",
+            "--output-root",
+            "out",
+        ]
+    )
     assert args.training_csv == "training.csv"
 
 
@@ -473,11 +788,16 @@ def test_europe_fitter_has_source_and_transfer_controls() -> None:
     script = (Path(__file__).parents[1] / "scripts/fit_europe_gamm.R").read_text(encoding="utf-8")
     assert "stats::relevel(factor(data$source)" in script
     assert "site_equal_weight" in script
+    fit_target = script.split("fit_target <- function", 1)[1].split(
+        "predict_target <- function", 1
+    )[0]
+    assert "site_counts <- table(subset$radar)" in fit_target
+    assert "site_counts <- table(data$radar)" not in script
     assert "leave_one_" in script
     assert "transfer_validation" in script
     assert "transfer_validation_radar_count" in script
     assert "frame$.row_id <- seq_len(nrow(frame))" in script
-    assert 'model_time_terms = if (!is.null(spec$time_terms))' in script
+    assert "model_time_terms = if (!is.null(spec$time_terms))" in script
     assert "time_index_hours" in script
     assert 'data$pulse == "lp"' in script
     assert "observed_threshold <-" in script
@@ -485,12 +805,15 @@ def test_europe_fitter_has_source_and_transfer_controls() -> None:
     assert "predicted_event <- predicted >= predicted_threshold" in script
     probe = (Path(__file__).parents[1] / "scripts/probe_europe_time_resolution.R").read_text()
     assert "discrete=space_time_k <= 0" in probe
-    sbatch = (Path(__file__).parents[1] / "deploy/slurm/birdcast-euro-aloft-stream.sbatch").read_text()
+    sbatch = (
+        Path(__file__).parents[1] / "deploy/slurm/birdcast-euro-aloft-stream.sbatch"
+    ).read_text()
     assert "stream-chunk" in sbatch
     assert "radar-month" in sbatch
-    assert "--require-pass" in (
-        Path(__file__).parents[1] / "deploy/slurm/birdcast-euro-gamm.sbatch"
-    ).read_text()
+    assert (
+        "--require-pass"
+        in (Path(__file__).parents[1] / "deploy/slurm/birdcast-euro-gamm.sbatch").read_text()
+    )
 
 
 def test_europe_batch_jobs_pin_the_declared_release_and_bound_streaming() -> None:
@@ -499,8 +822,8 @@ def test_europe_batch_jobs_pin_the_declared_release_and_bound_streaming() -> Non
     assert scripts
     for script in scripts:
         content = script.read_text(encoding="utf-8")
-        assert 'BIRDCAST_EURO_ROOT:?' in content, script.name
-        assert 'BIRDCAST_EURO_PYTHON:?' in content, script.name
+        assert "BIRDCAST_EURO_ROOT:?" in content, script.name
+        assert "BIRDCAST_EURO_PYTHON:?" in content, script.name
         if "-m birdcast_uk.cli" in content:
             assert 'export PYTHONPATH="$BIRDCAST_EURO_ROOT/src' in content, script.name
 
@@ -510,27 +833,41 @@ def test_europe_batch_jobs_pin_the_declared_release_and_bound_streaming() -> Non
     assert "#SBATCH --cpus-per-task=1" in gamm
     assert "#SBATCH --mem=128G" in gamm
     publish = (slurm_dir / "birdcast-euro-publish.sbatch").read_text(encoding="utf-8")
-    assert "BIRDCAST_EURO_PUBLIC_HOST" in publish
-    assert "birdcast-euro-activate.sh" in publish
+    assert "validate_europe_publication.py" in publish
+    assert "BIRDCAST_EURO_PUBLIC_HOST" not in publish
+    assert "BIRDCAST_EURO_PUBLIC_USER" not in publish
+    assert "BIRDCAST_EURO_PUBLIC_STAGE_ROOT" not in publish
+    assert "birdcast-euro-activate.sh" not in publish
+    assert "\nrsync " not in publish
+    assert "\nssh " not in publish
 
 
-def test_europe_public_promotion_only_switches_a_complete_manifest() -> None:
+def test_absolute_europe_promotion_is_retired_and_relative_route_remains() -> None:
     root = Path(__file__).parents[1]
-    script = (root / "deploy/scripts/birdcast-euro-object-store-pull.sh").read_text(encoding="utf-8")
-    nginx = (root / "deploy/nginx/birdcast-uk.conf").read_text(encoding="utf-8")
+    retired = (
+        root / "deploy/scripts/birdcast-euro-object-store-pull.sh",
+        root / "deploy/scripts/birdcast-euro-activate.sh",
+        root / "deploy/systemd/birdcast-euro-object-store-pull.service",
+        root / "deploy/systemd/birdcast-euro-object-store-pull.timer",
+        root / "deploy/env/birdcast-euro.env.example",
+    )
+    for path in retired:
+        assert not path.exists(), path
 
-    assert 'manifest.get("release_status") != "published"' in script
-    assert 'manifest.get("data_available") is not True' in script
-    assert 'test -f "$stage/$grid"' in script
-    assert 'mv -Tf "$BIRDCAST_EURO_ARTIFACT_ROOT.next"' in script
+    cloud_env = (root / "deploy/env/birdcast-uk.env.example").read_text(encoding="utf-8")
+    assert "BIRDCAST_EURO_OBJECT_STORE" not in cloud_env
+    assert "BIRDCAST_EURO_AWS_PROFILE" not in cloud_env
+    assert "BIRDCAST_EURO_OBJECT_PREFIX" not in cloud_env
+    assert "BIRDCAST_EURO_ARTIFACT_ROOT" not in cloud_env
+    assert "BIRDCAST_EURO_STAGE_ROOT" not in cloud_env
+
+    relative = (root / "deploy/scripts/birdcast-coastal-activate.sh").read_text(encoding="utf-8")
+    nginx = (root / "deploy/nginx/birdcast-uk.conf").read_text(encoding="utf-8")
+    assert "latest/relative-flow.json" in relative
+    assert "published-relative-research-product" in relative
+    assert "os.replace(sys.argv[1], sys.argv[2])" in relative
     assert "alias /opt/birdcast-euro/artifacts-current/;" in nginx
-    unit = (root / "deploy/systemd/birdcast-euro-object-store-pull.service").read_text(encoding="utf-8")
-    assert "EnvironmentFile=/etc/birdcast-uk/birdcast-euro.env" in unit
-    activate = (root / "deploy/scripts/birdcast-euro-activate.sh").read_text(encoding="utf-8")
-    assert 'manifest.get("release_status") != "published"' in activate
-    assert 'test -f "$source_root/$grid"' in activate
-    assert 'sha256sum "$manifest"' in activate
-    assert 'test ! -e "$release"' in activate
+    assert "return 302 /europe-bird-maps/;" in nginx
 
 
 def load_script(name: str):
@@ -547,17 +884,39 @@ def test_validation_uses_site_metrics_and_paired_vector_direction(tmp_path: Path
     with vectors.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(
             handle,
-            fieldnames=["validation", "row_id", "radar", "time_utc", "target", "observed", "predicted"],
+            fieldnames=[
+                "validation",
+                "row_id",
+                "radar",
+                "time_utc",
+                "target",
+                "observed",
+                "predicted",
+            ],
         )
         writer.writeheader()
         for radar, row_id in (("bejab", "1"), ("nlhrw", "2")):
             writer.writerow(
-                {"validation": "transfer_validation", "row_id": row_id, "radar": radar, "time_utc": "2026-01-01T00:00:00Z",
-                 "target": "bird_u_ms", "observed": 1, "predicted": 1}
+                {
+                    "validation": "transfer_validation",
+                    "row_id": row_id,
+                    "radar": radar,
+                    "time_utc": "2026-01-01T00:00:00Z",
+                    "target": "bird_u_ms",
+                    "observed": 1,
+                    "predicted": 1,
+                }
             )
             writer.writerow(
-                {"validation": "transfer_validation", "row_id": row_id, "radar": radar, "time_utc": "2026-01-01T00:00:00Z",
-                 "target": "bird_v_ms", "observed": 1, "predicted": 1}
+                {
+                    "validation": "transfer_validation",
+                    "row_id": row_id,
+                    "radar": radar,
+                    "time_utc": "2026-01-01T00:00:00Z",
+                    "target": "bird_v_ms",
+                    "observed": 1,
+                    "predicted": 1,
+                }
             )
     folds = []
     for target in ("mtr_birds_km_h", "vid_birds_per_km2"):
@@ -590,6 +949,24 @@ def test_validation_uses_site_metrics_and_paired_vector_direction(tmp_path: Path
     assert result["release_passed"] is True
     assert result["site_equal_metrics"]["median_site_direction_error_deg"] == 0
     assert result["pooled_metrics_may_not_override_site_gates"] is True
+
+    for fold in folds:
+        if fold["target"] == "vid_birds_per_km2":
+            fold["log1p_r_squared"] = -0.1
+    metrics.write_text(
+        json.dumps(
+            {
+                "model_id": "euro-v1",
+                "folds": folds,
+                "heldout_radar_vectors": str(vectors),
+                "transfer_validation_radar_count": 2,
+            }
+        ),
+        encoding="utf-8",
+    )
+    failed = validator.validate(metrics, tmp_path / "failed-validation.json")
+    assert failed["release_passed"] is False
+    assert failed["gates"]["each_intensity_target_median_site_log1p_skill_positive"] is False
 
 
 def test_radar_metadata_comes_from_derived_rows_not_raw_objects(tmp_path: Path) -> None:
@@ -650,16 +1027,26 @@ def test_training_assembler_keeps_transfer_radars_out_of_fit(tmp_path: Path) -> 
         pyarrow.Table.from_pylist(
             [
                 {
-                    "radar": "bejab", "time_utc": "2026-01-01T00:00:00Z",
-                    "mean_mtr_birds_km_h": 4.0, "mean_vid_birds_per_km2": 2.0,
-                    "bird_u_ms": 1.0, "bird_v_ms": 2.0, "profile_count": 12,
-                    "rain_suspect_fraction": 0.0, "cohort_role": "training",
+                    "radar": "bejab",
+                    "time_utc": "2026-01-01T00:00:00Z",
+                    "mean_mtr_birds_km_h": 4.0,
+                    "mean_vid_birds_per_km2": 2.0,
+                    "bird_u_ms": 1.0,
+                    "bird_v_ms": 2.0,
+                    "profile_count": 12,
+                    "rain_suspect_fraction": 0.0,
+                    "cohort_role": "training",
                 },
                 {
-                    "radar": "nlhrw", "time_utc": "2026-01-01T00:00:00Z",
-                    "mean_mtr_birds_km_h": 5.0, "mean_vid_birds_per_km2": 3.0,
-                    "bird_u_ms": 2.0, "bird_v_ms": 1.0, "profile_count": 12,
-                    "rain_suspect_fraction": 0.0, "cohort_role": "transfer-validation",
+                    "radar": "nlhrw",
+                    "time_utc": "2026-01-01T00:00:00Z",
+                    "mean_mtr_birds_km_h": 5.0,
+                    "mean_vid_birds_per_km2": 3.0,
+                    "bird_u_ms": 2.0,
+                    "bird_v_ms": 1.0,
+                    "profile_count": 12,
+                    "rain_suspect_fraction": 0.0,
+                    "cohort_role": "transfer-validation",
                 },
             ]
         ),
@@ -690,10 +1077,20 @@ def test_training_assembler_keeps_transfer_radars_out_of_fit(tmp_path: Path) -> 
         json.dumps(
             {
                 "radars": [
-                    {"radar": "bejab", "latitude": 51.0, "longitude": 3.1,
-                     "country": "BE", "network": "baltrad"},
-                    {"radar": "nlhrw", "latitude": 52.1, "longitude": 4.8,
-                     "country": "NL", "network": "baltrad"},
+                    {
+                        "radar": "bejab",
+                        "latitude": 51.0,
+                        "longitude": 3.1,
+                        "country": "BE",
+                        "network": "baltrad",
+                    },
+                    {
+                        "radar": "nlhrw",
+                        "latitude": 52.1,
+                        "longitude": 4.8,
+                        "country": "NL",
+                        "network": "baltrad",
+                    },
                 ]
             }
         ),
@@ -713,12 +1110,19 @@ def test_training_assembler_keeps_transfer_radars_out_of_fit(tmp_path: Path) -> 
             "validation_output": str(validation),
             "output": str(output),
         },
-        )()
+    )()
     cohort = tmp_path / "cohort.json"
-    cohort.write_text(json.dumps({"entries": [
-        {"radar": "bejab", "role": "training"},
-        {"radar": "nlhrw", "role": "transfer-validation"},
-    ]}), encoding="utf-8")
+    cohort.write_text(
+        json.dumps(
+            {
+                "entries": [
+                    {"radar": "bejab", "role": "training"},
+                    {"radar": "nlhrw", "role": "transfer-validation"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
     args.cohort = str(cohort)
     assembler.assemble(args)
 
@@ -741,11 +1145,13 @@ def test_country_exclusion_writes_a_declared_validation_sensitivity_cohort(tmp_p
     )
     base_spec = tmp_path / "model-spec.json"
     base_spec.write_text(
-        json.dumps({
-            "model_id": "europe-baseline",
-            "training_csv": str(training),
-            "validation_csv": str(validation),
-        }),
+        json.dumps(
+            {
+                "model_id": "europe-baseline",
+                "training_csv": str(training),
+                "validation_csv": str(validation),
+            }
+        ),
         encoding="utf-8",
     )
     module = load_script("prepare_europe_country_exclusion.py")
@@ -781,11 +1187,13 @@ def test_country_inclusion_restricts_both_gamm_inputs(tmp_path: Path) -> None:
     )
     base_spec = tmp_path / "model-spec.json"
     base_spec.write_text(
-        json.dumps({
-            "model_id": "europe-baseline",
-            "training_csv": str(training),
-            "validation_csv": str(validation),
-        }),
+        json.dumps(
+            {
+                "model_id": "europe-baseline",
+                "training_csv": str(training),
+                "validation_csv": str(validation),
+            }
+        ),
         encoding="utf-8",
     )
     module = load_script("prepare_europe_country_exclusion.py")
@@ -822,16 +1230,28 @@ def test_uk_coastal_corridor_uses_natural_earth_distance_and_overlap(tmp_path: P
         encoding="utf-8",
     )
     spec = tmp_path / "model-spec.json"
-    spec.write_text(json.dumps({"model_id": "base", "training_csv": str(training)}), encoding="utf-8")
+    spec.write_text(
+        json.dumps({"model_id": "base", "training_csv": str(training)}), encoding="utf-8"
+    )
     boundaries = tmp_path / "boundaries.geojson"
-    boundaries.write_text(json.dumps({
-        "type": "FeatureCollection",
-        "features": [{
-            "type": "Feature",
-            "properties": {"ADM0_A3": "GBR"},
-            "geometry": {"type": "Polygon", "coordinates": [[[-2, 49], [0, 49], [0, 52], [-2, 52], [-2, 49]]]},
-        }],
-    }), encoding="utf-8")
+    boundaries.write_text(
+        json.dumps(
+            {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {"ADM0_A3": "GBR"},
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [[[-2, 49], [0, 49], [0, 52], [-2, 52], [-2, 49]]],
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
     module = load_script("prepare_uk_coastal_corridor.py")
     cohort = module.prepare(
         model_spec=spec,
@@ -845,10 +1265,16 @@ def test_uk_coastal_corridor_uses_natural_earth_distance_and_overlap(tmp_path: P
         model_id="corridor-v1",
     )
 
-    assert [item["radar"] for item in cohort["continental_radars"]] == ["frcoast", "frcoast2", "frcoast3"]
+    assert [item["radar"] for item in cohort["continental_radars"]] == [
+        "frcoast",
+        "frcoast2",
+        "frcoast3",
+    ]
     assert [item["radar"] for item in cohort["uk_radars"]] == ["ukcoast", "ukcoast2", "ukcoast3"]
     assert cohort["raw_input_persisted"] is False
-    r_script = (Path(__file__).parents[1] / "scripts/probe_uk_coastal_corridor.R").read_text(encoding="utf-8")
+    r_script = (Path(__file__).parents[1] / "scripts/probe_uk_coastal_corridor.R").read_text(
+        encoding="utf-8"
+    )
     assert "leave_one_continental_radar_out" in r_script
     assert "train_continental_test_uk" in r_script
     assert "train_uk_test_continental" in r_script

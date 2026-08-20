@@ -51,11 +51,16 @@ def write_country_subset(
     removed_rows = 0
     retained_radars: set[str] = set()
     removed_radars: set[str] = set()
-    with source_path.open(newline="", encoding="utf-8") as source, output_path.open(
-        "w", newline="", encoding="utf-8"
-    ) as destination:
+    with (
+        source_path.open(newline="", encoding="utf-8") as source,
+        output_path.open("w", newline="", encoding="utf-8") as destination,
+    ):
         reader = csv.DictReader(source)
-        if not reader.fieldnames or "country" not in reader.fieldnames or "radar" not in reader.fieldnames:
+        if (
+            not reader.fieldnames
+            or "country" not in reader.fieldnames
+            or "radar" not in reader.fieldnames
+        ):
             raise ValueError(f"{source_path} must contain country and radar columns")
         writer = csv.DictWriter(destination, fieldnames=reader.fieldnames)
         writer.writeheader()
@@ -83,7 +88,9 @@ def prepare(
     training_csv = Path(base["training_csv"])
     validation_csv = Path(base["validation_csv"])
     if not training_csv.is_file() or not validation_csv.is_file():
-        raise ValueError("base runtime specification references missing training or validation input")
+        raise ValueError(
+            "base runtime specification references missing training or validation input"
+        )
 
     training_rows, training_countries, training_radars = country_counts(training_csv)
     training_excluded = {
@@ -103,11 +110,16 @@ def prepare(
     removed_rows = 0
     removed_radars: set[str] = set()
     retained_radars: set[str] = set()
-    with validation_csv.open(newline="", encoding="utf-8") as source, output_validation_csv.open(
-        "w", newline="", encoding="utf-8"
-    ) as destination:
+    with (
+        validation_csv.open(newline="", encoding="utf-8") as source,
+        output_validation_csv.open("w", newline="", encoding="utf-8") as destination,
+    ):
         reader = csv.DictReader(source)
-        if not reader.fieldnames or "country" not in reader.fieldnames or "radar" not in reader.fieldnames:
+        if (
+            not reader.fieldnames
+            or "country" not in reader.fieldnames
+            or "radar" not in reader.fieldnames
+        ):
             raise ValueError("validation table must contain country and radar columns")
         writer = csv.DictWriter(destination, fieldnames=reader.fieldnames)
         writer.writeheader()
@@ -182,12 +194,18 @@ def prepare_inclusion(
     source_training_csv = Path(base["training_csv"])
     source_validation_csv = Path(base["validation_csv"])
     if not source_training_csv.is_file() or not source_validation_csv.is_file():
-        raise ValueError("base runtime specification references missing training or validation input")
-    training_retained, training_removed, training_radars, removed_training_radars = write_country_subset(
-        source_training_csv, output_training_csv, included_countries=included_country
+        raise ValueError(
+            "base runtime specification references missing training or validation input"
+        )
+    training_retained, training_removed, training_radars, removed_training_radars = (
+        write_country_subset(
+            source_training_csv, output_training_csv, included_countries=included_country
+        )
     )
-    validation_retained, validation_removed, validation_radars, removed_validation_radars = write_country_subset(
-        source_validation_csv, output_validation_csv, included_countries=included_country
+    validation_retained, validation_removed, validation_radars, removed_validation_radars = (
+        write_country_subset(
+            source_validation_csv, output_validation_csv, included_countries=included_country
+        )
     )
     if not training_retained or not validation_retained:
         raise ValueError("country inclusion produced an empty training or validation cohort")
@@ -250,8 +268,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model-spec", type=Path, required=True)
     countries = parser.add_mutually_exclusive_group(required=True)
-    countries.add_argument("--exclude-country", action="append", help="ISO country code; repeatable")
-    countries.add_argument("--include-country", action="append", help="ISO country code; repeatable")
+    countries.add_argument(
+        "--exclude-country", action="append", help="ISO country code; repeatable"
+    )
+    countries.add_argument(
+        "--include-country", action="append", help="ISO country code; repeatable"
+    )
     parser.add_argument("--output-training-csv", type=Path, help="Required with --include-country")
     parser.add_argument("--output-validation-csv", type=Path, required=True)
     parser.add_argument("--output-spec", type=Path, required=True)

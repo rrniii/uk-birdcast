@@ -11,7 +11,7 @@ const METRICS = {
   mtr_birds_km_h:{title:"Migration traffic rate",unit:"birds km⁻¹ h⁻¹ · log scale",ticks:[0.1,0.5,1,2,5,10,20,50,100]},
   vid_birds_per_km2:{title:"Vertically integrated density",unit:"birds km⁻² · log scale",ticks:[0.1,0.5,1,2,5,10,20,50,100]}
 };
-const state={base:"/birdcast-euro/data",manifest:null,grid:null,radars:[],day:null,frame:0,date:null,metric:"mtr_birds_km_h",palette:"robin",vectors:true,uncertainty:false,support:true,playing:false,timer:null,view:{zoom:1,dx:0,dy:0},drag:null,boundaries:null};
+const state={base:"/birdcast-euro/data",manifest:null,grid:null,radars:[],day:null,dayCache:new Map(),frame:0,date:null,metric:"mtr_birds_km_h",palette:"robin",vectors:true,support:true,playing:false,timer:null,animationGeneration:0,loadGeneration:0,loadController:null,loading:false,view:{zoom:1,dx:0,dy:0},drag:null,boundaries:null};
 
 init();
 async function init(){
@@ -22,25 +22,72 @@ async function init(){
   state.grid=await fetchJson(asset(state.manifest.assets.grid),null);
   state.radars=state.manifest.assets.radars?(await fetchJson(asset(state.manifest.assets.radars),{})).radars||[]:[];
   state.date=state.manifest.latest_time_utc.slice(0,10);
-  configure(); await loadDay(); render();
+  configure();
+  const loaded=await selectAvailableDate(publishedDates().reverse(),"first");
+  if(loaded!=="selected"){unavailable("No readable daily map assets are currently published");return}
+  render();
   addEventListener("resize",draw);
 }
 async function fetchJson(url,fallback){try{const r=await fetch(url,{cache:"no-store"});if(!r.ok)throw Error(r.status);return await r.json()}catch(_){return fallback}}
 function asset(path){return path&&path.startsWith("http")?path:`${state.base}/${String(path).replace(/^\//,"")}`}
 function dailyUrl(date){return asset(state.manifest.assets.daily_template.replace("{date}",date))}
-async function loadDay(){state.day=await fetchJson(dailyUrl(state.date),{frames:[]});state.frame=Math.min(state.frame,Math.max(0,state.day.frames.length-1))}
+function isoDate(value){return typeof value==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(value)?value:null}
+function publishedDates(){
+  const min=isoDate(state.manifest.first_time_utc.slice(0,10)),max=isoDate(state.manifest.latest_time_utc.slice(0,10));
+  const declared=Array.isArray(state.manifest.available_dates)?state.manifest.available_dates.map(isoDate).filter(Boolean):[];
+  if(declared.length)return [...new Set(declared)].filter(date=>(!min||date>=min)&&(!max||date<=max)).sort();
+  if(!min||!max)return[];
+  const dates=[],end=Date.parse(`${max}T00:00:00Z`);
+  for(let time=Date.parse(`${min}T00:00:00Z`);time<=end;time+=86400000)dates.push(new Date(time).toISOString().slice(0,10));
+  return dates;
+}
+async function fetchDay(date,signal){
+  if(state.dayCache.has(date))return state.dayCache.get(date);
+  const response=await fetch(dailyUrl(date),{cache:"no-store",signal});
+  if(response.status===404){state.dayCache.set(date,null);return null}
+  if(!response.ok)throw Error(`daily map request failed (${response.status})`);
+  const payload=await response.json();
+  if(!payload||!Array.isArray(payload.frames))throw Error("daily map response has no frames array");
+  if(payload.date&&payload.date!==date)throw Error("daily map response date does not match the request");
+  const day=payload.frames.length?payload:null;state.dayCache.set(date,day);return day;
+}
+function beginDayRequest(){
+  if(state.loadController)state.loadController.abort();
+  const request={generation:++state.loadGeneration,controller:new AbortController()};
+  state.loadController=request.controller;setLoading(true);return request;
+}
+function requestIsCurrent(request){return request.generation===state.loadGeneration&&!request.controller.signal.aborted}
+function finishDayRequest(request){if(!requestIsCurrent(request))return;state.loadController=null;setLoading(false)}
+function commitDay(date,day,edge){
+  state.date=date;state.day=day;state.frame=edge==="last"?day.frames.length-1:0;
+  document.querySelector("#dateInput").value=date;
+}
+async function selectAvailableDate(dates,edge){
+  const request=beginDayRequest();
+  try{
+    for(const date of dates){
+      const day=await fetchDay(date,request.controller.signal);
+      if(!requestIsCurrent(request))return"cancelled";
+      if(!day)continue;
+      commitDay(date,day,edge);return"selected";
+    }
+    return requestIsCurrent(request)?"none":"cancelled";
+  }catch(error){
+    if(error.name==="AbortError"||!requestIsCurrent(request))return"cancelled";
+    console.error(error);announce("The published map data could not be loaded. Please retry.");return"error";
+  }finally{finishDayRequest(request)}
+}
 function configure(){
   const date=document.querySelector("#dateInput");date.min=state.manifest.first_time_utc.slice(0,10);date.max=state.manifest.latest_time_utc.slice(0,10);date.value=state.date;
-  date.onchange=async()=>{stop();state.date=date.value;state.frame=0;await loadDay();render()};
+  date.onchange=async()=>{stop();const requested=date.value,result=await selectAvailableDate([requested],"first");if(result==="selected"){render();announce(`Showing ${requested}`)}else if(result==="none"){date.value=state.date;announce(`No published map is available for ${requested}`)}};
   document.querySelector("#metricSelect").onchange=e=>{state.metric=e.target.value;render()};
   document.querySelector("#colourSelect").onchange=e=>{state.palette=e.target.value;render()};
   document.querySelector("#vectorsToggle").onchange=e=>{state.vectors=e.target.checked;draw()};
-  document.querySelector("#uncertaintyToggle").onchange=e=>{state.uncertainty=e.target.checked;draw()};
   document.querySelector("#supportToggle").onchange=e=>{state.support=e.target.checked;draw()};
   document.querySelector("#hourInput").oninput=e=>{state.frame=+e.target.value;render()};
   document.querySelector("#play").onclick=()=>state.playing?stop():play();
   document.querySelector("#previous").onclick=()=>step(-1);document.querySelector("#next").onclick=()=>step(1);
-  document.querySelector("#resetTime").onclick=async()=>{stop();state.date=state.manifest.first_time_utc.slice(0,10);state.frame=0;document.querySelector("#dateInput").value=state.date;await loadDay();render()};
+  document.querySelector("#resetTime").onclick=async()=>{stop();const result=await selectAvailableDate(publishedDates(),"first");if(result==="selected"){render();announce("Showing the first published hour")}else if(result==="none")announce("No published map days are available")};
   document.querySelector("#zoomIn").onclick=()=>zoom(1.35);document.querySelector("#zoomOut").onclick=()=>zoom(1/1.35);document.querySelector("#resetMap").onclick=()=>{state.view={zoom:1,dx:0,dy:0};draw()};
   const canvas=document.querySelector("#mapCanvas");canvas.onwheel=e=>{e.preventDefault();zoom(e.deltaY<0?1.15:1/1.15)};
   canvas.onpointerdown=e=>{canvas.setPointerCapture(e.pointerId);state.drag={x:e.clientX,y:e.clientY,dx:state.view.dx,dy:state.view.dy}};
@@ -82,8 +129,8 @@ function rings(g){if(!g)return[];if(g.type==="Polygon")return g.coordinates;if(g
 function cells(c,p){
   const f=frame();if(!f)return;const values=f[state.metric]||[],ticks=METRICS[state.metric].ticks,lo=Math.log10(ticks[0]),hi=Math.log10(ticks.at(-1)),palette=PALETTES[state.palette];
   const a=p(0,0),b=p(.25,.25),w=Math.max(2,Math.abs(b[0]-a[0])+1),h=Math.max(2,Math.abs(b[1]-a[1])+1);
-  state.grid.cells.forEach((cell,i)=>{const v=values[i];if(!Number.isFinite(v)||v<ticks[0])return;const t=clamp((Math.log10(v)-lo)/(hi-lo));const [x,y]=p(cell.longitude,cell.latitude);let alpha=.88;
-    if(state.uncertainty&&Number.isFinite(f.uncertainty[i]))alpha*=1-clamp(f.uncertainty[i]/3)*.65;c.globalAlpha=alpha;c.fillStyle=color(palette,t);c.fillRect(x-w/2,y-h/2,w,h);
+  state.grid.cells.forEach((cell,i)=>{const v=values[i];if(!Number.isFinite(v)||v<ticks[0])return;const t=clamp((Math.log10(v)-lo)/(hi-lo));const [x,y]=p(cell.longitude,cell.latitude);
+    c.globalAlpha=.88;c.fillStyle=color(palette,t);c.fillRect(x-w/2,y-h/2,w,h);
     if(state.support&&f.support[i]==="extrapolation"){c.strokeStyle="#f0b343";c.lineWidth=.45;c.strokeRect(x-w/2,y-h/2,w,h)}
     if(state.vectors&&Number.isFinite(f.bird_u_ms[i])&&Number.isFinite(f.bird_v_ms[i]))arrow(c,x,y,f.bird_u_ms[i],f.bird_v_ms[i]);
   });c.globalAlpha=1;
@@ -93,6 +140,54 @@ function radars(c,p){for(const r of state.radars){const lon=+(r.longitude??r.lon
 function color(p,t){const x=clamp(t)*(p.length-1),i=Math.min(p.length-2,Math.floor(x)),f=x-i,a=rgb(p[i]),b=rgb(p[i+1]);return`rgb(${a.map((v,j)=>Math.round(v+(b[j]-v)*f)).join(",")})`}
 function rgb(h){return[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)]}function clamp(v){return Math.max(0,Math.min(1,v))}function mean(a){return a.reduce((x,y)=>x+y,0)/a.length}
 function zoom(f){state.view.zoom=clampZoom(state.view.zoom*f);draw()}function clampZoom(v){return Math.max(.65,Math.min(8,v))}
-async function step(delta){stop();await move(delta);render()}async function move(delta){let n=state.frame+delta;if(n>=0&&n<(state.day.frames||[]).length){state.frame=n;return}const d=new Date(`${state.date}T00:00:00Z`);d.setUTCDate(d.getUTCDate()+(delta>0?1:-1));const next=d.toISOString().slice(0,10),min=state.manifest.first_time_utc.slice(0,10),max=state.manifest.latest_time_utc.slice(0,10);if(next<min||next>max)return;state.date=next;document.querySelector("#dateInput").value=next;await loadDay();state.frame=delta>0?0:Math.max(0,state.day.frames.length-1)}
-function play(){state.playing=true;document.querySelector("#play").textContent="Ⅱ";state.timer=setInterval(async()=>{await move(1);render()},650)}function stop(){state.playing=false;clearInterval(state.timer);state.timer=null;document.querySelector("#play").textContent="▶"}
-function unavailable(){document.querySelector("#statusBadge").textContent="Validation pending";document.querySelector("#subtitle").textContent="European reanalysis withheld pending independent model validation";document.querySelector("#coverage").textContent="Source, ERA5, training and grid reconstruction audits passed";document.querySelector("#model").textContent="External Aloft transfer validation is required before map data are published";document.querySelectorAll("input,select,button").forEach(e=>e.disabled=true)}
+function adjacentDates(direction){
+  const dates=publishedDates();return direction>0?dates.filter(date=>date>state.date):dates.filter(date=>date<state.date).reverse();
+}
+async function move(direction){
+  const frames=state.day&&Array.isArray(state.day.frames)?state.day.frames:[];
+  const next=state.frame+direction;
+  if(next>=0&&next<frames.length){state.frame=next;return"selected"}
+  return selectAvailableDate(adjacentDates(direction),direction>0?"first":"last");
+}
+async function step(direction){
+  stop();const result=await move(direction);
+  if(result==="selected"){render();announce(direction>0?"Showing the next published hour":"Showing the previous published hour")}
+  else if(result==="none")announce(direction>0?"You have reached the last published hour":"You have reached the first published hour");
+}
+function play(){
+  if(state.loading)return;
+  state.playing=true;const generation=++state.animationGeneration;updatePlayButton();
+  state.timer=setTimeout(()=>playTick(generation),650);
+}
+async function playTick(generation){
+  state.timer=null;if(!state.playing||generation!==state.animationGeneration)return;
+  const result=await move(1);
+  if(!state.playing||generation!==state.animationGeneration)return;
+  if(result!=="selected"){
+    stop();if(result==="none")announce("Playback stopped at the last published hour");return;
+  }
+  render();state.timer=setTimeout(()=>playTick(generation),650);
+}
+function stop(){
+  state.playing=false;state.animationGeneration+=1;
+  if(state.timer!==null)clearTimeout(state.timer);state.timer=null;
+  if(state.loadController){state.loadController.abort();state.loadController=null;state.loadGeneration+=1;setLoading(false)}
+  updatePlayButton();
+}
+function updatePlayButton(){
+  const button=document.querySelector("#play");if(!button)return;
+  button.textContent=state.playing?"Pause":"Play";button.title=state.playing?"Pause animation":"Play hourly animation";
+  button.setAttribute("aria-label",button.title);button.setAttribute("aria-pressed",String(state.playing));
+}
+function setLoading(loading){
+  state.loading=loading;document.querySelector("#mapCanvas").setAttribute("aria-busy",String(loading));
+  for(const id of ["resetTime","previous","next","hourInput"]){const control=document.querySelector(`#${id}`);if(control)control.disabled=loading}
+}
+function announce(message){const status=document.querySelector("#mapStatus");if(status)status.textContent=message}
+function unavailable(message){
+  stop();document.querySelector("#statusBadge").textContent="Validation pending";
+  document.querySelector("#subtitle").textContent=message||"European reanalysis withheld pending independent model validation";
+  document.querySelector("#coverage").textContent="Source, ERA5, training and grid reconstruction audits passed";
+  document.querySelector("#model").textContent="External Aloft transfer validation is required before map data are published";
+  document.querySelectorAll("input,select,button").forEach(element=>{element.disabled=true});announce(message||"European reanalysis is not available");
+}

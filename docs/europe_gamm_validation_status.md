@@ -1,5 +1,9 @@
 # Europe GAMM Validation Status
 
+This document is a scientific decision record, not live service-health
+evidence. Operational status must be verified from the deployed manifests and
+services.
+
 ## Release decision
 
 **Do not activate Europe prediction assets.** The Europe tab is deployed in the
@@ -188,13 +192,14 @@ factor: earlier simultaneous-site checks span both substantial UK/Aloft excess
 and deficit. A model trained against those targets cannot be claimed to produce
 externally validated absolute birds km-1 h-1 across Europe.
 
-The public tab must therefore remain a visible but data-withheld research
-surface. It correctly reports the passing source, ERA5, training and grid
-audits while withholding the map data pending external validation.
+Absolute GAMM prediction assets must remain withheld. A separately labelled
+radar-relative activity/flow surface may remain available because it carries no
+absolute cross-network intensity claim. It must not reuse the absolute GAMM
+manifest, units, or release status.
 
-## Required path to activation
+## Required path to absolute-GAMM activation
 
-One of the following must be completed before `release_status=published`:
+One of the following must be completed before `release_status=research-validated`:
 
 1. A network-harmonised VPTS/MTR reference, with calibrated sampling-volume and
    bird/insect treatment metadata, supports a common absolute scale; or

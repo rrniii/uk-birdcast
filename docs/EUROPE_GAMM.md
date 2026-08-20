@@ -1,8 +1,13 @@
 # Europe-wide GAMM
 
-The `birdcast_euro` workflow fits one source-aware GAMM across the eligible
-Aloft BALTRAD archive and the immutable UK SP VPTS archive. It is separate from
-the UK model and dashboard.
+The Europe workflow lives on the repository's single `main` branch. It fits a
+source-aware GAMM across the eligible Aloft BALTRAD archive and the immutable
+UK SP VPTS archive, with separate validation and publication contracts from
+the UK model.
+
+The absolute Europe GAMM is currently withheld because it failed held-out
+cross-network transfer gates. The separately labelled radar-relative activity
+product may be published; it is not an absolute GAMM prediction.
 
 ## Data contract
 
@@ -13,9 +18,10 @@ the UK model and dashboard.
 | ERA5 | Europe-specific Bird Maps flow | Site and fixed-grid feature Parquet |
 | Raw VP, VPTS and PVOL | Source archives only | Never copied or regenerated |
 
-No timestamp, hour, daylight, twilight, season or phenology term enters the
-model. The model uses 200-4000 m profiles, hourly UTC cadence, Aloft BALTRAD as
-the reference source, and UK SP as a separately estimated source effect.
+The model derives an empirical continuous UTC time index and a cyclic UTC-hour
+smooth. It applies no hard-coded daylight, twilight, season, or phenology
+filter. It uses 200-4000 m profiles, hourly UTC cadence, Aloft BALTRAD as the
+reference source, and UK SP as a separately estimated source effect.
 
 ## Reproducible run
 
@@ -132,41 +138,48 @@ Publication is blocked unless these site-equal gates pass:
 Failed models remain research artifacts and cannot be promoted by a favourable
 pooled metric.
 
-## Publication
+## Research output and public relative-flow product
 
-Passing predictions are converted to fixed-grid daily JSON and installed at
-the separate `/europe-bird-maps/` route:
+Passing absolute-model predictions may be converted to fixed-grid daily JSON
+for offline research review only:
 
 ```bash
 birdcast-uk europe publish \
   --predictions artifacts/europe/run/europe-gamm-v1/predictions_wide_europe.csv \
-  --output-root /opt/birdcast-euro/artifacts \
+  --output-root artifacts/europe/research-publication \
   --model-id europe-gamm-aloft-uk-sp-v1 \
   --aloft-radar-count 152 --uk-sp-radar-count 17 \
   --validation-url validation.json \
   --radars artifacts/europe/source/radars.json
 
-birdcast-uk europe install-site --site-root /opt/birdcast-euro/site
+birdcast-uk europe install-site --site-root artifacts/europe/research-site
 ```
+
+This command does not deploy to the public host. The former absolute-Europe
+Object Store pull/activation path is retired, and its systemd units must remain
+absent. The public `/europe-bird-maps/` route serves only the relative activity
+and observed-flow product built with `coastal build-relative-flow`.
 
 The dashboard distinguishes interpolation (within 150 km), extrapolation
 (150-250 km), and unsupported cells. Country coastlines are context layers
 only and never mask predictions.
 
-Before the manifest may use `release_status: published`, the release job
-reconciles every supported prediction with the fixed grid and daily JSON
-frames, then checks the passed source, ERA5, training, and held-out model
-validation reports. Missing, duplicate, unsupported, or altered map cells
-deny publication.
+Before a research manifest may use `release_status: research-validated`, each daily partition
+must contain exactly the 24 canonical `00:00`-`23:00Z` frames. The release job
+then reconciles every supported prediction with the fixed grid and daily JSON
+frames and checks the passed source, ERA5, training, and held-out model
+validation reports. Missing, duplicate, unsupported, non-canonical, or altered
+map cells deny publication.
 
 The public artifact tree also retains `validation/source-fidelity.json`,
 `validation/era5-fidelity.json`, `validation/training-fidelity.json`, and
 `validation/model-validation.json`; the manifest links directly to the final
 held-out model report.
 
-Publication is an atomic host promotion. The JASMIN job transfers only after
-all validation gates pass; the public host then independently verifies
-`release_status`, `data_available`, and the referenced fixed grid before
-switching its Nginx artifact symlink. The optional Object Store pull performs
-the same checks and remains a no-op when its credentials are unavailable. A
-failed model, audit, or incomplete transfer cannot alter the public Europe tab.
+The live relative-flow builder writes a content-addressed
+`archive/relative-flow/<release>/` tree plus `latest/relative-flow.json`.
+`birdcast-coastal-activate.sh` verifies the exact schema, cohort dates, archive
+manifest, daily asset sizes and hashes, rejects symlinks and unreferenced files,
+stages on the destination filesystem, and atomically switches the Nginx data
+symlink. A failed build, transfer, or validation cannot alter the public Europe
+tab.

@@ -17,16 +17,16 @@
           <p>Historical UK weather-radar and ERA5 reanalysis</p>
         </div>
       </div>
-      <div id="statusBadge" class="badge">Loading archive</div>
+      <div id="statusBadge" class="badge" role="status" aria-live="polite" aria-atomic="true">Loading archive</div>
     </header>
 
     <main>
       <section class="explorer" aria-labelledby="mapTitle">
         <div class="toolbar">
           <nav class="view-tabs" aria-label="Bird map view">
-            <button type="button" class="active" data-view="observed">Radar observations</button>
-            <button type="button" data-view="modelled">Modelled migration</button>
-            <button type="button" data-view="europe">European analysis</button>
+            <button type="button" class="active" data-view="observed" aria-pressed="true">Radar observations</button>
+            <button type="button" data-view="modelled" aria-pressed="false">Modelled migration</button>
+            <button type="button" data-view="europe" aria-pressed="false">European analysis</button>
           </nav>
           <div class="control-bar">
             <label>
@@ -36,8 +36,8 @@
             <fieldset>
               <legend>Radar pulse</legend>
               <div class="segmented" id="pulseControl">
-                <button type="button" class="active" data-value="lp">LP</button>
-                <button type="button" data-value="sp">SP</button>
+                <button type="button" class="active" data-value="lp" aria-pressed="true">LP</button>
+                <button type="button" data-value="sp" aria-pressed="false">SP</button>
               </div>
             </fieldset>
             <label class="observed-control">
@@ -61,12 +61,12 @@
             <fieldset class="model-control" hidden>
               <legend>Map variable</legend>
               <div class="segmented" id="modelMetricControl">
-                <button type="button" class="active" data-value="mtr_birds_km_h">MTR</button>
-                <button type="button" data-value="vid_birds_per_km2">VID</button>
+                <button type="button" class="active" data-value="mtr_birds_km_h" aria-pressed="true">MTR</button>
+                <button type="button" data-value="vid_birds_per_km2" aria-pressed="false">VID</button>
               </div>
             </fieldset>
             <label class="toggle model-control" id="arrowsControl" hidden><input id="arrowsToggle" type="checkbox" checked><span id="arrowsLabel">Bird vectors</span></label>
-            <label class="toggle model-control" hidden><input id="uncertaintyToggle" type="checkbox"><span>Uncertainty</span></label>
+            <label class="toggle model-control" hidden><input id="supportToggle" type="checkbox" aria-describedby="supportDescription"><span>Model support</span><span id="supportDescription" class="visually-hidden">Fade and hatch model cells with lower observation support; this is not calibrated prediction uncertainty.</span></label>
           </div>
         </div>
 
@@ -77,13 +77,13 @@
               <h2 id="mapTitle">Radar observations</h2>
               <p id="mapSubtitle">Loading historical observations</p>
             </div>
-            <p class="map-resolution">ERA5 0.25° · UTC</p>
+            <p id="mapResolution" class="map-resolution">Loading map resolution</p>
           </div>
-          <canvas id="mapCanvas" aria-label="Historical UK radar bird migration map"></canvas>
+          <canvas id="mapCanvas" role="img" aria-labelledby="mapTitle" aria-describedby="mapSummary">Historical UK radar bird migration map. A text summary follows.</canvas>
+          <p id="mapSummary" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">Loading historical radar observations.</p>
 
-          <div class="radar-key" aria-label="Radar status legend">
-            <span><i class="radar-symbol active"></i>Available</span>
-            <span><i class="radar-symbol inactive"></i>Unavailable</span>
+          <div class="radar-key" aria-label="Radar marker legend">
+            <span><i class="radar-symbol active"></i>Observation record available</span>
           </div>
 
           <div class="map-controls" aria-label="Map controls">
@@ -111,7 +111,7 @@
         <div class="timeline model-control" hidden>
           <button id="resetButton" class="icon-button" type="button" title="Reset to start" aria-label="Reset to start">↺</button>
           <button id="previousButton" class="icon-button" type="button" title="Previous hour" aria-label="Previous hour">‹</button>
-          <button id="playButton" class="play-button" type="button" title="Play hourly animation" aria-label="Play hourly animation">▶</button>
+          <button id="playButton" class="play-button" type="button" title="Play hourly animation" aria-label="Play hourly animation" aria-pressed="false">▶</button>
           <button id="nextButton" class="icon-button" type="button" title="Next hour" aria-label="Next hour">›</button>
           <label class="hour-control">
             <span>UTC hour</span>
@@ -147,8 +147,8 @@
           <crow-radar-detail id="crowRadarDetail"></crow-radar-detail>
         </section>
 
-        <section id="europePanel" class="europe-panel" hidden aria-label="European historical bird migration reanalysis">
-          <iframe id="europeFrame" title="European Bird Maps" loading="lazy"></iframe>
+        <section id="europePanel" class="europe-panel" hidden aria-label="European relative bird activity and observed flow">
+          <iframe id="europeFrame" title="European relative bird activity and observed flow" loading="lazy"></iframe>
         </section>
       </section>
 

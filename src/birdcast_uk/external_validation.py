@@ -8,15 +8,14 @@ presenting a nearby European radar as a same-radar validation source.
 from __future__ import annotations
 
 import csv
-from collections import defaultdict
 import math
+from collections import defaultdict
 from pathlib import Path
 from statistics import mean
 from typing import Any, Iterable
 
 from .observed import _profiles_from_rows
 from .static_artifacts import utc_now, write_json
-
 
 MODEL_VARIABLES = ("mtr_birds_km_h", "vid_birds_per_km2", "bird_u_ms", "bird_v_ms")
 
@@ -36,21 +35,23 @@ def hourly_vpts_observations(
     )
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for profile in profiles:
-        if not _finite(profile.get("mtr_birds_km_h")) or not _finite(profile.get("vid_birds_per_km2")):
+        if not _finite(profile.get("mtr_birds_km_h")) or not _finite(
+            profile.get("vid_birds_per_km2")
+        ):
             continue
         grouped[f"{str(profile['time_utc'])[:13]}:00:00Z"].append(profile)
 
     result: list[dict[str, Any]] = []
     for timestamp, values in sorted(grouped.items()):
-        vectors = [_vector_components(value) for value in values]
+        vectors = [vector for value in values if (vector := _vector_components(value)) is not None]
         result.append(
             {
                 "time_utc": timestamp,
                 "profile_count": len(values),
                 "mtr_birds_km_h": _mean_number(values, "mtr_birds_km_h"),
                 "vid_birds_per_km2": _mean_number(values, "vid_birds_per_km2"),
-                "bird_u_ms": mean(vector[0] for vector in vectors),
-                "bird_v_ms": mean(vector[1] for vector in vectors),
+                "bird_u_ms": mean(vector[0] for vector in vectors) if vectors else None,
+                "bird_v_ms": mean(vector[1] for vector in vectors) if vectors else None,
             }
         )
     return result
@@ -67,7 +68,11 @@ def evaluate_external_vpts(
 
     by_time = {_normal_time(row.get("time_utc")): row for row in predictions}
     matched = [
-        {"time_utc": _normal_time(row.get("time_utc")), "observed": row, "modelled": by_time[_normal_time(row.get("time_utc"))]}
+        {
+            "time_utc": _normal_time(row.get("time_utc")),
+            "observed": row,
+            "modelled": by_time[_normal_time(row.get("time_utc"))],
+        }
         for row in observations
         if _normal_time(row.get("time_utc")) in by_time
     ]
@@ -120,7 +125,14 @@ def _metrics(matched: list[dict[str, Any]], variable: str) -> dict[str, float | 
         if _finite(match["observed"].get(variable)) and _finite(match["modelled"].get(variable))
     ]
     if not pairs:
-        return {"count": 0, "observed_mean": None, "modelled_mean": None, "bias": None, "mae": None, "rmse": None}
+        return {
+            "count": 0,
+            "observed_mean": None,
+            "modelled_mean": None,
+            "bias": None,
+            "mae": None,
+            "rmse": None,
+        }
     observed, modelled = zip(*pairs)
     residuals = [predicted - actual for actual, predicted in pairs]
     return {
@@ -138,15 +150,23 @@ def _mean_number(rows: Iterable[dict[str, Any]], field: str) -> float:
     return mean(values)
 
 
-def _vector_components(row: dict[str, Any]) -> tuple[float, float]:
-    speed = float(row.get("mean_ground_speed_ms") or 0.0)
-    direction = math.radians(float(row.get("dominant_direction_deg") or 0.0))
+def _vector_components(row: dict[str, Any]) -> tuple[float, float] | None:
+    speed = row.get("mean_ground_speed_ms")
+    direction_degrees = row.get("dominant_direction_deg")
+    if not _finite(speed) or not _finite(direction_degrees):
+        return None
+    speed = float(speed)
+    direction = math.radians(float(direction_degrees))
     return speed * math.sin(direction), speed * math.cos(direction)
 
 
 def _normal_time(value: Any) -> str:
     text = str(value or "")
-    return text.replace(".000000000", "") if text.endswith("Z") else f"{text.replace('.000000000', '')}Z"
+    return (
+        text.replace(".000000000", "")
+        if text.endswith("Z")
+        else f"{text.replace('.000000000', '')}Z"
+    )
 
 
 def _finite(value: Any) -> bool:

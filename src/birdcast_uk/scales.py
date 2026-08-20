@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 from typing import Iterable
 
-
 INTENSITY_PALETTE = (
     "#101817",
     "#16484a",
@@ -23,7 +22,9 @@ INTENSITY_PALETTE_POSITIONS = (0.0, 0.18, 0.38, 0.58, 0.75, 0.90, 0.95, 1.0)
 
 
 def log_colour_scale(values: Iterable[float], *, units: str) -> dict[str, object]:
-    positive = sorted(float(value) for value in values if math.isfinite(float(value)) and float(value) > 0)
+    positive = sorted(
+        float(value) for value in values if math.isfinite(float(value)) and float(value) > 0
+    )
     if not positive:
         lower, upper = 1.0, 10.0
     else:
@@ -99,7 +100,9 @@ def _nice_ceil(value: float) -> float:
     exponent = math.floor(math.log10(max(value, 1e-12)))
     scale = 10.0**exponent
     mantissa = value / scale
-    factor = 1.0 if mantissa <= 1.0 else 2.0 if mantissa <= 2.0 else 5.0 if mantissa <= 5.0 else 10.0
+    factor = (
+        1.0 if mantissa <= 1.0 else 2.0 if mantissa <= 2.0 else 5.0 if mantissa <= 5.0 else 10.0
+    )
     return factor * scale
 
 

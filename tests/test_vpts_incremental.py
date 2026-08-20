@@ -1,22 +1,27 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError
 
 import pytest
 
 from birdcast_uk.joined import join_observed_to_era5
-from birdcast_uk.observed import build_hourly_observations, build_observed_products
+from birdcast_uk.observed import (
+    _hourly_rows,
+    _profiles_from_rows,
+    build_hourly_observations,
+    build_observed_products,
+)
 from birdcast_uk.vpts import (
     build_catalog_inventory,
     build_historical_inventory,
     commit_inventory_cursor,
+    download_public_object,
     head_public_object,
     load_vpts_rows_from_inventory,
 )
-
 
 NOW = datetime(2026, 7, 17, 6, 0, tzinfo=timezone.utc)
 
@@ -153,8 +158,42 @@ def test_historical_inventory_keeps_lp_and_sp_separate(tmp_path: Path) -> None:
     assert result["window"]["end_date"] == "20260713"
     assert result["record_count"] == 6
     assert {row["pulse"] for row in result["records"]} == {"lp", "sp"}
-    assert all(row["selection_policy"] == "all_available_lp_and_sp_separate" for row in result["records"])
+    assert all(
+        row["selection_policy"] == "all_available_lp_and_sp_separate" for row in result["records"]
+    )
     assert len(calls) == 6
+
+
+def test_historical_inventory_rejects_latest_common_source_day(tmp_path: Path) -> None:
+    catalog = _catalog(tmp_path, generated_at="2026-07-17T05:00:00Z")
+
+    result = build_historical_inventory(
+        output=tmp_path / "historical.json",
+        catalog_url=str(catalog),
+        public_base_url="https://example.invalid/bucket",
+        days=1,
+        end_date="20260714",
+        max_workers=1,
+        now=NOW,
+        head=lambda _url: {"size": 10, "etag": "x", "content_type": "text/csv"},
+    )
+
+    assert result["ok"] is False
+    assert any("requested_end_not_complete" in error for error in result["errors"])
+
+
+def test_download_verifies_frozen_size_and_hash(tmp_path: Path) -> None:
+    source = tmp_path / "source.csv"
+    source.write_bytes(b"abc")
+
+    with pytest.raises(OSError, match="size changed"):
+        download_public_object(source.as_uri(), tmp_path / "size.csv", expected_size=4)
+    with pytest.raises(OSError, match="SHA-256 mismatch"):
+        download_public_object(
+            source.as_uri(),
+            tmp_path / "hash.csv",
+            expected_sha256="0" * 64,
+        )
 
 
 def test_catalog_inventory_fails_closed_for_stale_or_missing_target(
@@ -181,8 +220,7 @@ def test_inventory_loader_overrides_unknown_radar_from_object_key(
 ) -> None:
     source = tmp_path / "source.csv"
     source.write_text(
-        "radar,datetime,height,dens,ff,gap\n"
-        "UNKNOWN,2026-07-14 00:00:00,200,10,8,FALSE\n",
+        "radar,datetime,height,dens,ff,gap\nUNKNOWN,2026-07-14 00:00:00,200,10,8,FALSE\n",
         encoding="utf-8",
     )
     inventory = tmp_path / "inventory.json"
@@ -254,6 +292,43 @@ def test_hourly_observations_are_all_hour_and_without_phenology_filter(tmp_path:
     assert "night_profile_fraction" not in payload["rows"][0]
 
 
+def test_hourly_direction_uses_aligned_finite_non_rain_mtr_pairs() -> None:
+    timestamp = datetime(2026, 7, 14, 12, 5, tzinfo=timezone.utc)
+    common = {
+        "radar": "chenies",
+        "pulse": "lp",
+        "timestamp": timestamp,
+        "vid_birds_per_km2": 1.0,
+        "mean_ground_speed_ms": 10.0,
+        "night_date": "",
+    }
+    rows = _hourly_rows(
+        [
+            {
+                **common,
+                "mtr_birds_km_h": 10.0,
+                "dominant_direction_deg": 90.0,
+                "rain_suspect": False,
+            },
+            {
+                **common,
+                "mtr_birds_km_h": None,
+                "dominant_direction_deg": 180.0,
+                "rain_suspect": False,
+            },
+            {
+                **common,
+                "mtr_birds_km_h": 100.0,
+                "dominant_direction_deg": 270.0,
+                "rain_suspect": True,
+            },
+        ]
+    )
+
+    assert rows[0]["mean_mtr_birds_km_h"] == 10.0
+    assert rows[0]["dominant_direction_deg"] == 90.0
+
+
 def test_layer_mtr_and_nightly_time_integration(tmp_path: Path) -> None:
     rows = []
     for timestamp in ("2026-07-13T22:00:00Z", "2026-07-13T22:10:00Z"):
@@ -283,9 +358,7 @@ def test_layer_mtr_and_nightly_time_integration(tmp_path: Path) -> None:
         output_dir=tmp_path / "out",
     )
     summary = json.loads(
-        (tmp_path / "out" / "latest" / "latest_nightly_summary.json").read_text(
-            encoding="utf-8"
-        )
+        (tmp_path / "out" / "latest" / "latest_nightly_summary.json").read_text(encoding="utf-8")
     )
     night = summary["nights"][0]
 
@@ -295,6 +368,71 @@ def test_layer_mtr_and_nightly_time_integration(tmp_path: Path) -> None:
     # Two profiles ten minutes apart integrate to 36 birds/km.
     assert night["migration_traffic_birds_per_km"] == 36.0
     assert night["dominant_direction_deg"] == 90.0
+
+
+def test_nightly_product_never_blends_lp_and_sp(tmp_path: Path) -> None:
+    rows = []
+    for pulse, density in (("lp", 10), ("sp", 100)):
+        for timestamp in ("2026-07-13T22:00:00Z", "2026-07-13T22:10:00Z"):
+            for height in (200, 400):
+                rows.append(
+                    {
+                        "radar": "chenies",
+                        "pulse": pulse,
+                        "datetime": timestamp,
+                        "height": height,
+                        "dens": density,
+                        "ff": 10,
+                        "dd": 90,
+                        "gap": "FALSE",
+                        "DBZH": -10,
+                        "day": "FALSE",
+                    }
+                )
+    input_path = tmp_path / "mixed-pulse.json"
+    input_path.write_text(json.dumps(rows), encoding="utf-8")
+
+    build_observed_products(
+        input_path=input_path,
+        input_kind="records",
+        output_dir=tmp_path / "out",
+    )
+    summary = json.loads(
+        (tmp_path / "out" / "latest" / "latest_nightly_summary.json").read_text(encoding="utf-8")
+    )
+
+    assert summary["nights"][0]["selected_pulse"] == "lp"
+    assert summary["nights"][0]["pulse_products"] == ["lp"]
+
+
+def test_profile_mtr_requires_speed_for_every_density_layer() -> None:
+    rows = [
+        {
+            "radar": "chenies",
+            "pulse": "lp",
+            "datetime": "2026-07-13T22:00:00Z",
+            "height": 200,
+            "dens": 10,
+            "ff": 10,
+            "gap": "FALSE",
+            "DBZH": -10,
+        },
+        {
+            "radar": "chenies",
+            "pulse": "lp",
+            "datetime": "2026-07-13T22:00:00Z",
+            "height": 400,
+            "dens": 20,
+            "ff": "",
+            "gap": "FALSE",
+            "DBZH": -10,
+        },
+    ]
+
+    profile = _profiles_from_rows(rows, altitude_min_m=200, altitude_max_m=4000)[0]
+
+    assert profile["mtr_birds_km_h"] is None
+    assert profile["mtr_layer_coverage_fraction"] == 0.5
 
 
 def test_rain_suspect_profiles_are_not_integrated(tmp_path: Path) -> None:
@@ -357,13 +495,26 @@ def test_hourly_observed_join_to_two_era5_datasets(tmp_path: Path) -> None:
                         "radar": "chenies",
                         "time_utc": "2026-07-09T00:00:00.000000000",
                         "dataset_index": 0,
-                        "t2m": 280.0,
+                        "source_kind": "single_levels",
+                        "sp": 101000.0,
+                        "msl": 101200.0,
+                        "tcc": 0.5,
+                        "blh": 800.0,
+                        "tp": 0.0,
                     },
                     {
                         "radar": "chenies",
                         "time_utc": "2026-07-09T00:00:00.000000000",
                         "dataset_index": 1,
+                        "source_kind": "pressure_levels",
+                        "t_pressure_level_850.0": 280.0,
+                        "r_pressure_level_850.0": 75.0,
                         "u_pressure_level_850.0": 5.0,
+                        "v_pressure_level_850.0": 2.0,
+                        "u_pressure_level_925.0": 4.0,
+                        "v_pressure_level_925.0": 1.0,
+                        "u_pressure_level_700.0": 6.0,
+                        "v_pressure_level_700.0": 3.0,
                     },
                 ]
             }
@@ -380,7 +531,7 @@ def test_hourly_observed_join_to_two_era5_datasets(tmp_path: Path) -> None:
 
     assert result["ok"] is True
     assert result["row_count"] == 1
-    assert payload["rows"][0]["t2m"] == 280.0
+    assert payload["rows"][0]["sp"] == 101000.0
     assert payload["rows"][0]["u_pressure_level_850.0"] == 5.0
     assert payload["rows"][0]["observed_mean_mtr_birds_km_h"] == 123.0
     status = json.loads(status_path.read_text(encoding="utf-8"))

@@ -20,8 +20,9 @@ set -u
 : "${BIRDCAST_UK_REANALYSIS_RUN_DIR:?Set the immutable model run directory}"
 : "${BIRDCAST_UK_PYTHON:?Set the project Python executable}"
 
+: "${BIRDCAST_UK_GAMM_OPTIONS:?Set the explicit research GAMM options file}"
 mkdir -p "$BIRDCAST_UK_REANALYSIS_RUN_DIR/gamm"
-gamm_options="${BIRDCAST_UK_GAMM_OPTIONS:-$BIRDCAST_UK_ROOT/configs/gamm_uk_holdout_selected.json}"
+gamm_options="$BIRDCAST_UK_GAMM_OPTIONS"
 "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli reanalysis spec \
   --table "$BIRDCAST_UK_REANALYSIS_TRAINING_TABLE" \
   --model-family gamm \

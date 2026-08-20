@@ -2,23 +2,23 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 import csv
-from datetime import date
-from html import escape
+import hashlib
 import json
-import math
 import os
+import shutil
+from collections import defaultdict
+from datetime import date, datetime, timezone
+from html import escape
 from pathlib import Path
 from statistics import median
-from tempfile import NamedTemporaryFile
-from typing import Any, Iterable
+from tempfile import NamedTemporaryFile, mkdtemp
+from typing import Iterable
 from urllib.request import urlopen
 
 from .radars import load_radars
 from .scales import linear_colour_scale, log_colour_scale
 from .static_artifacts import utc_now
-
 
 NATURAL_EARTH_10M_COUNTRIES_URL = (
     "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/"
@@ -35,6 +35,15 @@ REQUIRED_SOURCE_FILES = (
 
 def _write_compact_json(path: Path, payload: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    content = (
+        json.dumps(
+            payload,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        )
+        + "\n"
+    )
     with NamedTemporaryFile(
         "w",
         dir=path.parent,
@@ -42,11 +51,13 @@ def _write_compact_json(path: Path, payload: object) -> None:
         prefix=f".{path.name}.",
         delete=False,
     ) as handle:
-        json.dump(payload, handle, separators=(",", ":"), ensure_ascii=True)
-        handle.write("\n")
+        handle.write(content)
         temporary_path = Path(handle.name)
-    temporary_path.chmod(0o644)
-    os.replace(temporary_path, path)
+    try:
+        temporary_path.chmod(0o644)
+        os.replace(temporary_path, path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
@@ -150,7 +161,9 @@ def _load_boundary(source: str | Path) -> dict[str, object]:
     }
 
 
-def write_boundary(output: Path, *, boundary_source: str | Path = NATURAL_EARTH_10M_COUNTRIES_URL) -> dict[str, object]:
+def write_boundary(
+    output: Path, *, boundary_source: str | Path = NATURAL_EARTH_10M_COUNTRIES_URL
+) -> dict[str, object]:
     """Write the shared high-resolution UK/Ireland map asset."""
 
     boundary = _load_boundary(boundary_source)
@@ -163,7 +176,9 @@ def write_boundary(output: Path, *, boundary_source: str | Path = NATURAL_EARTH_
     }
 
 
-def _svg_frame(title: str, subtitle: str, body: str, *, width: int = 1200, height: int = 680) -> str:
+def _svg_frame(
+    title: str, subtitle: str, body: str, *, width: int = 1200, height: int = 680
+) -> str:
     return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" role="img">
   <title>{escape(title)}</title>
   <desc>{escape(subtitle)}</desc>
@@ -221,12 +236,18 @@ def _line_plot(
             (_scale(year, x_min, x_max, left, right), _scale(value, 0, y_max, bottom, top))
             for year, value in sorted(rows)
         ]
-        path = " ".join(f"{'M' if i == 0 else 'L'} {x:.1f} {y:.1f}" for i, (x, y) in enumerate(coords))
+        path = " ".join(
+            f"{'M' if i == 0 else 'L'} {x:.1f} {y:.1f}" for i, (x, y) in enumerate(coords)
+        )
         parts.append(f'<path d="{path}" fill="none" stroke="{colour}" stroke-width="3"/>')
-        parts.extend(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="{colour}"/>' for x, y in coords)
+        parts.extend(
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="{colour}"/>' for x, y in coords
+        )
         legend_x = 720 + (index % 2) * 200
         legend_y = 104 + (index // 2) * 22
-        parts.append(f'<line x1="{legend_x}" y1="{legend_y}" x2="{legend_x + 26}" y2="{legend_y}" stroke="{colour}" stroke-width="3"/>')
+        parts.append(
+            f'<line x1="{legend_x}" y1="{legend_y}" x2="{legend_x + 26}" y2="{legend_y}" stroke="{colour}" stroke-width="3"/>'
+        )
         parts.append(
             f'<text x="{legend_x + 34}" y="{legend_y + 5}" font-family="system-ui,sans-serif" '
             f'font-size="13" fill="#344139">{escape(name)}</text>'
@@ -245,7 +266,9 @@ def _bar_plot(title: str, subtitle: str, values: list[tuple[str, float]]) -> str
         x = left + index * (width + gap)
         y = _scale(value, 0, maximum, bottom, top)
         colour = colours[index % 3]
-        parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{width:.1f}" height="{bottom - y:.1f}" fill="{colour}"/>')
+        parts.append(
+            f'<rect x="{x:.1f}" y="{y:.1f}" width="{width:.1f}" height="{bottom - y:.1f}" fill="{colour}"/>'
+        )
         parts.append(
             f'<text x="{x + width / 2:.1f}" y="{bottom + 25}" text-anchor="middle" '
             f'font-family="system-ui,sans-serif" font-size="12" fill="#56635c">{escape(label)}</text>'
@@ -271,7 +294,9 @@ def _coverage_plot(rows: list[dict[str, object]], pulse: str) -> str:
             f'<text x="{x:.1f}" y="{bottom + 24}" text-anchor="middle" '
             f'font-family="system-ui,sans-serif" font-size="11" fill="#66736b">{year}</text>'
         )
-    available = {(str(row["radar"]), int(row["year"])) for row in filtered if row["year"] is not None}
+    available = {
+        (str(row["radar"]), int(row["year"])) for row in filtered if row["year"] is not None
+    }
     for index, radar in enumerate(radars):
         y = top + (index + 0.5) * row_height
         parts.append(
@@ -281,7 +306,9 @@ def _coverage_plot(rows: list[dict[str, object]], pulse: str) -> str:
         for year in years:
             if (radar, year) in available:
                 x = _scale(year, min(years), max(years), left, right)
-                parts.append(f'<rect x="{x - 11:.1f}" y="{y - 7:.1f}" width="22" height="14" fill="#1d6b58"/>')
+                parts.append(
+                    f'<rect x="{x - 11:.1f}" y="{y - 7:.1f}" width="22" height="14" fill="#1d6b58"/>'
+                )
     return _svg_frame(
         "Radar archive coverage",
         f"Years with {pulse.upper()} VPTS data; availability is not equal sampling effort",
@@ -295,6 +322,7 @@ def _make_plots(
     phenology: list[dict[str, object]],
     coverage: list[dict[str, object]],
     *,
+    asset_prefix: Path,
     pulse: str = "lp",
     trend_end_year: int = 2025,
 ) -> list[str]:
@@ -310,7 +338,9 @@ def _make_plots(
             and row["year"] <= trend_end_year
             and isinstance(row["mean_daily_vid"], (int, float))
         ):
-            nocturnal[f"{str(row['season']).title()} night"].append((row["year"], float(row["mean_daily_vid"])))
+            nocturnal[f"{str(row['season']).title()} night"].append(
+                (row["year"], float(row["mean_daily_vid"]))
+            )
     annual_svg = _line_plot(
         "Annual nocturnal bird passage",
         f"Network mean daily VID passage index, {pulse.upper()} only; partial 2026 excluded",
@@ -329,14 +359,19 @@ def _make_plots(
             and row["year"] <= trend_end_year
             and isinstance(row["mean_daily_vid"], (int, float))
         ]
-        period_values.append((period.replace("_", " ").title(), sum(values) / len(values) if values else 0))
+        period_values.append(
+            (period.replace("_", " ").title(), sum(values) / len(values) if values else 0)
+        )
     activity_svg = _bar_plot(
         "Bird passage by solar period",
         f"Mean of annual-season network mean daily VID, {pulse.upper()} only, 2013-{trend_end_year}",
         period_values,
     )
 
-    phenology_series: dict[str, list[tuple[int, float]]] = {"Spring median": [], "Autumn median": []}
+    phenology_series: dict[str, list[tuple[int, float]]] = {
+        "Spring median": [],
+        "Autumn median": [],
+    }
     grouped: dict[tuple[int, str], list[int]] = defaultdict(list)
     for row in phenology:
         if (
@@ -347,7 +382,9 @@ def _make_plots(
             and row["year"] <= trend_end_year
             and isinstance(row["median_50"], str)
         ):
-            grouped[(row["year"], str(row["season"]))].append(date.fromisoformat(row["median_50"]).timetuple().tm_yday)
+            grouped[(row["year"], str(row["season"]))].append(
+                date.fromisoformat(row["median_50"]).timetuple().tm_yday
+            )
     for (year, season), values in grouped.items():
         phenology_series[f"{season.title()} median"].append((year, float(median(values))))
     phenology_svg = _line_plot(
@@ -367,7 +404,7 @@ def _make_plots(
         path = plots_dir / name
         path.write_text(content, encoding="ascii")
         path.chmod(0o644)
-    return [f"historical/plots/{name}" for name in assets]
+    return [(asset_prefix / "plots" / name).as_posix() for name in assets]
 
 
 def _radar_payload(radars_path: Path) -> list[dict[str, object]]:
@@ -384,147 +421,324 @@ def _radar_payload(radars_path: Path) -> list[dict[str, object]]:
     ]
 
 
+def _historical_release_id(
+    analysis: dict[str, object],
+    *,
+    source_dir: Path,
+    radars_path: Path,
+    boundary: dict[str, object],
+) -> str:
+    """Return a stable release identifier for one immutable input package."""
+
+    finished_at = str(analysis.get("finished_at") or "")
+    try:
+        finished = datetime.fromisoformat(finished_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("analysis_summary.json requires a valid finished_at timestamp") from exc
+    if finished.tzinfo is None:
+        finished = finished.replace(tzinfo=timezone.utc)
+    stamp = finished.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    digest = hashlib.sha256()
+    digest.update(b"birdcast-uk-historical-1.2\0")
+    for name in REQUIRED_SOURCE_FILES:
+        digest.update(name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update((source_dir / name).read_bytes())
+        digest.update(b"\0")
+    digest.update(radars_path.read_bytes())
+    digest.update(b"\0")
+    digest.update(
+        json.dumps(boundary, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    )
+    return f"{stamp}-{digest.hexdigest()[:12]}"
+
+
+def _validate_historical_inputs(
+    analysis: dict[str, object],
+    *,
+    daily_rows: list[dict[str, str]],
+    annual_rows: list[dict[str, str]],
+    phenology_rows: list[dict[str, str]],
+    coverage_rows: list[dict[str, str]],
+    radar_slugs: set[str],
+) -> None:
+    """Reject incomplete analysis packages before writing public artifacts."""
+
+    if analysis.get("failure_count") != 0:
+        raise ValueError("historical analysis must report failure_count=0")
+    for name, rows in (
+        ("daily_totals.csv", daily_rows),
+        ("network_annual_seasonal_totals.csv", annual_rows),
+        ("phenology.csv", phenology_rows),
+        ("coverage.csv", coverage_rows),
+    ):
+        if not rows:
+            raise ValueError(f"historical source contains no data rows: {name}")
+    daily_radars = {str(row.get("radar") or "").strip() for row in daily_rows}
+    if daily_radars != radar_slugs:
+        missing = sorted(radar_slugs - daily_radars)
+        unexpected = sorted(daily_radars - radar_slugs)
+        raise ValueError(
+            "daily historical radar coverage does not match configured radars "
+            f"(missing={missing}, unexpected={unexpected})"
+        )
+    for row in daily_rows:
+        try:
+            parsed = date.fromisoformat(str(row.get("date") or ""))
+            year = int(str(row.get("year") or ""))
+        except ValueError as exc:
+            raise ValueError("daily historical rows require valid date and year fields") from exc
+        if parsed.year != year:
+            raise ValueError("daily historical row year does not match its date")
+        if row.get("pulse") not in {"lp", "sp"}:
+            raise ValueError("daily historical rows require lp or sp pulse labels")
+
+
+def _validate_historical_release(
+    release_dir: Path,
+    manifest: dict[str, object],
+    *,
+    output_root: Path,
+) -> None:
+    """Check that the staged manifest is complete and self-contained."""
+
+    assets = manifest.get("assets")
+    if not isinstance(assets, dict):
+        raise ValueError("historical manifest requires an assets object")
+
+    def references(value: object) -> Iterable[str]:
+        if isinstance(value, str):
+            yield value
+        elif isinstance(value, dict):
+            for nested in value.values():
+                yield from references(nested)
+        elif isinstance(value, list):
+            for nested in value:
+                yield from references(nested)
+
+    expected_prefix = release_dir.relative_to(output_root).as_posix() + "/"
+    paths = list(references(assets))
+    if not paths or any(not path.startswith(expected_prefix) for path in paths):
+        raise ValueError("historical assets must stay inside their immutable release")
+    for relative in paths:
+        path = output_root / relative
+        if not path.is_file() or path.is_symlink() or path.stat().st_size == 0:
+            raise ValueError(f"historical release asset is missing or empty: {relative}")
+
+
 def build_historical_products(
     source_dir: Path,
     output_root: Path,
     *,
     radars_path: Path,
     boundary_source: str | Path = NATURAL_EARTH_10M_COUNTRIES_URL,
+    expected_latest_date: str | None = None,
 ) -> dict[str, object]:
     missing = [name for name in REQUIRED_SOURCE_FILES if not (source_dir / name).is_file()]
     if missing:
         raise FileNotFoundError(f"historical source is missing: {', '.join(missing)}")
 
     analysis = json.loads((source_dir / "analysis_summary.json").read_text(encoding="utf-8"))
-    historical_dir = output_root / "historical"
-    daily_dir = historical_dir / "daily"
-    daily_dir.mkdir(parents=True, exist_ok=True)
-
-    daily_by_year: dict[int, list[dict[str, object]]] = defaultdict(list)
-    min_date: str | None = None
-    max_date: str | None = None
-    for row in _read_csv(source_dir / "daily_totals.csv"):
-        record = _daily_record(row)
-        year = int(row["year"])
-        daily_by_year[year].append(record)
-        min_date = record["date"] if min_date is None or record["date"] < min_date else min_date
-        max_date = record["date"] if max_date is None or record["date"] > max_date else max_date
-
-    daily_assets: dict[str, str] = {}
-    for year, rows in sorted(daily_by_year.items()):
-        path = daily_dir / f"{year}.json"
-        _write_compact_json(path, {"year": year, "rows": rows})
-        daily_assets[str(year)] = f"historical/daily/{year}.json"
-
-    annual = [_annual_record(row) for row in _read_csv(source_dir / "network_annual_seasonal_totals.csv")]
-    phenology = [_phenology_record(row) for row in _read_csv(source_dir / "phenology.csv")]
-    coverage = [_coverage_record(row) for row in _read_csv(source_dir / "coverage.csv")]
+    if not isinstance(analysis, dict):
+        raise ValueError("analysis_summary.json must contain a JSON object")
+    daily_source_rows = _read_csv(source_dir / "daily_totals.csv")
+    annual_source_rows = _read_csv(source_dir / "network_annual_seasonal_totals.csv")
+    phenology_source_rows = _read_csv(source_dir / "phenology.csv")
+    coverage_source_rows = _read_csv(source_dir / "coverage.csv")
     radars = _radar_payload(radars_path)
-
-    _write_compact_json(historical_dir / "annual.json", {"rows": annual})
-    _write_compact_json(historical_dir / "phenology.json", {"rows": phenology})
-    _write_compact_json(historical_dir / "coverage.json", {"rows": coverage})
-    _write_compact_json(historical_dir / "uk_boundary.geojson", _load_boundary(boundary_source))
-    plot_assets = _make_plots(
-        historical_dir,
-        annual,
-        phenology,
-        coverage,
-        trend_end_year=int(analysis.get("trend_end_year", 2025)),
+    radar_slugs = {str(radar["slug"]) for radar in radars}
+    if not radar_slugs:
+        raise ValueError("radar metadata contains no geolocated radars")
+    _validate_historical_inputs(
+        analysis,
+        daily_rows=daily_source_rows,
+        annual_rows=annual_source_rows,
+        phenology_rows=phenology_source_rows,
+        coverage_rows=coverage_source_rows,
+        radar_slugs=radar_slugs,
     )
-
-    radar_dates: dict[str, list[str]] = defaultdict(list)
-    for rows in daily_by_year.values():
-        for row in rows:
-            radar_dates[str(row["radar"])].append(str(row["date"]))
-    radar_coverage = [
-        {
-            "radar": radar["slug"],
-            "first_date": min(radar_dates[radar["slug"]]) if radar_dates[radar["slug"]] else None,
-            "last_date": max(radar_dates[radar["slug"]]) if radar_dates[radar["slug"]] else None,
+    source_latest_date = max(str(row["date"]) for row in daily_source_rows)
+    if expected_latest_date is not None:
+        date.fromisoformat(expected_latest_date)
+        if source_latest_date != expected_latest_date:
+            raise ValueError(
+                "historical source latest date does not match the release contract "
+                f"(expected={expected_latest_date}, actual={source_latest_date})"
+            )
+    boundary = _load_boundary(boundary_source)
+    release_id = _historical_release_id(
+        analysis,
+        source_dir=source_dir,
+        radars_path=radars_path,
+        boundary=boundary,
+    )
+    archive_root = output_root / "archive" / "historical"
+    archive_root.mkdir(parents=True, exist_ok=True)
+    release_dir = archive_root / release_id
+    if release_dir.exists():
+        manifest_path = release_dir / "manifest.json"
+        if not manifest_path.is_file():
+            raise FileExistsError(
+                f"historical release path exists without a manifest: {release_dir}"
+            )
+        existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(existing, dict) or existing.get("release_id") != release_id:
+            raise ValueError(f"existing historical release identity is invalid: {release_dir}")
+        _validate_historical_release(release_dir, existing, output_root=output_root)
+        _write_compact_json(output_root / "latest" / "historical.json", existing)
+        existing_assets = existing.get("assets", {})
+        plots = existing_assets.get("plots", []) if isinstance(existing_assets, dict) else []
+        return {
+            "ok": True,
+            "reused": True,
+            "generated_at_utc": existing.get("generated_at_utc"),
+            "release_id": release_id,
+            "first_date": existing.get("first_date"),
+            "latest_date": existing.get("latest_date"),
+            "year_count": len(existing.get("years", [])),
+            "daily_row_count": len(daily_source_rows),
+            "radar_count": len(radars),
+            "plot_count": len(plots) if isinstance(plots, list) else 0,
+            "output_root": str(output_root),
         }
-        for radar in radars
-    ]
-    generated_at = utc_now()
-    manifest = {
-        "schema_version": "live-uk-bird-maps-historical-1.1",
-        "data_available": True,
-        "generated_at_utc": generated_at,
-        "first_date": min_date,
-        "latest_date": max_date,
-        "years": sorted(daily_by_year),
-        "default_pulse": "lp",
-        "pulse_products": ["lp", "sp"],
-        "solar_periods": ["night", "civil_twilight", "day"],
-        "metric": {
-            "id": "vid",
-            "label": "Vertical integrated density passage index",
-            "units": "birds km-2",
-            "altitude_min_m": analysis.get("alt_min_m"),
-            "altitude_max_m": analysis.get("alt_max_m"),
-            "interpretation": (
-                "VID integrated over altitude is a passage index. It is not an absolute bird count "
-                "or a population estimate."
-            ),
-        },
-        "source": {
-            "dataset": "bioRad VPTS current_ci_le4",
-            "files_seen": analysis.get("files_seen"),
-            "profiles_seen": analysis.get("profiles_seen"),
-            "rows_seen": analysis.get("rows_seen"),
-            "failure_count": analysis.get("failure_count"),
-            "finished_at_utc": analysis.get("finished_at"),
-        },
-        "radars": radars,
-        "radar_coverage": radar_coverage,
-        "colour_scales": {
-            "vid": log_colour_scale(
-                (
-                    float(row["vid"])
-                    for rows in daily_by_year.values()
-                    for row in rows
-                    if row.get("vid") is not None
+    staging_dir = Path(mkdtemp(prefix=f".{release_id}.", dir=archive_root))
+    asset_prefix = Path("archive") / "historical" / release_id
+    daily_dir = staging_dir / "daily"
+    daily_dir.mkdir(parents=True)
+
+    try:
+        daily_by_year: dict[int, list[dict[str, object]]] = defaultdict(list)
+        min_date: str | None = None
+        max_date: str | None = None
+        for row in daily_source_rows:
+            record = _daily_record(row)
+            year = int(row["year"])
+            daily_by_year[year].append(record)
+            min_date = record["date"] if min_date is None or record["date"] < min_date else min_date
+            max_date = record["date"] if max_date is None or record["date"] > max_date else max_date
+
+        daily_assets: dict[str, str] = {}
+        for year, rows in sorted(daily_by_year.items()):
+            path = daily_dir / f"{year}.json"
+            _write_compact_json(path, {"year": year, "rows": rows})
+            daily_assets[str(year)] = (asset_prefix / "daily" / f"{year}.json").as_posix()
+
+        annual = [_annual_record(row) for row in annual_source_rows]
+        phenology = [_phenology_record(row) for row in phenology_source_rows]
+        coverage = [_coverage_record(row) for row in coverage_source_rows]
+
+        _write_compact_json(staging_dir / "annual.json", {"rows": annual})
+        _write_compact_json(staging_dir / "phenology.json", {"rows": phenology})
+        _write_compact_json(staging_dir / "coverage.json", {"rows": coverage})
+        _write_compact_json(staging_dir / "uk_boundary.geojson", boundary)
+        plot_assets = _make_plots(
+            staging_dir,
+            annual,
+            phenology,
+            coverage,
+            asset_prefix=asset_prefix,
+            trend_end_year=int(analysis.get("trend_end_year", 2025)),
+        )
+
+        radar_dates: dict[str, list[str]] = defaultdict(list)
+        for rows in daily_by_year.values():
+            for row in rows:
+                radar_dates[str(row["radar"])].append(str(row["date"]))
+        radar_coverage = [
+            {
+                "radar": radar["slug"],
+                "first_date": min(radar_dates[str(radar["slug"])]),
+                "last_date": max(radar_dates[str(radar["slug"])]),
+            }
+            for radar in radars
+        ]
+        generated_at = utc_now()
+        manifest = {
+            "schema_version": "live-uk-bird-maps-historical-1.2",
+            "release_id": release_id,
+            "data_available": True,
+            "generated_at_utc": generated_at,
+            "first_date": min_date,
+            "latest_date": max_date,
+            "years": sorted(daily_by_year),
+            "default_pulse": "lp",
+            "pulse_products": ["lp", "sp"],
+            "solar_periods": ["night", "civil_twilight", "day"],
+            "metric": {
+                "id": "vid",
+                "label": "Vertical integrated density passage index",
+                "units": "birds km-2",
+                "altitude_min_m": analysis.get("alt_min_m"),
+                "altitude_max_m": analysis.get("alt_max_m"),
+                "interpretation": (
+                    "VID integrated over altitude is a passage index. It is not an absolute bird count "
+                    "or a population estimate."
                 ),
-                units="birds km-2",
-            ),
-            "height_m": linear_colour_scale(
-                (
-                    float(row["height_m"])
-                    for rows in daily_by_year.values()
-                    for row in rows
-                    if row.get("height_m") is not None
+            },
+            "source": {
+                "dataset": "bioRad VPTS current_ci_le4",
+                "files_seen": analysis.get("files_seen"),
+                "profiles_seen": analysis.get("profiles_seen"),
+                "rows_seen": analysis.get("rows_seen"),
+                "failure_count": analysis.get("failure_count"),
+                "finished_at_utc": analysis.get("finished_at"),
+            },
+            "radars": radars,
+            "radar_coverage": radar_coverage,
+            "colour_scales": {
+                "vid": log_colour_scale(
+                    (
+                        float(row["vid"])
+                        for rows in daily_by_year.values()
+                        for row in rows
+                        if row.get("vid") is not None
+                    ),
+                    units="birds km-2",
                 ),
-                units="m",
-            ),
-            "speed_ms": linear_colour_scale(
-                (
-                    float(row["speed_ms"])
-                    for rows in daily_by_year.values()
-                    for row in rows
-                    if row.get("speed_ms") is not None
+                "height_m": linear_colour_scale(
+                    (
+                        float(row["height_m"])
+                        for rows in daily_by_year.values()
+                        for row in rows
+                        if row.get("height_m") is not None
+                    ),
+                    units="m",
                 ),
-                units="m s-1",
-            ),
-        },
-        "assets": {
-            "daily_by_year": daily_assets,
-            "annual": "historical/annual.json",
-            "phenology": "historical/phenology.json",
-            "coverage": "historical/coverage.json",
-            "boundary": "historical/uk_boundary.geojson",
-            "plots": plot_assets,
-        },
-    }
-    _write_compact_json(historical_dir / "manifest.json", manifest)
-    _write_compact_json(output_root / "latest" / "historical.json", manifest)
-    return {
-        "ok": True,
-        "generated_at_utc": generated_at,
-        "first_date": min_date,
-        "latest_date": max_date,
-        "year_count": len(daily_by_year),
-        "daily_row_count": sum(len(rows) for rows in daily_by_year.values()),
-        "radar_count": len(radars),
-        "plot_count": len(plot_assets),
-        "output_root": str(output_root),
-    }
+                "speed_ms": linear_colour_scale(
+                    (
+                        float(row["speed_ms"])
+                        for rows in daily_by_year.values()
+                        for row in rows
+                        if row.get("speed_ms") is not None
+                    ),
+                    units="m s-1",
+                ),
+            },
+            "assets": {
+                "daily_by_year": daily_assets,
+                "annual": (asset_prefix / "annual.json").as_posix(),
+                "phenology": (asset_prefix / "phenology.json").as_posix(),
+                "coverage": (asset_prefix / "coverage.json").as_posix(),
+                "boundary": (asset_prefix / "uk_boundary.geojson").as_posix(),
+                "plots": plot_assets,
+                "release_manifest": (asset_prefix / "manifest.json").as_posix(),
+            },
+        }
+        _write_compact_json(staging_dir / "manifest.json", manifest)
+        os.replace(staging_dir, release_dir)
+        _validate_historical_release(release_dir, manifest, output_root=output_root)
+        _write_compact_json(output_root / "latest" / "historical.json", manifest)
+        return {
+            "ok": True,
+            "generated_at_utc": generated_at,
+            "release_id": release_id,
+            "first_date": min_date,
+            "latest_date": max_date,
+            "year_count": len(daily_by_year),
+            "daily_row_count": sum(len(rows) for rows in daily_by_year.values()),
+            "radar_count": len(radars),
+            "plot_count": len(plot_assets),
+            "output_root": str(output_root),
+        }
+    finally:
+        shutil.rmtree(staging_dir, ignore_errors=True)

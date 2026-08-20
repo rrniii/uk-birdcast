@@ -25,7 +25,11 @@ def verify(
     stamp = day.replace("-", "")
     single = raw_dir / f"era5_single_levels_{stamp}_uk.nc"
     pressure = raw_dir / f"era5_pressure_levels_{stamp}_uk.nc"
-    for label, path in (("single-level", single), ("pressure-level", pressure), ("site features", feature_output)):
+    for label, path in (
+        ("single-level", single),
+        ("pressure-level", pressure),
+        ("site features", feature_output),
+    ):
         if not path.is_file() or path.stat().st_size == 0:
             raise ValueError(f"Europe {label} input is missing or empty: {path}")
     with TemporaryDirectory(prefix="birdcast-euro-era5-fidelity-") as temporary:
@@ -85,7 +89,14 @@ def _normalise_rows(value: object) -> list[dict[str, object]]:
             else:
                 normalised[key] = item
         rows.append(normalised)
-    return sorted(rows, key=lambda row: (str(row.get("radar")), str(row.get("time_utc")), int(row.get("dataset_index") or 0)))
+    return sorted(
+        rows,
+        key=lambda row: (
+            str(row.get("radar")),
+            str(row.get("time_utc")),
+            int(row.get("dataset_index") or 0),
+        ),
+    )
 
 
 def _sha256(path: Path) -> str:
@@ -105,7 +116,16 @@ if __name__ == "__main__":
     parser.add_argument("--output", required=True)
     parser.add_argument("--release-id", required=True)
     args = parser.parse_args()
-    print(json.dumps(verify(
-        args.day, Path(args.raw_dir), Path(args.radars), Path(args.feature_output), Path(args.output),
-        release_id=args.release_id,
-    ), indent=2))
+    print(
+        json.dumps(
+            verify(
+                args.day,
+                Path(args.raw_dir),
+                Path(args.radars),
+                Path(args.feature_output),
+                Path(args.output),
+                release_id=args.release_id,
+            ),
+            indent=2,
+        )
+    )

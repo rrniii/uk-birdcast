@@ -17,6 +17,7 @@ from .archive import (
     write_comparison_report,
 )
 from .bto import validate_aggregates, write_request_template, write_validation_status
+from .coastal import build_coastal_relative_flow, install_coastal_static_site
 from .config import (
     ALOFT_COVERAGE_URL,
     ALOFT_PUBLIC_BASE_URL,
@@ -29,15 +30,25 @@ from .config import (
     EUROPE_MIN_TRANSFER_DAYS,
     FORECAST_ENSEMBLE_SIZE,
     OBJECT_PREFIX,
+    UK_PVOL_MAX_RANGE_M,
     UKMO_PVOL_CATALOG_URL,
     UKMO_VPTS_CATALOG_URL,
-    UK_PVOL_MAX_RANGE_M,
     VPTS_BOOTSTRAP_LOOKBACK_DAYS,
     VPTS_MAX_CATALOG_AGE_HOURS,
     VPTS_MAX_INCREMENT_DAYS,
 )
-from .era5 import build_day, build_period, cds_readiness, download_request, extract_grid_features, extract_site_features, extract_zip_archive, validate_day, write_request
 from .ecmwf import archive_cycle
+from .era5 import (
+    build_day,
+    build_period,
+    cds_readiness,
+    download_request,
+    extract_grid_features,
+    extract_site_features,
+    extract_zip_archive,
+    validate_day,
+    write_request,
+)
 from .europe import (
     build_aloft_cohort,
     build_europe_manifest,
@@ -52,7 +63,6 @@ from .europe import (
     write_aloft_cohort,
     write_hourly_parquet,
 )
-from .coastal import build_coastal_relative_flow, install_coastal_static_site
 from .europe_fidelity import (
     verify_aloft_chunk,
     verify_training_input_policy,
@@ -63,9 +73,19 @@ from .forecast import build_forecast
 from .historical import NATURAL_EARTH_10M_COUNTRIES_URL, build_historical_products, write_boundary
 from .joined import join_observed_to_era5
 from .observed import build_hourly_observations, build_observed_products
-from .publication import build_publication_plan, validate_release, write_sync_commands
+from .publication import (
+    build_publication_plan,
+    validate_publication_plan,
+    validate_release,
+    write_sync_commands,
+)
 from .radars import radars_from_pvol_catalog, write_radars
-from .reanalysis import build_prediction_frames, compare_models, prepare_training_table, publish_reanalysis, publish_wide_reanalysis, write_model_spec
+from .reanalysis import (
+    compare_models,
+    prepare_training_table,
+    publish_wide_reanalysis,
+    write_model_spec,
+)
 from .static_artifacts import build_static_artifacts, install_static_site, write_json
 from .vpts import build_catalog_inventory, build_historical_inventory, validate_manifest
 
@@ -81,7 +101,13 @@ def cmd_europe_cohort(args: argparse.Namespace) -> int:
         minimum_transfer_days=args.minimum_transfer_days,
     )
     payload = write_aloft_cohort(entries, Path(args.output))
-    print(json.dumps({key: value for key, value in payload.items() if key != "entries"}, indent=2, sort_keys=True))
+    print(
+        json.dumps(
+            {key: value for key, value in payload.items() if key != "entries"},
+            indent=2,
+            sort_keys=True,
+        )
+    )
     return 0
 
 
@@ -127,7 +153,13 @@ def cmd_europe_stream_chunk(args: argparse.Namespace) -> int:
         public_base_url=args.public_base_url,
         release_id=args.release_id,
     )
-    print(json.dumps({key: value for key, value in result.items() if key != "audits"}, indent=2, sort_keys=True))
+    print(
+        json.dumps(
+            {key: value for key, value in result.items() if key != "audits"},
+            indent=2,
+            sort_keys=True,
+        )
+    )
     return 0
 
 
@@ -198,7 +230,11 @@ def cmd_coastal_static_install(args: argparse.Namespace) -> int:
 
 
 def cmd_europe_publish(args: argparse.Namespace) -> int:
-    publish = publish_europe_prediction_partitions if args.predictions_root else publish_europe_predictions
+    publish = (
+        publish_europe_prediction_partitions
+        if args.predictions_root
+        else publish_europe_predictions
+    )
     common = dict(
         output_root=Path(args.output_root),
         model_id=args.model_id,
@@ -209,7 +245,11 @@ def cmd_europe_publish(args: argparse.Namespace) -> int:
         release_status=args.release_status,
     )
     result = publish(
-        **({"predictions_root": Path(args.predictions_root)} if args.predictions_root else {"predictions_csv": Path(args.predictions)}),
+        **(
+            {"predictions_root": Path(args.predictions_root)}
+            if args.predictions_root
+            else {"predictions_csv": Path(args.predictions)}
+        ),
         **common,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
@@ -223,6 +263,7 @@ def cmd_static_build(args: argparse.Namespace) -> int:
         public_base_url=args.public_base_url,
         object_prefix=args.object_prefix,
         radars_path=Path(radars) if radars else None,
+        forecast_enabled=args.forecast_enabled,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
@@ -310,6 +351,7 @@ def cmd_era5_validate_day(args: argparse.Namespace) -> int:
         day=args.day,
         raw_dir=Path(args.raw_dir),
         feature_output=Path(args.feature_output),
+        radars_path=Path(args.radars),
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0 if result["ok"] else 1
@@ -359,6 +401,7 @@ def cmd_historical_build(args: argparse.Namespace) -> int:
         Path(args.output_root),
         radars_path=Path(args.radars),
         boundary_source=args.boundary_source,
+        expected_latest_date=args.expected_latest_date,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
@@ -376,7 +419,11 @@ def cmd_radars_from_pvol(args: argparse.Namespace) -> int:
         default_max_range_m=args.default_max_range_m,
     )
     payload = write_radars(Path(args.output), radars, source=args.input)
-    print(json.dumps({"wrote": args.output, "radar_count": len(payload["radars"])}, indent=2, sort_keys=True))
+    print(
+        json.dumps(
+            {"wrote": args.output, "radar_count": len(payload["radars"])}, indent=2, sort_keys=True
+        )
+    )
     return 0
 
 
@@ -462,7 +509,9 @@ def cmd_archive_aloft_coverage(args: argparse.Namespace) -> int:
         "source_policy": "Existing Aloft VPTS objects are catalogued read-only.",
     }
     write_json(Path(args.output), payload)
-    print(json.dumps({"wrote": args.output, "object_count": len(objects)}, indent=2, sort_keys=True))
+    print(
+        json.dumps({"wrote": args.output, "object_count": len(objects)}, indent=2, sort_keys=True)
+    )
     return 0
 
 
@@ -493,14 +542,26 @@ def cmd_archive_compare(args: argparse.Namespace) -> int:
 
 def cmd_archive_crosswalk(args: argparse.Namespace) -> int:
     radar_payload = json.loads(Path(args.uk_radars).read_text(encoding="utf-8"))
-    uk_radars = radar_payload.get("radars", radar_payload) if isinstance(radar_payload, dict) else radar_payload
+    uk_radars = (
+        radar_payload.get("radars", radar_payload)
+        if isinstance(radar_payload, dict)
+        else radar_payload
+    )
     mapping_payload = json.loads(Path(args.mappings).read_text(encoding="utf-8"))
-    mappings = mapping_payload.get("mappings", mapping_payload) if isinstance(mapping_payload, dict) else mapping_payload
+    mappings = (
+        mapping_payload.get("mappings", mapping_payload)
+        if isinstance(mapping_payload, dict)
+        else mapping_payload
+    )
     if not isinstance(uk_radars, list) or not isinstance(mappings, list):
         raise ValueError("UK radar and mapping files must each contain a list")
     payload = build_crosswalk(uk_radars, mappings)
     write_json(Path(args.output), payload)
-    print(json.dumps({"wrote": args.output, "entry_count": payload["entry_count"]}, indent=2, sort_keys=True))
+    print(
+        json.dumps(
+            {"wrote": args.output, "entry_count": payload["entry_count"]}, indent=2, sort_keys=True
+        )
+    )
     return 0
 
 
@@ -517,7 +578,18 @@ def cmd_archive_comparison_index(args: argparse.Namespace) -> int:
                 reports.append(payload)
     payload = build_comparison_index(crosswalk, reports)
     write_json(Path(args.output), payload)
-    print(json.dumps({"wrote": args.output, "entry_count": payload["entry_count"], "report_count": payload["report_count"], "status": payload["status"]}, indent=2, sort_keys=True))
+    print(
+        json.dumps(
+            {
+                "wrote": args.output,
+                "entry_count": payload["entry_count"],
+                "report_count": payload["report_count"],
+                "status": payload["status"],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
     return 0
 
 
@@ -561,7 +633,9 @@ def cmd_bto_template(args: argparse.Namespace) -> int:
 
 
 def cmd_bto_status(args: argparse.Namespace) -> int:
-    payload = write_validation_status(Path(args.output), data_available=args.data_available, status=args.status)
+    payload = write_validation_status(
+        Path(args.output), data_available=args.data_available, status=args.status
+    )
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
 
@@ -605,16 +679,6 @@ def cmd_reanalysis_compare(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_reanalysis_publish(args: argparse.Namespace) -> int:
-    result = publish_reanalysis(
-        predictions=Path(args.predictions),
-        comparison=Path(args.comparison),
-        output_root=Path(args.output_root),
-    )
-    print(json.dumps(result, indent=2, sort_keys=True))
-    return 0
-
-
 def cmd_reanalysis_publish_wide(args: argparse.Namespace) -> int:
     result = publish_wide_reanalysis(
         lp_csv=Path(args.lp_csv),
@@ -622,16 +686,7 @@ def cmd_reanalysis_publish_wide(args: argparse.Namespace) -> int:
         comparison=Path(args.comparison),
         output_root=Path(args.output_root),
         model_family=args.model_family,
-    )
-    print(json.dumps(result, indent=2, sort_keys=True))
-    return 0
-
-
-def cmd_reanalysis_frames(args: argparse.Namespace) -> int:
-    result = build_prediction_frames(
-        predictions_csv=Path(args.predictions_csv),
-        output=Path(args.output),
-        model_family=args.model_family,
+        component_manifest=Path(args.component_manifest),
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
@@ -650,8 +705,17 @@ def cmd_reanalysis_validate_external(args: argparse.Namespace) -> int:
 
 
 def cmd_publish_plan(args: argparse.Namespace) -> int:
-    result = build_publication_plan(Path(args.source_dir), Path(args.output), object_prefix=args.object_prefix)
-    print(json.dumps({"wrote": args.output, "object_count": result["object_count"]}, indent=2, sort_keys=True))
+    result = build_publication_plan(
+        Path(args.source_dir),
+        Path(args.output),
+        object_prefix=args.object_prefix,
+        products=tuple(args.product),
+    )
+    print(
+        json.dumps(
+            {"wrote": args.output, "object_count": result["object_count"]}, indent=2, sort_keys=True
+        )
+    )
     return 0
 
 
@@ -678,6 +742,12 @@ def cmd_publish_script(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_publish_validate_plan(args: argparse.Namespace) -> int:
+    result = validate_publication_plan(Path(args.plan))
+    print(json.dumps({"plan": args.plan, "object_count": result["object_count"]}, indent=2))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="birdcast-uk")
     subparsers = parser.add_subparsers(required=True)
@@ -689,6 +759,11 @@ def build_parser() -> argparse.ArgumentParser:
     static_build.add_argument("--public-base-url", default=DEFAULT_PUBLIC_BASE_URL)
     static_build.add_argument("--object-prefix", default=OBJECT_PREFIX)
     static_build.add_argument("--radars")
+    static_build.add_argument(
+        "--forecast-enabled",
+        action="store_true",
+        help="Preserve an existing forecast manifest only after its production contract is approved.",
+    )
     static_build.set_defaults(func=cmd_static_build)
     static_install = static_sub.add_parser("install-site")
     static_install.add_argument("--artifact-root", required=True)
@@ -702,8 +777,12 @@ def build_parser() -> argparse.ArgumentParser:
     europe_cohort = europe_sub.add_parser("cohort")
     europe_cohort.add_argument("--coverage-url", default=ALOFT_COVERAGE_URL)
     europe_cohort.add_argument("--public-base-url", default=ALOFT_PUBLIC_BASE_URL)
-    europe_cohort.add_argument("--minimum-training-days", type=int, default=EUROPE_MIN_TRAINING_DAYS)
-    europe_cohort.add_argument("--minimum-transfer-days", type=int, default=EUROPE_MIN_TRANSFER_DAYS)
+    europe_cohort.add_argument(
+        "--minimum-training-days", type=int, default=EUROPE_MIN_TRAINING_DAYS
+    )
+    europe_cohort.add_argument(
+        "--minimum-transfer-days", type=int, default=EUROPE_MIN_TRANSFER_DAYS
+    )
     europe_cohort.add_argument("--output", required=True)
     europe_cohort.set_defaults(func=cmd_europe_cohort)
     europe_stream = europe_sub.add_parser("stream-day")
@@ -844,6 +923,7 @@ def build_parser() -> argparse.ArgumentParser:
     era5_validate_day.add_argument("--day", required=True)
     era5_validate_day.add_argument("--raw-dir", required=True)
     era5_validate_day.add_argument("--feature-output", required=True)
+    era5_validate_day.add_argument("--radars", required=True)
     era5_validate_day.set_defaults(func=cmd_era5_validate_day)
     era5_build_period = era5_sub.add_parser("build-period")
     era5_build_period.add_argument("--start-day", required=True)
@@ -882,6 +962,7 @@ def build_parser() -> argparse.ArgumentParser:
     historical_build.add_argument("--output-root", required=True)
     historical_build.add_argument("--radars", required=True)
     historical_build.add_argument("--boundary-source", default=NATURAL_EARTH_10M_COUNTRIES_URL)
+    historical_build.add_argument("--expected-latest-date")
     historical_build.set_defaults(func=cmd_historical_build)
     historical_boundary = historical_sub.add_parser("boundary")
     historical_boundary.add_argument("--output", required=True)
@@ -1019,23 +1100,16 @@ def build_parser() -> argparse.ArgumentParser:
     reanalysis_compare.add_argument("--xgboost-metrics", required=True)
     reanalysis_compare.add_argument("--output", required=True)
     reanalysis_compare.set_defaults(func=cmd_reanalysis_compare)
-    reanalysis_publish = reanalysis_sub.add_parser("publish")
-    reanalysis_publish.add_argument("--predictions", required=True)
-    reanalysis_publish.add_argument("--comparison", required=True)
-    reanalysis_publish.add_argument("--output-root", required=True)
-    reanalysis_publish.set_defaults(func=cmd_reanalysis_publish)
     reanalysis_publish_wide = reanalysis_sub.add_parser("publish-wide")
     reanalysis_publish_wide.add_argument("--lp-csv", required=True)
     reanalysis_publish_wide.add_argument("--sp-csv", required=True)
     reanalysis_publish_wide.add_argument("--comparison", required=True)
     reanalysis_publish_wide.add_argument("--output-root", required=True)
-    reanalysis_publish_wide.add_argument("--model-family", choices=["gamm", "xgboost"], required=True)
+    reanalysis_publish_wide.add_argument(
+        "--model-family", choices=["gamm", "xgboost"], required=True
+    )
+    reanalysis_publish_wide.add_argument("--component-manifest", required=True)
     reanalysis_publish_wide.set_defaults(func=cmd_reanalysis_publish_wide)
-    reanalysis_frames = reanalysis_sub.add_parser("frames")
-    reanalysis_frames.add_argument("--predictions-csv", required=True)
-    reanalysis_frames.add_argument("--model-family", choices=["gamm", "xgboost"], required=True)
-    reanalysis_frames.add_argument("--output", required=True)
-    reanalysis_frames.set_defaults(func=cmd_reanalysis_frames)
     reanalysis_external = reanalysis_sub.add_parser("validate-external")
     reanalysis_external.add_argument("--vpts-csv", required=True)
     reanalysis_external.add_argument("--predictions-csv", required=True)
@@ -1076,6 +1150,13 @@ def build_parser() -> argparse.ArgumentParser:
     publish_plan.add_argument("--source-dir", required=True)
     publish_plan.add_argument("--output", required=True)
     publish_plan.add_argument("--object-prefix", default=OBJECT_PREFIX)
+    publish_plan.add_argument(
+        "--product",
+        action="append",
+        choices=["historical", "gam-era5"],
+        required=True,
+        help="Data-bearing product to include; repeat for a multi-product release.",
+    )
     publish_plan.set_defaults(func=cmd_publish_plan)
     publish_script = publish_sub.add_parser("sync-script")
     publish_script.add_argument("--plan", required=True)
@@ -1086,6 +1167,9 @@ def build_parser() -> argparse.ArgumentParser:
     publish_script.add_argument("--client", choices=["aws", "s3cmd"], default="aws")
     publish_script.add_argument("--s3cmd-config")
     publish_script.set_defaults(func=cmd_publish_script)
+    publish_validate_plan = publish_sub.add_parser("validate-plan")
+    publish_validate_plan.add_argument("--plan", required=True)
+    publish_validate_plan.set_defaults(func=cmd_publish_validate_plan)
 
     return parser
 

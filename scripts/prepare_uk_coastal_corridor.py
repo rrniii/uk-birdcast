@@ -17,7 +17,6 @@ import math
 from pathlib import Path
 from typing import Any, Iterable
 
-
 EARTH_RADIUS_KM = 6371.0088
 
 
@@ -32,11 +31,16 @@ def sha256(path: Path) -> str:
 def haversine_km(first: tuple[float, float], second: tuple[float, float]) -> float:
     lat1, lon1 = map(math.radians, first)
     lat2, lon2 = map(math.radians, second)
-    a = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
+    a = (
+        math.sin((lat2 - lat1) / 2) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
+    )
     return 2 * EARTH_RADIUS_KM * math.asin(math.sqrt(a))
 
 
-def point_to_segment_km(point: tuple[float, float], start: tuple[float, float], end: tuple[float, float]) -> float:
+def point_to_segment_km(
+    point: tuple[float, float], start: tuple[float, float], end: tuple[float, float]
+) -> float:
     """Local tangent-plane point-to-coastline-segment distance in kilometres."""
     lat0 = math.radians(point[0])
     scale = EARTH_RADIUS_KM * math.pi / 180
@@ -45,7 +49,11 @@ def point_to_segment_km(point: tuple[float, float], start: tuple[float, float], 
     bx, by = end[1] * math.cos(lat0) * scale, end[0] * scale
     dx, dy = bx - ax, by - ay
     denominator = dx * dx + dy * dy
-    fraction = 0.0 if denominator == 0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / denominator))
+    fraction = (
+        0.0
+        if denominator == 0
+        else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / denominator))
+    )
     return math.hypot(px - (ax + fraction * dx), py - (ay + fraction * dy))
 
 
@@ -76,14 +84,20 @@ def uk_coast_segments(boundaries: Path) -> list[tuple[tuple[float, float], tuple
     for ring in rings(feature["geometry"]["coordinates"]):
         for first, second in zip(ring, ring[1:]):
             # Ignore UK overseas territories retained in the admin-0 geometry.
-            if all(-12.5 <= point[0] <= 4.0 and 48.0 <= point[1] <= 61.5 for point in (first, second)):
-                segments.append(((float(first[1]), float(first[0])), (float(second[1]), float(second[0]))))
+            if all(
+                -12.5 <= point[0] <= 4.0 and 48.0 <= point[1] <= 61.5 for point in (first, second)
+            ):
+                segments.append(
+                    ((float(first[1]), float(first[0])), (float(second[1]), float(second[0])))
+                )
     if not segments:
         raise ValueError("UK coastline extraction produced no local segments")
     return segments
 
 
-def coastline_distance_km(location: tuple[float, float], segments: list[tuple[tuple[float, float], tuple[float, float]]]) -> float:
+def coastline_distance_km(
+    location: tuple[float, float], segments: list[tuple[tuple[float, float], tuple[float, float]]]
+) -> float:
     return min(point_to_segment_km(location, first, second) for first, second in segments)
 
 
@@ -106,9 +120,10 @@ def locations(path: Path) -> dict[str, dict[str, Any]]:
 def write_subset(source: Path, destination: Path, radars: set[str]) -> int:
     destination.parent.mkdir(parents=True, exist_ok=True)
     count = 0
-    with source.open(newline="", encoding="utf-8") as input_handle, destination.open(
-        "w", newline="", encoding="utf-8"
-    ) as output_handle:
+    with (
+        source.open(newline="", encoding="utf-8") as input_handle,
+        destination.open("w", newline="", encoding="utf-8") as output_handle,
+    ):
         reader = csv.DictReader(input_handle)
         if not reader.fieldnames:
             raise ValueError("training table has no header")
@@ -155,10 +170,19 @@ def prepare(
     for radar in radar_locations.values():
         if radar["country"] != "GBR":
             continue
-        nearest = min(haversine_km((radar["latitude"], radar["longitude"]), location) for location in continental_locations)
+        nearest = min(
+            haversine_km((radar["latitude"], radar["longitude"]), location)
+            for location in continental_locations
+        )
         coast_distance = coastline_distance_km((radar["latitude"], radar["longitude"]), segments)
         if nearest <= overlap_distance_limit_km and coast_distance <= overlap_distance_limit_km:
-            uk.append({**radar, "nearest_continental_radar_km": nearest, "uk_coastline_distance_km": coast_distance})
+            uk.append(
+                {
+                    **radar,
+                    "nearest_continental_radar_km": nearest,
+                    "uk_coastline_distance_km": coast_distance,
+                }
+            )
     uk.sort(key=lambda item: item["radar"])
     if len(uk) < 3:
         raise ValueError("coastal corridor has fewer than three overlapping UK radars")
@@ -211,7 +235,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model-spec", type=Path, required=True)
     parser.add_argument("--boundaries", type=Path, required=True)
-    parser.add_argument("--continental-country", action="append", required=True, help="ISO country code; repeatable")
+    parser.add_argument(
+        "--continental-country", action="append", required=True, help="ISO country code; repeatable"
+    )
     parser.add_argument("--coastline-distance-km", type=float, default=350.0)
     parser.add_argument("--overlap-distance-km", type=float, default=350.0)
     parser.add_argument("--output-training-csv", type=Path, required=True)
@@ -219,17 +245,22 @@ def main() -> None:
     parser.add_argument("--output-spec", type=Path, required=True)
     parser.add_argument("--model-id", required=True)
     args = parser.parse_args()
-    print(json.dumps(prepare(
-        model_spec=args.model_spec,
-        boundaries=args.boundaries,
-        continental_countries={value.upper() for value in args.continental_country},
-        coastline_distance_limit_km=args.coastline_distance_km,
-        overlap_distance_limit_km=args.overlap_distance_km,
-        output_training_csv=args.output_training_csv,
-        output_cohort=args.output_cohort,
-        output_spec=args.output_spec,
-        model_id=args.model_id,
-    ), indent=2))
+    print(
+        json.dumps(
+            prepare(
+                model_spec=args.model_spec,
+                boundaries=args.boundaries,
+                continental_countries={value.upper() for value in args.continental_country},
+                coastline_distance_limit_km=args.coastline_distance_km,
+                overlap_distance_limit_km=args.overlap_distance_km,
+                output_training_csv=args.output_training_csv,
+                output_cohort=args.output_cohort,
+                output_spec=args.output_spec,
+                model_id=args.model_id,
+            ),
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

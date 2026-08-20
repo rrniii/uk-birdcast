@@ -10,9 +10,9 @@ from __future__ import annotations
 import csv
 import json
 import math
-from pathlib import Path
 import time
-from typing import Any, Callable
+from pathlib import Path
+from typing import Any
 from urllib.error import HTTPError, URLError
 
 from .archive import VptsObject
@@ -40,10 +40,14 @@ def verify_aloft_chunk(
     radar = str(chunk["radar"])
     year = str(chunk["year"])
     month = str(chunk["month"])
-    derived = hourly_root / f"source={source}" / f"year={year}" / f"month={month}" / f"{radar}.parquet"
+    derived = (
+        hourly_root / f"source={source}" / f"year={year}" / f"month={month}" / f"{radar}.parquet"
+    )
     manifest_path = derived.with_suffix(derived.suffix + ".manifest.json")
     if not derived.is_file() or not manifest_path.is_file():
-        raise ValueError(f"missing derived hourly partition or provenance manifest for {source}/{radar}/{year}-{month}")
+        raise ValueError(
+            f"missing derived hourly partition or provenance manifest for {source}/{radar}/{year}-{month}"
+        )
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest.get("status") != "complete" or manifest.get("raw_source_persisted") is not False:
         raise ValueError("derived partition does not declare a complete raw-free stream")
@@ -134,7 +138,9 @@ def verify_training_input_policy(
     columns = set(training[0])
     missing_predictors = set(required_predictors) - columns
     if missing_predictors:
-        raise ValueError(f"Europe training table is missing ERA5 predictors: {', '.join(sorted(missing_predictors))}")
+        raise ValueError(
+            f"Europe training table is missing ERA5 predictors: {', '.join(sorted(missing_predictors))}"
+        )
     training_aloft_radars: set[str] = set()
     for row in training:
         source = str(row.get("source") or "")
@@ -148,19 +154,52 @@ def verify_training_input_policy(
             if pulse != "aloft" or roles.get(radar) != "training":
                 raise ValueError(f"Aloft radar {radar} is not permitted in the training cohort")
             training_aloft_radars.add(radar)
+        for predictor in required_predictors:
+            try:
+                value = float(row.get(predictor, ""))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Europe training row has invalid predictor {predictor}") from exc
+            if not math.isfinite(value):
+                raise ValueError(f"Europe training row has non-finite predictor {predictor}")
+    expected_training_radars = {radar for radar, role in roles.items() if role == "training"}
     transfer_radars = {radar for radar, role in roles.items() if role == "transfer-validation"}
     if not training_aloft_radars:
         raise ValueError("Europe training table contains no approved Aloft training observations")
+    if training_aloft_radars != expected_training_radars:
+        missing = sorted(expected_training_radars - training_aloft_radars)
+        unexpected = sorted(training_aloft_radars - expected_training_radars)
+        raise ValueError(
+            "Europe training table does not exactly cover the frozen Aloft cohort: "
+            f"missing={','.join(missing)} unexpected={','.join(unexpected)}"
+        )
     if training_aloft_radars & transfer_radars:
         raise ValueError("transfer-validation Aloft radars leaked into the training table")
 
     transfer_rows = _read_csv(transfer_csv) if transfer_csv else []
     for row in transfer_rows:
         radar = str(row.get("radar") or "").lower()
-        if str(row.get("source") or "") != "aloft-baltrad" or roles.get(radar) != "transfer-validation":
+        if (
+            str(row.get("source") or "") != "aloft-baltrad"
+            or roles.get(radar) != "transfer-validation"
+        ):
             raise ValueError(f"transfer-validation table contains non-transfer radar {radar}")
+        for predictor in required_predictors:
+            try:
+                value = float(row.get(predictor, ""))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Europe transfer row has invalid predictor {predictor}") from exc
+            if not math.isfinite(value):
+                raise ValueError(f"Europe transfer row has non-finite predictor {predictor}")
     if transfer_csv is not None and not transfer_rows:
         raise ValueError("Europe transfer-validation table contains no approved Aloft observations")
+    observed_transfer_radars = {str(row.get("radar") or "").lower() for row in transfer_rows}
+    if transfer_csv is not None and observed_transfer_radars != transfer_radars:
+        missing = sorted(transfer_radars - observed_transfer_radars)
+        unexpected = sorted(observed_transfer_radars - transfer_radars)
+        raise ValueError(
+            "Europe transfer table does not exactly cover the frozen cohort: "
+            f"missing={','.join(missing)} unexpected={','.join(unexpected)}"
+        )
 
     return {
         "schema_version": "birdcast-euro-fidelity-training-1.0",
@@ -169,7 +208,7 @@ def verify_training_input_policy(
         "training_rows": len(training),
         "training_aloft_radar_count": len(training_aloft_radars),
         "transfer_rows": len(transfer_rows),
-        "transfer_radar_count": len({str(row.get('radar') or '').lower() for row in transfer_rows}),
+        "transfer_radar_count": len(observed_transfer_radars),
         "required_predictor_count": len(required_predictors),
         "raw_source_persisted": False,
     }
@@ -190,7 +229,9 @@ def _rows_by_day(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     return grouped
 
 
-def _assert_row_sets_equal(actual: list[dict[str, Any]], expected: list[dict[str, Any]], day: str) -> None:
+def _assert_row_sets_equal(
+    actual: list[dict[str, Any]], expected: list[dict[str, Any]], day: str
+) -> None:
     normal_actual = sorted((_normalise_row(row) for row in actual), key=_row_key)
     normal_expected = sorted((_normalise_row(row) for row in expected), key=_row_key)
     if normal_actual != normal_expected:
@@ -212,7 +253,19 @@ def _row_key(row: dict[str, Any]) -> tuple[str, str, str]:
 
 
 def _assert_audit_equal(actual: dict[str, Any], expected: dict[str, Any], day: str) -> None:
-    for key in ("source", "radar", "day", "url", "bytes_read", "row_count", "profile_count", "hourly_row_count", "sha256", "availability", "unavailable_reason"):
+    for key in (
+        "source",
+        "radar",
+        "day",
+        "url",
+        "bytes_read",
+        "row_count",
+        "profile_count",
+        "hourly_row_count",
+        "sha256",
+        "availability",
+        "unavailable_reason",
+    ):
         if actual.get(key) != expected.get(key):
             raise ValueError(f"source audit mismatch for {day}: {key}")
 

@@ -8,22 +8,27 @@ is written. Persistent output is restricted to compact comparison reports.
 from __future__ import annotations
 
 import csv
+import io
+import math
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
-import io
-import json
-import math
+from datetime import date, datetime, timezone
 from pathlib import Path
 from statistics import mean
 from typing import Any, Callable, Iterable
 from urllib.request import urlopen
 
-from .config import ALOFT_COVERAGE_URL, ALOFT_PUBLIC_BASE_URL, ALOFT_SOURCES, BIORAD_VPTS_PREFIX, DEFAULT_PUBLIC_BASE_URL
+from .config import (
+    ALOFT_COVERAGE_URL,
+    ALOFT_PUBLIC_BASE_URL,
+    ALOFT_SOURCES,
+    BIORAD_VPTS_PREFIX,
+    DEFAULT_PUBLIC_BASE_URL,
+)
 from .static_artifacts import utc_now, write_json
 
-
 FetchText = Callable[[str], str]
+MIN_COMPARISON_LEVELS = 3
 
 
 @dataclass(frozen=True)
@@ -105,7 +110,14 @@ def aloft_daily_objects(
         if not start <= object_day <= end:
             continue
         key = f"{source}/daily/{row_radar}/{object_day:%Y}/{row_radar}_vpts_{object_day:%Y%m%d}.csv"
-        objects.append(VptsObject(source, row_radar, object_day.strftime("%Y%m%d"), f"{public_base_url.rstrip('/')}/{key}"))
+        objects.append(
+            VptsObject(
+                source,
+                row_radar,
+                object_day.strftime("%Y%m%d"),
+                f"{public_base_url.rstrip('/')}/{key}",
+            )
+        )
     return sorted(objects, key=lambda item: item.day)
 
 
@@ -143,7 +155,9 @@ def select_vp(rows: Iterable[dict[str, Any]], requested: str | datetime) -> dict
     if not profiles:
         raise ValueError("VPTS rows contain no valid datetime profiles")
     selected = min(profiles, key=lambda value: abs((value - target).total_seconds()))
-    values = sorted(profiles[selected], key=lambda row: _number(row.get("height"), default=math.inf))
+    values = sorted(
+        profiles[selected], key=lambda row: _number(row.get("height"), default=math.inf)
+    )
     return {
         "requested_time_utc": _iso_time(target),
         "selected_time_utc": _iso_time(selected),
@@ -162,22 +176,30 @@ def compare_vpts_profiles(
     max_time_offset_seconds: float = 300.0,
 ) -> dict[str, Any]:
     """Compare existing UK and Aloft profiles without generating radar products."""
+    if max_time_offset_seconds < 0:
+        raise ValueError("maximum time offset must be non-negative")
     uk = select_vp(uk_rows, requested)
     aloft = select_vp(aloft_rows, requested)
     time_difference = abs(
-        (_parse_time(uk["selected_time_utc"]) - _parse_time(aloft["selected_time_utc"])).total_seconds()
+        (
+            _parse_time(uk["selected_time_utc"]) - _parse_time(aloft["selected_time_utc"])
+        ).total_seconds()
     )
     common = _common_altitude_rows(uk["rows"], aloft["rows"])
     variables = ("dens", "eta", "dbz", "dbz_all", "u", "v", "ff", "dd")
     metrics = {name: _comparison_metrics(common, name) for name in variables}
-    match_class = "exact" if time_difference == 0 else "cadence-adjusted"
+    uk_offset = float(uk["time_offset_seconds"])
+    aloft_offset = float(aloft["time_offset_seconds"])
+    match_class = "exact" if uk_offset == 0 and aloft_offset == 0 else "cadence-adjusted"
     return {
         "schema_version": "birdcast-uk-vpts-comparison-1.0",
         "generated_at_utc": utc_now(),
         "requested_time_utc": _iso_time(_parse_time(requested)),
         "match_class": match_class,
         "time_difference_seconds": time_difference,
-        "within_time_tolerance": time_difference <= max_time_offset_seconds,
+        "within_time_tolerance": (
+            uk_offset <= max_time_offset_seconds and aloft_offset <= max_time_offset_seconds
+        ),
         "common_altitude_count": len(common),
         "uk": {key: value for key, value in uk.items() if key != "rows"},
         "aloft": {key: value for key, value in aloft.items() if key != "rows"},
@@ -197,7 +219,9 @@ def build_crosswalk(
     comparison class. This prevents the interface presenting unrelated radar
     observations as an exact validation pair.
     """
-    by_slug = {str(radar.get("slug") or radar.get("radar") or "").lower(): radar for radar in uk_radars}
+    by_slug = {
+        str(radar.get("slug") or radar.get("radar") or "").lower(): radar for radar in uk_radars
+    }
     entries: list[dict[str, Any]] = []
     seen: set[str] = set()
     for mapping in mappings:
@@ -221,7 +245,11 @@ def build_crosswalk(
                 "aloft_source": source,
                 "aloft_radar": aloft_radar,
                 "comparison_class": comparison_class,
-                "max_time_offset_seconds": float(mapping.get("max_time_offset_seconds", 0 if comparison_class == "exact" else 300)),
+                "max_time_offset_seconds": float(
+                    mapping.get(
+                        "max_time_offset_seconds", 0 if comparison_class == "exact" else 300
+                    )
+                ),
                 "notes": str(mapping.get("notes") or ""),
             }
         )
@@ -238,11 +266,16 @@ def build_crosswalk(
 
 def write_comparison_report(report: dict[str, Any], output: Path) -> dict[str, Any]:
     write_json(output, report)
-    return {"ok": True, "output": str(output), "common_altitude_count": report["common_altitude_count"]}
+    return {
+        "ok": True,
+        "output": str(output),
+        "common_altitude_count": report["common_altitude_count"],
+    }
 
 
 def build_comparison_index(
-    crosswalk: dict[str, Any], reports: Iterable[dict[str, Any]],
+    crosswalk: dict[str, Any],
+    reports: Iterable[dict[str, Any]],
 ) -> dict[str, Any]:
     """Build a small dashboard index from explicit mappings and reports.
 
@@ -258,6 +291,7 @@ def build_comparison_index(
         for entry in crosswalk.get("entries", [])
     }
     indexed: dict[tuple[str, str, str], dict[str, Any]] = {}
+    rejected: dict[tuple[str, str, str], list[str]] = defaultdict(list)
     for report in reports:
         uk = report.get("uk", {}).get("provenance", {})
         aloft = report.get("aloft", {}).get("provenance", {})
@@ -268,6 +302,10 @@ def build_comparison_index(
         )
         entry = configured.get(key)
         if not entry:
+            continue
+        errors = _comparison_report_errors(report, entry)
+        if errors:
+            rejected[key].extend(errors)
             continue
         candidate = {
             **entry,
@@ -281,17 +319,29 @@ def build_comparison_index(
             "source_policy": report.get("source_policy"),
         }
         previous = indexed.get(key)
-        if previous is None or str(candidate.get("generated_at_utc") or "") > str(previous.get("generated_at_utc") or ""):
+        if previous is None or str(candidate.get("generated_at_utc") or "") > str(
+            previous.get("generated_at_utc") or ""
+        ):
             indexed[key] = candidate
     entries = []
     for key, entry in sorted(configured.items()):
-        entries.append(indexed.get(key, {**entry, "report_available": False}))
+        candidate = indexed.get(key)
+        if candidate is not None:
+            entries.append(candidate)
+            continue
+        unavailable = {**entry, "report_available": False}
+        if key in rejected:
+            unavailable["report_status"] = "rejected"
+            unavailable["rejection_reasons"] = sorted(set(rejected[key]))
+        entries.append(unavailable)
+    report_count = sum(1 for entry in entries if entry["report_available"])
     return {
         "schema_version": "birdcast-uk-archive-comparison-index-1.0",
         "generated_at_utc": utc_now(),
-        "status": "ready" if entries else "no_verified_pairs",
+        "status": "ready" if report_count else "no_verified_reports",
         "entry_count": len(entries),
-        "report_count": sum(1 for entry in entries if entry["report_available"]),
+        "report_count": report_count,
+        "rejected_report_count": sum(len(reasons) > 0 for reasons in rejected.values()),
         "entries": entries,
         "unmatched_uk_radars": crosswalk.get("unmatched_uk_radars", []),
         "matching_policy": crosswalk.get("matching_policy"),
@@ -299,22 +349,122 @@ def build_comparison_index(
     }
 
 
+def _comparison_report_errors(report: dict[str, Any], entry: dict[str, Any]) -> list[str]:
+    """Return release-gate failures for one crosswalk-matched report.
+
+    Matching provenance alone is not evidence of a usable comparison. Both
+    sources must independently meet the requested-time tolerance and the
+    report must contain enough common, finite levels to support at least one
+    metric.
+    """
+
+    errors: list[str] = []
+    if report.get("schema_version") != "birdcast-uk-vpts-comparison-1.0":
+        errors.append("unsupported_schema")
+    for field in ("generated_at_utc", "requested_time_utc"):
+        try:
+            _parse_time(str(report.get(field) or ""))
+        except ValueError:
+            errors.append(f"invalid_{field}")
+    if report.get("within_time_tolerance") is not True:
+        errors.append("outside_requested_time_tolerance")
+
+    try:
+        maximum = float(entry["max_time_offset_seconds"])
+    except (KeyError, TypeError, ValueError):
+        maximum = -1.0
+    if not math.isfinite(maximum) or maximum < 0:
+        errors.append("invalid_crosswalk_time_tolerance")
+    for source_name in ("uk", "aloft"):
+        source = report.get(source_name)
+        if not isinstance(source, dict):
+            errors.append(f"missing_{source_name}_selection")
+            continue
+        try:
+            offset = float(source["time_offset_seconds"])
+        except (KeyError, TypeError, ValueError):
+            errors.append(f"invalid_{source_name}_time_offset")
+            continue
+        if not math.isfinite(offset) or offset < 0 or offset > maximum:
+            errors.append(f"{source_name}_outside_requested_time_tolerance")
+    try:
+        difference = float(report["time_difference_seconds"])
+    except (KeyError, TypeError, ValueError):
+        difference = math.nan
+    if not math.isfinite(difference) or difference < 0:
+        errors.append("invalid_source_time_difference")
+
+    try:
+        level_count = int(report["common_altitude_count"])
+    except (KeyError, TypeError, ValueError):
+        level_count = 0
+    if level_count < MIN_COMPARISON_LEVELS:
+        errors.append("insufficient_common_altitude_levels")
+
+    metrics = report.get("metrics")
+    usable_metric = False
+    if not isinstance(metrics, dict):
+        errors.append("missing_metrics")
+    else:
+        for metric in metrics.values():
+            if not isinstance(metric, dict):
+                errors.append("invalid_metric")
+                continue
+            count = metric.get("count")
+            if (
+                isinstance(count, bool)
+                or not isinstance(count, int)
+                or not 0 <= count <= level_count
+            ):
+                errors.append("invalid_metric_count")
+                continue
+            for name in ("bias", "mae", "rmse"):
+                value = metric.get(name)
+                if value is not None and (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not math.isfinite(float(value))
+                ):
+                    errors.append("non_finite_metric")
+            usable_metric = usable_metric or count >= MIN_COMPARISON_LEVELS
+        if not usable_metric:
+            errors.append("no_usable_metric")
+    if not isinstance(report.get("source_policy"), str) or not report["source_policy"].strip():
+        errors.append("missing_source_policy")
+    return sorted(set(errors))
+
+
 def _common_altitude_rows(
     uk_rows: Iterable[dict[str, Any]], aloft_rows: Iterable[dict[str, Any]]
 ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-    uk_by_height = {_number(row.get("height")): row for row in uk_rows if math.isfinite(_number(row.get("height")))}
-    aloft_by_height = {_number(row.get("height")): row for row in aloft_rows if math.isfinite(_number(row.get("height")))}
-    return [(uk_by_height[height], aloft_by_height[height]) for height in sorted(uk_by_height.keys() & aloft_by_height.keys())]
+    uk_by_height = {
+        _number(row.get("height")): row
+        for row in uk_rows
+        if math.isfinite(_number(row.get("height")))
+    }
+    aloft_by_height = {
+        _number(row.get("height")): row
+        for row in aloft_rows
+        if math.isfinite(_number(row.get("height")))
+    }
+    return [
+        (uk_by_height[height], aloft_by_height[height])
+        for height in sorted(uk_by_height.keys() & aloft_by_height.keys())
+    ]
 
 
-def _comparison_metrics(rows: Iterable[tuple[dict[str, Any], dict[str, Any]]], variable: str) -> dict[str, float | int | None]:
+def _comparison_metrics(
+    rows: Iterable[tuple[dict[str, Any], dict[str, Any]]], variable: str
+) -> dict[str, float | int | None]:
     differences: list[float] = []
     pairs: list[tuple[float, float]] = []
     for uk, aloft in rows:
         left, right = _number(uk.get(variable)), _number(aloft.get(variable))
         if math.isfinite(left) and math.isfinite(right):
             pairs.append((left, right))
-            differences.append(left - right)
+            differences.append(
+                _circular_difference(left, right) if variable == "dd" else left - right
+            )
     if not differences:
         return {"count": 0, "bias": None, "mae": None, "rmse": None}
     return {
@@ -323,6 +473,12 @@ def _comparison_metrics(rows: Iterable[tuple[dict[str, Any], dict[str, Any]]], v
         "mae": mean(abs(value) for value in differences),
         "rmse": math.sqrt(mean(value * value for value in differences)),
     }
+
+
+def _circular_difference(left: float, right: float) -> float:
+    """Return the signed shortest angular difference, in degrees."""
+
+    return (left - right + 180.0) % 360.0 - 180.0
 
 
 def _profile_provenance(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:

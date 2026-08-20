@@ -8,7 +8,6 @@ import csv
 import gzip
 import json
 import math
-from collections import defaultdict
 from pathlib import Path
 
 
@@ -34,8 +33,11 @@ def validate(
     _passed(model_validation, "model validation", key="release_passed")
     manifest_path = output_root / "latest" / "reanalysis.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if manifest.get("data_available") is not True or manifest.get("release_status") != "published":
-        raise ValueError("Europe manifest is not a published, data-bearing release")
+    if (
+        manifest.get("data_available") is not True
+        or manifest.get("release_status") != "research-validated"
+    ):
+        raise ValueError("Europe manifest is not a validated research release")
     validation_asset = str(manifest.get("assets", {}).get("validation") or "")
     if not validation_asset or validation_asset.startswith(("http://", "https://")):
         raise ValueError("Europe manifest must retain a local validation asset")
@@ -43,7 +45,9 @@ def validate(
         raise ValueError("Europe manifest validation asset is missing")
     grid_path = output_root / str(manifest["assets"]["grid"])
     grid = json.loads(grid_path.read_text(encoding="utf-8"))
-    coordinates = [(float(cell["longitude"]), float(cell["latitude"])) for cell in grid.get("cells", [])]
+    coordinates = [
+        (float(cell["longitude"]), float(cell["latitude"])) for cell in grid.get("cells", [])
+    ]
     coordinate_index = {coordinate: index for index, coordinate in enumerate(coordinates)}
     if len(coordinate_index) != len(coordinates):
         raise ValueError("published Europe grid has duplicate cells")
@@ -55,9 +59,10 @@ def validate(
             key = (str(row["time_utc"]), (float(row["longitude"]), float(row["latitude"])))
             if key in expected:
                 raise ValueError(f"duplicate prediction cell: {key}")
-            expected[key] = {field: _number(row.get(field)) for field in (
-                "mtr_birds_km_h", "vid_birds_per_km2", "bird_u_ms", "bird_v_ms"
-            )}
+            expected[key] = {
+                field: _number(row.get(field))
+                for field in ("mtr_birds_km_h", "vid_birds_per_km2", "bird_u_ms", "bird_v_ms")
+            }
     seen: set[tuple[str, tuple[float, float]]] = set()
     template = str(manifest["assets"]["daily_template"])
     for day in sorted({timestamp[:10] for timestamp, _ in expected}):
@@ -67,12 +72,15 @@ def validate(
             timestamp = str(frame.get("time_utc") or "")
             for coordinate, index in coordinate_index.items():
                 key = (timestamp, coordinate)
-                values = {field: _number(frame.get(field, [None] * len(coordinates))[index]) for field in (
-                    "mtr_birds_km_h", "vid_birds_per_km2", "bird_u_ms", "bird_v_ms"
-                )}
+                values = {
+                    field: _number(frame.get(field, [None] * len(coordinates))[index])
+                    for field in ("mtr_birds_km_h", "vid_birds_per_km2", "bird_u_ms", "bird_v_ms")
+                }
                 if key not in expected:
                     if any(value is not None for value in values.values()):
-                        raise ValueError(f"daily asset contains an unexpected populated cell: {key}")
+                        raise ValueError(
+                            f"daily asset contains an unexpected populated cell: {key}"
+                        )
                     continue
                 if values != expected[key]:
                     raise ValueError(f"daily asset differs from model prediction: {key}")
@@ -111,17 +119,30 @@ def validate_partitions(
     _passed(training_fidelity, "training fidelity")
     _passed(model_validation, "model validation", key="release_passed")
     manifest = json.loads((output_root / "latest" / "reanalysis.json").read_text(encoding="utf-8"))
-    if manifest.get("data_available") is not True or manifest.get("release_status") != "published":
-        raise ValueError("Europe manifest is not a published, data-bearing release")
+    if (
+        manifest.get("data_available") is not True
+        or manifest.get("release_status") != "research-validated"
+    ):
+        raise ValueError("Europe manifest is not a validated research release")
     validation_asset = str(manifest.get("assets", {}).get("validation") or "")
-    if not validation_asset or validation_asset.startswith(("http://", "https://")) or not (output_root / validation_asset).is_file():
+    if (
+        not validation_asset
+        or validation_asset.startswith(("http://", "https://"))
+        or not (output_root / validation_asset).is_file()
+    ):
         raise ValueError("Europe manifest validation asset is missing")
     grid = json.loads((output_root / str(manifest["assets"]["grid"])).read_text(encoding="utf-8"))
-    coordinates = [(float(cell["longitude"]), float(cell["latitude"])) for cell in grid.get("cells", [])]
+    coordinates = [
+        (float(cell["longitude"]), float(cell["latitude"])) for cell in grid.get("cells", [])
+    ]
     coordinate_index = {coordinate: index for index, coordinate in enumerate(coordinates)}
     if len(coordinates) != len(coordinate_index):
         raise ValueError("published Europe grid has duplicate cells")
-    paths = sorted(path for path in predictions_root.glob("prediction_*.csv*") if path.is_file() and path.stat().st_size)
+    paths = sorted(
+        path
+        for path in predictions_root.glob("prediction_*.csv*")
+        if path.is_file() and path.stat().st_size
+    )
     if not paths:
         raise ValueError("Europe prediction partition root has no daily CSV files")
     row_count = 0
@@ -136,25 +157,31 @@ def validate_partitions(
                 key = (str(row["time_utc"]), (float(row["longitude"]), float(row["latitude"])))
                 if key in expected:
                     raise ValueError(f"duplicate prediction cell: {key}")
-                expected[key] = {field: _number(row.get(field)) for field in (
-                    "mtr_birds_km_h", "vid_birds_per_km2", "bird_u_ms", "bird_v_ms"
-                )}
+                expected[key] = {
+                    field: _number(row.get(field))
+                    for field in ("mtr_birds_km_h", "vid_birds_per_km2", "bird_u_ms", "bird_v_ms")
+                }
         days = {timestamp[:10] for timestamp, _ in expected}
         if len(days) != 1:
             raise ValueError(f"Europe prediction partition must contain exactly one day: {path}")
         day = next(iter(days))
-        daily = json.loads((output_root / template.replace("{date}", day)).read_text(encoding="utf-8"))
+        daily = json.loads(
+            (output_root / template.replace("{date}", day)).read_text(encoding="utf-8")
+        )
         seen: set[tuple[str, tuple[float, float]]] = set()
         for frame in daily.get("frames", []):
             timestamp = str(frame.get("time_utc") or "")
             for coordinate, index in coordinate_index.items():
                 key = (timestamp, coordinate)
-                values = {field: _number(frame.get(field, [None] * len(coordinates))[index]) for field in (
-                    "mtr_birds_km_h", "vid_birds_per_km2", "bird_u_ms", "bird_v_ms"
-                )}
+                values = {
+                    field: _number(frame.get(field, [None] * len(coordinates))[index])
+                    for field in ("mtr_birds_km_h", "vid_birds_per_km2", "bird_u_ms", "bird_v_ms")
+                }
                 if key not in expected:
                     if any(value is not None for value in values.values()):
-                        raise ValueError(f"daily asset contains an unexpected populated cell: {key}")
+                        raise ValueError(
+                            f"daily asset contains an unexpected populated cell: {key}"
+                        )
                     continue
                 if values != expected[key]:
                     raise ValueError(f"daily asset differs from model prediction: {key}")
@@ -181,7 +208,11 @@ def validate_partitions(
 
 
 def _open_prediction(path: Path):
-    return gzip.open(path, "rt", newline="") if path.suffix == ".gz" else path.open(newline="", encoding="utf-8")
+    return (
+        gzip.open(path, "rt", newline="")
+        if path.suffix == ".gz"
+        else path.open(newline="", encoding="utf-8")
+    )
 
 
 def _number(value: object) -> float | None:
@@ -204,10 +235,16 @@ if __name__ == "__main__":
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
     common = (
-        Path(args.output_root), Path(args.source_fidelity), Path(args.era5_fidelity),
-        Path(args.training_fidelity), Path(args.model_validation), Path(args.output),
+        Path(args.output_root),
+        Path(args.source_fidelity),
+        Path(args.era5_fidelity),
+        Path(args.training_fidelity),
+        Path(args.model_validation),
+        Path(args.output),
     )
-    result = validate_partitions(Path(args.predictions_root), *common) if args.predictions_root else validate(
-        Path(args.predictions), *common
+    result = (
+        validate_partitions(Path(args.predictions_root), *common)
+        if args.predictions_root
+        else validate(Path(args.predictions), *common)
     )
     print(json.dumps(result, indent=2))

@@ -34,6 +34,7 @@ for offset in $(seq 0 364); do
   if "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli era5 validate-day \
     --day "$day" \
     --raw-dir "$BIRDCAST_UK_ERA5_RAW_DIR" \
+    --radars "$BIRDCAST_UK_RADARS_FILE" \
     --feature-output "$features" >/dev/null; then
     continue
   fi
@@ -47,6 +48,7 @@ for offset in $(seq 0 364); do
   "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli era5 validate-day \
     --day "$day" \
     --raw-dir "$BIRDCAST_UK_ERA5_RAW_DIR" \
+    --radars "$BIRDCAST_UK_RADARS_FILE" \
     --feature-output "$features"
   repaired=$((repaired + 1))
 done
@@ -57,6 +59,7 @@ for offset in $(seq 0 364); do
   "$BIRDCAST_UK_PYTHON" -m birdcast_uk.cli era5 validate-day \
     --day "$day" \
     --raw-dir "$BIRDCAST_UK_ERA5_RAW_DIR" \
+    --radars "$BIRDCAST_UK_RADARS_FILE" \
     --feature-output "$BIRDCAST_UK_ERA5_FEATURE_DIR/era5_site_features_${stamp}.json" \
     >/dev/null
 done

@@ -1,19 +1,25 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+import hashlib
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
+import birdcast_uk.selected_model as selected_model
+from birdcast_uk.era5 import _point_in_boundary, _project_grid_point, _support_score
+from birdcast_uk.radars import BirdcastRadar
 from birdcast_uk.reanalysis import (
     ERA5_FEATURES,
     OPTIONAL_ERA5_FEATURES,
-    build_prediction_frames,
+    _normalise_row,
     compare_models,
     prepare_training_table,
-    publish_reanalysis,
     publish_wide_reanalysis,
     write_model_spec,
 )
+from birdcast_uk.selected_model import COMPONENT_SHA256, SELECTION_ID, qualified_dates
 
 
 def test_projection_transformer_is_reused() -> None:
@@ -36,8 +42,6 @@ def test_grid_projection_transformer_is_reused() -> None:
 
     assert era5._grid_projection_transformer.cache_info().misses == 1
     assert era5._grid_projection_transformer.cache_info().hits == 1
-from birdcast_uk.era5 import _point_in_boundary, _project_grid_point, _support_score
-from birdcast_uk.radars import BirdcastRadar
 
 
 def _joined_rows() -> list[dict[str, object]]:
@@ -76,17 +80,90 @@ def _joined_rows() -> list[dict[str, object]]:
     return rows
 
 
-def test_prepare_table_is_pulse_separated_and_has_no_time_predictor(tmp_path: Path) -> None:
+def _write_boundary(output_root: Path) -> None:
+    boundary = output_root / "assets" / "uk-boundary.geojson"
+    boundary.parent.mkdir(parents=True)
+    boundary.write_text(
+        json.dumps(
+            {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {"name": "test"},
+                        "geometry": {"type": "Point", "coordinates": [-1.0, 52.0]},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_component_authority(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Path:
+    path = tmp_path / "components.json"
+    payload = {
+        "schema_version": "uk-gamm-component-selection-v1",
+        "selection_id": SELECTION_ID,
+        "components": {
+            pulse: {
+                target: {
+                    "model_rds": f"/private/{pulse}-{target}.rds",
+                    "sha256": COMPONENT_SHA256[pulse][target],
+                    "prediction_transform": "identity",
+                    "uncertainty_scale": "model_linear_predictor_standard_error",
+                }
+                for target in COMPONENT_SHA256[pulse]
+            }
+            for pulse in COMPONENT_SHA256
+        },
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(
+        selected_model,
+        "COMPONENT_MANIFEST_SHA256",
+        hashlib.sha256(path.read_bytes()).hexdigest(),
+    )
+    return path
+
+
+def test_training_row_preserves_zero_primary_coordinates() -> None:
+    row = _joined_rows()[0]
+    row.update(
+        {
+            "latitude": 0.0,
+            "longitude": 0.0,
+            "observed_latitude": 51.5,
+            "observed_longitude": -1.5,
+        }
+    )
+
+    normalised = _normalise_row(row, min_profiles=3)
+
+    assert normalised is not None
+    assert normalised["latitude"] == 0.0
+    assert normalised["longitude"] == 0.0
+
+
+def test_prepare_table_defers_derived_time_terms_to_model_spec(tmp_path: Path) -> None:
     joined = tmp_path / "joined.json"
     joined.write_text(json.dumps({"rows": _joined_rows()}), encoding="utf-8")
 
-    result = prepare_training_table(joined_features=joined, output=tmp_path / "table.json", window_days=365)
+    result = prepare_training_table(
+        joined_features=joined, output=tmp_path / "table.json", window_days=365
+    )
     table = json.loads((tmp_path / "table.json").read_text(encoding="utf-8"))
-    spec = write_model_spec(tmp_path / "gamm.json", table=tmp_path / "table.json", model_family="gamm")
+    spec = write_model_spec(
+        tmp_path / "gamm.json", table=tmp_path / "table.json", model_family="gamm"
+    )
 
     assert result["row_count"] == 48
     assert table["pulse_counts"] == {"lp": 24, "sp": 24}
-    assert table["model_time_terms"] == "none"
+    assert table["model_time_terms"] == "configured_in_model_spec"
+    assert table["available_derived_time_terms"] == ["day_of_year", "utc_hour"]
     assert "timestamp" not in spec["predictors"]
     assert "u_850_ms" in table["feature_columns"]
     assert table["feature_ranges"]["u_850_ms"] == {"lower": 4.0, "upper": 4.0}
@@ -192,7 +269,15 @@ def _metrics(rmse: float, precision: float = 0.8, recall: float = 0.8) -> dict[s
     rows = []
     for pulse in ("lp", "sp"):
         for target in ("mtr_birds_km_h", "vid_birds_per_km2"):
-            rows.append({"pulse": pulse, "target": target, "rmse": rmse, "top_decile_precision": precision, "top_decile_recall": recall})
+            rows.append(
+                {
+                    "pulse": pulse,
+                    "target": target,
+                    "rmse": rmse,
+                    "top_decile_precision": precision,
+                    "top_decile_recall": recall,
+                }
+            )
         for target in ("bird_u_ms", "bird_v_ms"):
             rows.append({"pulse": pulse, "target": target, "rmse": rmse})
     return {"metrics": rows}
@@ -204,7 +289,9 @@ def test_model_comparison_requires_all_pulses_targets_and_vectors(tmp_path: Path
     gamm.write_text(json.dumps(_metrics(10.0)), encoding="utf-8")
     xgb.write_text(json.dumps(_metrics(8.5, 0.85, 0.85)), encoding="utf-8")
 
-    result = compare_models(gamm_metrics=gamm, xgboost_metrics=xgb, output=tmp_path / "selection.json")
+    result = compare_models(
+        gamm_metrics=gamm, xgboost_metrics=xgb, output=tmp_path / "selection.json"
+    )
 
     assert result["selected_model_family"] == "xgboost"
 
@@ -223,43 +310,29 @@ def test_model_comparison_keeps_gamm_when_blocked_time_is_worse(tmp_path: Path) 
     gamm.write_text(json.dumps({"metrics": spatial_gamm + temporal_gamm}), encoding="utf-8")
     xgb.write_text(json.dumps({"metrics": spatial_xgb + temporal_xgb}), encoding="utf-8")
 
-    result = compare_models(gamm_metrics=gamm, xgboost_metrics=xgb, output=tmp_path / "selection.json")
+    result = compare_models(
+        gamm_metrics=gamm, xgboost_metrics=xgb, output=tmp_path / "selection.json"
+    )
 
     assert result["temporal_validation_required"] is True
     assert result["selected_model_family"] == "gamm"
 
 
-def test_publish_writes_immutable_daily_assets_before_latest_manifest(tmp_path: Path) -> None:
+def test_publish_wide_streams_complete_daily_pulse_assets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     comparison = tmp_path / "comparison.json"
-    comparison.write_text(json.dumps({"selected_model_family": "gamm"}), encoding="utf-8")
-    predictions = tmp_path / "predictions.json"
-    predictions.write_text(
+    comparison.write_text(
         json.dumps(
             {
-                "run_id": "20250701T0000Z",
-                "grid": {"longitude_step": 0.25, "latitude_step": 0.25},
-                "frames": [
-                    {
-                        "model_family": "gamm", "pulse": "lp", "time_utc": "2025-07-01T00:00:00Z",
-                        "cells": [{"longitude": -0.5, "latitude": 51.5, "mtr_birds_km_h": 2.0, "vid_birds_per_km2": 1.0, "bird_u_ms": 1.0, "bird_v_ms": 0.0, "support": 0.9}],
-                    }
-                ],
+                "selected_model_family": "gamm",
+                "selection_id": SELECTION_ID,
+                "temporal_terms": ["day_of_year", "utc_hour", "seasonal_diurnal"],
             }
         ),
         encoding="utf-8",
     )
-
-    latest = publish_reanalysis(predictions=predictions, comparison=comparison, output_root=tmp_path / "artifacts")
-
-    assert latest["assets"]["lp"]["2025-07-01"].endswith("daily/lp/20250701.json")
-    assert latest["assets"]["boundary"] == "assets/uk-boundary.geojson"
-    assert (tmp_path / "artifacts" / latest["assets"]["lp"]["2025-07-01"]).is_file()
-    assert (tmp_path / "artifacts" / "latest" / "gam-era5.json").is_file()
-
-
-def test_publish_wide_streams_complete_daily_pulse_assets(tmp_path: Path) -> None:
-    comparison = tmp_path / "comparison.json"
-    comparison.write_text(json.dumps({"selected_model_family": "gamm"}), encoding="utf-8")
     header = (
         "time_utc,longitude,latitude,support,mtr_birds_km_h,"
         "vid_birds_per_km2,bird_u_ms,bird_v_ms,"
@@ -267,48 +340,124 @@ def test_publish_wide_streams_complete_daily_pulse_assets(tmp_path: Path) -> Non
         "uncertainty_bird_u_ms,uncertainty_bird_v_ms\n"
     )
     rows = "".join(
-        f"2025-07-01T{hour:02d}:00:00Z,-0.5,51.5,0.8,2.0,1.0,1.0,0.5,0.2,0.1,0.1,0.1\n"
+        f"{day}T{hour:02d}:00:00Z,-0.5,51.5,0.8,2.0,1.0,1.0,0.5,0.2,0.1,0.1,0.1\n"
+        for day in qualified_dates()
         for hour in range(24)
     )
     lp_csv = tmp_path / "lp.csv"
     sp_csv = tmp_path / "sp.csv"
     lp_csv.write_text(header + rows, encoding="utf-8")
     sp_csv.write_text(header + rows, encoding="utf-8")
+    component_manifest = _write_component_authority(tmp_path, monkeypatch)
 
+    output_root = tmp_path / "artifacts"
+    _write_boundary(output_root)
     latest = publish_wide_reanalysis(
         lp_csv=lp_csv,
         sp_csv=sp_csv,
         comparison=comparison,
-        output_root=tmp_path / "artifacts",
+        output_root=output_root,
         model_family="gamm",
+        component_manifest=component_manifest,
     )
 
     assert latest["data_available"] is True
     assert latest["grid"]["cell_count"] == 1
-    assert latest["first_time_utc"] == "2025-07-01T00:00:00Z"
-    assert latest["latest_time_utc"] == "2025-07-01T23:00:00Z"
-    lp_asset = tmp_path / "artifacts" / latest["assets"]["lp"]["2025-07-01"]
-    sp_asset = tmp_path / "artifacts" / latest["assets"]["sp"]["2025-07-01"]
+    assert latest["first_time_utc"] == "2025-07-14T00:00:00Z"
+    assert latest["latest_time_utc"] == "2026-07-13T23:00:00Z"
+    lp_asset = tmp_path / "artifacts" / latest["assets"]["lp"]["2025-07-14"]
+    sp_asset = tmp_path / "artifacts" / latest["assets"]["sp"]["2025-07-14"]
     assert len(json.loads(lp_asset.read_text(encoding="utf-8"))["frames"]) == 24
     assert len(json.loads(sp_asset.read_text(encoding="utf-8"))["frames"]) == 24
+    assert latest["selection_id"] == SELECTION_ID
+    assert latest["temporal_terms"] == ["day_of_year", "utc_hour", "seasonal_diurnal"]
+    assert "cyclic day-of-year" in latest["interpretation"]
+    assert (
+        latest["component_provenance"]["components"]["sp"]["bird_u_ms"]["sha256"]
+        == COMPONENT_SHA256["sp"]["bird_u_ms"]
+    )
+    source = json.loads((tmp_path / "artifacts" / latest["source"]).read_text(encoding="utf-8"))
+    assert "/private/" not in json.dumps(source)
 
 
-def test_frames_require_support_and_merge_all_model_targets(tmp_path: Path) -> None:
-    source = tmp_path / "predictions.csv"
-    source.write_text(
-        "time_utc,longitude,latitude,support,pulse,target,value,uncertainty\n"
-        "2025-07-01T00:00:00Z,-0.5,51.5,0.8,lp,mtr_birds_km_h,2.0,0.2\n"
-        "2025-07-01T00:00:00Z,-0.5,51.5,0.8,lp,vid_birds_per_km2,1.0,0.1\n"
-        "2025-07-01T00:00:00Z,-0.5,51.5,0.8,lp,bird_u_ms,1.0,0.1\n"
-        "2025-07-01T00:00:00Z,-0.5,51.5,0.8,lp,bird_v_ms,0.5,0.1\n",
+def test_publish_wide_rejects_lp_sp_date_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    comparison = tmp_path / "comparison.json"
+    comparison.write_text(
+        json.dumps({"selected_model_family": "gamm", "selection_id": SELECTION_ID}),
         encoding="utf-8",
     )
+    header = (
+        "time_utc,longitude,latitude,support,mtr_birds_km_h,vid_birds_per_km2,bird_u_ms,bird_v_ms\n"
+    )
+    lp_rows = "".join(
+        f"2025-07-01T{hour:02d}:00:00Z,-0.5,51.5,0.8,2,1,1,.5\n" for hour in range(24)
+    )
+    sp_rows = lp_rows.replace("2025-07-01", "2025-07-02")
+    lp_csv = tmp_path / "lp.csv"
+    sp_csv = tmp_path / "sp.csv"
+    lp_csv.write_text(header + lp_rows, encoding="utf-8")
+    sp_csv.write_text(header + sp_rows, encoding="utf-8")
+    component_manifest = _write_component_authority(tmp_path, monkeypatch)
 
-    result = build_prediction_frames(predictions_csv=source, output=tmp_path / "frames.json", model_family="gamm")
-    payload = json.loads((tmp_path / "frames.json").read_text(encoding="utf-8"))
+    with pytest.raises(ValueError, match="prediction dates differ"):
+        publish_wide_reanalysis(
+            lp_csv=lp_csv,
+            sp_csv=sp_csv,
+            comparison=comparison,
+            output_root=tmp_path / "artifacts",
+            model_family="gamm",
+            component_manifest=component_manifest,
+        )
 
-    assert result["frame_count"] == 1
-    assert payload["frames"][0]["cells"][0]["support"] == 0.8
+
+def test_publish_wide_uses_null_for_unavailable_uncertainty(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    comparison = tmp_path / "comparison.json"
+    comparison.write_text(
+        json.dumps({"selected_model_family": "gamm", "selection_id": SELECTION_ID}),
+        encoding="utf-8",
+    )
+    header = (
+        "time_utc,longitude,latitude,support,mtr_birds_km_h,vid_birds_per_km2,bird_u_ms,bird_v_ms\n"
+    )
+    rows = "".join(
+        f"{day}T{hour:02d}:00:00Z,-0.5,51.5,0.8,2,1,1,.5\n"
+        for day in qualified_dates()
+        for hour in range(24)
+    )
+    lp_csv = tmp_path / "lp.csv"
+    sp_csv = tmp_path / "sp.csv"
+    lp_csv.write_text(header + rows, encoding="utf-8")
+    sp_csv.write_text(header + rows, encoding="utf-8")
+    component_manifest = _write_component_authority(tmp_path, monkeypatch)
+
+    output_root = tmp_path / "artifacts"
+    _write_boundary(output_root)
+    latest = publish_wide_reanalysis(
+        lp_csv=lp_csv,
+        sp_csv=sp_csv,
+        comparison=comparison,
+        output_root=output_root,
+        model_family="gamm",
+        component_manifest=component_manifest,
+    )
+    daily = json.loads(
+        (tmp_path / "artifacts" / latest["assets"]["lp"]["2025-07-14"]).read_text(encoding="utf-8")
+    )
+
+    uncertainty = daily["frames"][0]["cells"][0]["uncertainty_by_target"]
+    assert set(uncertainty) == {
+        "mtr_birds_km_h",
+        "vid_birds_per_km2",
+        "bird_u_ms",
+        "bird_v_ms",
+    }
+    assert set(uncertainty.values()) == {None}
 
 
 def test_grid_support_penalises_distance_and_out_of_range_weather() -> None:

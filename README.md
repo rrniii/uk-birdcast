@@ -1,146 +1,143 @@
 # Live UK Bird Maps
 
-Live UK Bird Maps publishes historical bird-passage observations and
-reanalyses from the production UK bioRad VPTS archive. It is a standalone
-consumer of immutable objects and does not run or modify the underlying
-radar-data production pipeline.
+Live UK Bird Maps publishes retrospective bird-passage observations and a
+historical weather-linked reanalysis from the production UK bioRad VPTS
+archive. It reads source archives without modifying or republishing them.
 
-The public product is intentionally historical. Radar delivery is delayed, so
-forecast generation and ECMWF Open Data retrieval are dormant. ERA5 is retained
-as an independent historical weather flow for attribution and model analysis.
+## Product status
+
+| Product | Operational state | Interpretation |
+| --- | --- | --- |
+| UK observed | Historical only | Radar-derived passage indices; not population estimates |
+| UK modelled | Historical reanalysis only | Selected UK GAMM components; not a forecast or external absolute calibration |
+| UK forecast | Unavailable, fail-closed | Forecast and ECMWF production remain disabled |
+| Europe absolute GAMM | Withheld | Failed external transfer gates |
+| Europe relative activity | Research product | Radar-local percentile activity and flow direction, not absolute intensity |
+
+The browser is a consumer of immutable public objects. Heavy VPTS processing,
+ERA5 retrieval, model execution, validation, and publication run on JASMIN
+batch/GWS. The cloud host has no source-data or model-training role.
+
+## Scientific contract
+
+For altitude-layer width `dh` in km and bird density `dens` in birds km-3:
+
+```text
+VID = sum(dens * dh)                  birds km-2 per profile
+```
+
+The primary altitude interval is 200-4000 m. VID is a passage index, not an
+absolute number of birds. LP and SP have different sampling characteristics;
+they are retained as separate products and are never added together.
+
+## Selected UK model
+
+Production reanalysis is pinned to selection
+`uk-gamm-heldout-v2-sp-vector-925`:
+
+| Component | Selected model |
+| --- | --- |
+| LP and SP MTR/VID | Selected 850 hPa GAMM |
+| LP bird `u`/`v` | Selected 850 hPa control GAMM, with weak-transfer warning |
+| SP bird `u`/`v` | 925 hPa wind-interaction GAMM |
+
+The GAMMs learn cyclic day-of-year and UTC-hour smooths plus their cyclic
+seasonal-diurnal interaction. They do not apply a hard-coded season, night,
+twilight, sunrise, sunset, or migration-window filter. Training is all-hour,
+pulse-separated, complete-case across the declared ERA5 predictors, and uses
+projected spatial coordinates.
+
+The component decision and exact reviewed hashes are defined once in
+[`src/birdcast_uk/selected_model.py`](src/birdcast_uk/selected_model.py), with
+operator-facing metadata in
+[`configs/gamm_uk_holdout_component_publication.json`](configs/gamm_uk_holdout_component_publication.json).
+The evidence window was 14 July 2025
+through 13 July 2026; publication coverage is separately manifest-driven and
+must pass exact date, 24-hour, grid, and LP/SP reconciliation. See
+[`reports/uk_gamm_selection_2025-07-14_to_2026-07-13.md`](reports/uk_gamm_selection_2025-07-14_to_2026-07-13.md).
+
+The family-level GAMM/XGBoost comparison remains a research benchmark. It is
+not allowed to replace the selected production component manifest.
+
+## Data flow
+
+1. Freeze the VPTS inventory and ERA5 inputs, including source identities and
+   checksums.
+2. Build pulse-separated hourly observations and complete ERA5 features on
+   JASMIN.
+3. Run the selected component models for an explicitly declared contiguous
+   date range.
+4. Reconcile every day, canonical UTC hour, fixed-grid cell, required target,
+   and LP/SP product.
+5. Build only the `historical` and `gam-era5` public product manifests and
+   their referenced assets.
+6. Hash the publication plan, upload immutable assets, then promote the
+   `latest/*.json` manifests last.
+7. Verify the deployed SHA, public manifests, referenced assets, browser route,
+   and disabled forecast services.
+
+The production entry point is
+[`deploy/slurm/submit-selected-reanalysis.sh`](deploy/slurm/submit-selected-reanalysis.sh).
+The detailed release and rollback procedure is in [DEPLOYMENT.md](DEPLOYMENT.md).
+
+## Why forecasting is unavailable
+
+Radar observations arrive with variable latency. The retained forecast code
+now timestamps and rejects stale radars independently, but there is not yet an
+accepted end-to-end availability, completeness, and latency contract for the
+operational feed. Missing observations must not become zero density or calm
+wind, and a technically successful run is not evidence that coverage is fit
+for an operational forecast.
+
+Forecast and ECMWF production therefore fail closed: their timers remain
+disabled and their services additionally require the absent
+`/etc/birdcast-uk/forecast-enabled` sentinel. Re-enabling them requires the
+acceptance criteria in [DEPLOYMENT.md](DEPLOYMENT.md), not merely a successful
+test invocation or downloaded ECMWF cycle.
 
 ## Archive access and Aloft comparisons
 
-UK Bird Maps reads the existing UK VPTS CSV archive directly from the JASMIN
-Object Store. Aloft VPTS are read directly from the published Aloft bucket.
-An individual VP is selected in memory from an existing VPTS object; the project
-does not write new VP or VPTS files, recalculate a replacement archive, or
-republish source data.
-
-Discover daily Aloft files for a known radar and period:
+UK Bird Maps reads existing UK VPTS CSV objects and streams published Aloft
+VPTS. An individual VP is selected in memory. The project does not create a
+replacement VP/VPTS/PVOL archive.
 
 ```bash
 birdcast-uk archive aloft-coverage \
   --radar seang --start-day 2020-08-29 --end-day 2020-08-30 \
   --source baltrad --output /path/to/aloft-coverage.json
-```
 
-Create the explicit UK-to-Aloft comparison crosswalk:
-
-```bash
 birdcast-uk archive crosswalk \
   --uk-radars data/historical-input/radars.json \
   --mappings configs/aloft_crosswalk.example.json \
   --output /path/to/crosswalk.json
 ```
 
-The crosswalk intentionally starts empty. Add a pair only after confirming that
-the two identifiers represent the same physical radar, or classify it as a
-documented nearby-radar comparison. The comparison command consumes two
-existing daily VPTS URLs and writes only a compact metrics/provenance report.
-Build the browser-facing index from that explicit crosswalk and a directory of
-such reports:
-
-```bash
-birdcast-uk archive comparison-index \
-  --crosswalk /path/to/crosswalk.json \
-  --reports-dir /path/to/comparison-reports \
-  --output /path/to/archive/comparisons/latest.json
-```
-
-The dashboard reads this optional index only. It never downloads, rewrites, or
-publishes profile rows from either archive.
-
-## Data flow
-
-1. Read VPTS products from the public Object Store catalogue under
-   `ukmo-nimrod/vpts/current_ci_le4/`.
-2. Run the archive-scale VPTS analysis on JASMIN batch compute, keeping LP and SP
-   as separate products.
-3. Stage the compact aggregate package for the cloud web host.
-4. Build yearly radar-day JSON, archive summaries, scientific SVG plots, and a
-   Natural Earth 1:10m coastline reference.
-5. Publish immutable historical assets before atomically updating
-   `birdcast-uk/latest/historical.json`.
-6. Join historical radar summaries to the standalone Earthkit/ERA5 flow.
-7. Fit an all-hour, pulse-separated ERA5 GAMM and an identical-predictor XGBoost benchmark on JASMIN batch compute.
-8. Select one model family using held-out-radar performance, publish hourly
-   native-ERA5 flow frames across the union of physical radar ranges on land
-   and water, and compare aggregate activity with licensed BTO products.
-
-The first modelled release covers the latest complete 365-day overlap between
-the VPTS archive and ERA5. Published manifests record the exact input-file,
-profile, and radar-hour counts for each run; the public interface does not
-claim a fixed archive total.
-
-## Scientific contract
-
-For altitude layer width `dh` in km and density `dens` in birds km-3:
-
-```text
-VID = sum(dens * dh)                  birds km-2 per profile
-```
-
-The primary altitude interval is 200-4000 m. The web map and plots use VID as a
-passage index. It is not an absolute count of individuals or a population
-estimate. LP is the default product; LP and SP are never added together.
-
-## Modelled flow reanalysis
-
-The Modelled migration tab is historical only. It uses the latest complete 365-day
-overlap between VPTS and ERA5, at hourly UTC cadence. The training contract
-contains no timestamp, hour-of-day, season, daylight, twilight, sunrise or
-sunset predictor. It fits separate LP/SP models for MTR, VID and bird ground
-velocity components. A GAMM (`mgcv::bam`) is the primary interpretable model;
-XGBoost uses the same ERA5 and spatial inputs as a benchmark. XGBoost is
-published only when it improves every held-out-radar MTR/VID comparison by at
-least 10%, improves top-decile event detection, and does not worsen vectors.
-
-The JASMIN entrypoint is `deploy/slurm/submit-historical-reanalysis.sh`. It
-runs GAMM and XGBoost as independent Slurm jobs before model selection so the
-one-CPU standard QoS does not serialize the candidate fits. The national ERA5
-grid input must carry a support score for every cell within at least one
-radar's validated physical range. Land boundaries are never used to mask,
-clip, or score the product. Unsupported extrapolation is faded in the web map
-rather than hidden or presented equally.
-Training rows must be complete for all nine ERA5 predictors. The annual
-Earthkit backfill uses at most two concurrent calendar-month requests, splits
-their responses into atomic daily files, and is followed by an exact 365-day
-radar-hour reconciliation gate; no join or model fit can run from a partial
-weather archive.
+Only explicitly reviewed physical-radar or documented nearby-radar mappings
+are compared. Public comparison outputs contain compact aggregate metrics and
+provenance, never profile rows.
 
 ## Development
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e ".[birdcast,dev]"
-.venv/bin/pytest
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
+.venv/bin/pytest -q
 ```
 
-## Historical build
+`main` is the single integration and release branch. Use short-lived topic
+branches and deploy an exact reviewed commit from `main`; see
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
-```bash
-birdcast-uk radars from-pvol-catalog --output data/radars.json
+## Routes and Europe workflow
 
-birdcast-uk historical build \
-  --source-dir /path/to/current_ci_le4_full \
-  --output-root data/static-artifacts \
-  --radars data/radars.json
-```
+The canonical UK route is `/live-uk-bird-maps/`; `/birdcast-uk/` is a permanent
+compatibility redirect. Public data remain under the `birdcast-uk/` Object
+Store prefix.
 
-The source directory must contain `analysis_summary.json`, `daily_totals.csv`,
-`network_annual_seasonal_totals.csv`, `phenology.csv`, and `coverage.csv`.
-Deployment files for the JASMIN Cloud host are under `deploy/`.
-
-The canonical web route is `/live-uk-bird-maps/`; `/birdcast-uk/` is retained
-as a permanent compatibility redirect. The Object Store prefix remains
-`birdcast-uk/`.
-
-## Europe branch
-
-The `birdcast_euro` branch adds a separate Europe-wide, source-aware GAMM and
-dashboard. Aloft BALTRAD VPTS are streamed directly from the public object
-store; only provenance-linked hourly Parquet is retained. The UK contribution
-is SP-only and continues to read the immutable JASMIN archive. See
-[`docs/EUROPE_GAMM.md`](docs/EUROPE_GAMM.md) for the complete workflow,
-release gates and JASMIN commands.
+The Europe research workflow is part of `main`, not a parallel branch. It
+streams Aloft BALTRAD inputs, reads UK SP data immutably, and maintains
+independent validation and publication gates. See
+[`docs/EUROPE_GAMM.md`](docs/EUROPE_GAMM.md) and
+[`docs/europe_gamm_validation_status.md`](docs/europe_gamm_validation_status.md).

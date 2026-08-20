@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import csv
-from datetime import date, datetime, timedelta, timezone
-from concurrent.futures import ThreadPoolExecutor
 import email.utils
+import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import shutil
-from tempfile import TemporaryDirectory
 import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Callable, Iterator
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -24,7 +25,6 @@ from .config import (
     DEFAULT_PUBLIC_BASE_URL,
     UKMO_VPTS_CATALOG_URL,
     VPTS_BOOTSTRAP_LOOKBACK_DAYS,
-    VPTS_FILE_SUFFIXES,
     VPTS_MAX_CATALOG_AGE_HOURS,
     VPTS_MAX_INCREMENT_DAYS,
     VPTS_PULSE_POLICY,
@@ -44,7 +44,11 @@ def load_records(path: Path) -> list[dict[str, Any]]:
     suffix = path.suffix.lower()
     if suffix == ".json":
         payload = json.loads(path.read_text(encoding="utf-8"))
-        rows = payload.get("items", payload.get("records", payload)) if isinstance(payload, dict) else payload
+        rows = (
+            payload.get("items", payload.get("records", payload))
+            if isinstance(payload, dict)
+            else payload
+        )
         if not isinstance(rows, list):
             raise ValueError("JSON manifest must be a list or contain items/records")
         return [dict(row) for row in rows]
@@ -235,21 +239,15 @@ def build_catalog_inventory(
             missing_target_radars.append(radar)
 
         selected_etags = {
-            str(record["key"]): str(record.get("etag") or "")
-            for record in selected_records
+            str(record["key"]): str(record.get("etag") or "") for record in selected_records
         }
         previous_etags = {
-            str(key): str(value)
-            for key, value in dict(previous_state.get("objects") or {}).items()
+            str(key): str(value) for key, value in dict(previous_state.get("objects") or {}).items()
         }
         etags_changed = any(
             previous_etags.get(key) != value for key, value in selected_etags.items()
         )
-        changed = (
-            previous_source_date != target_source_date
-            or etags_changed
-            or not previous_state
-        )
+        changed = previous_source_date != target_source_date or etags_changed or not previous_state
         if changed:
             changed_radar_count += 1
             records.extend(selected_records)
@@ -263,7 +261,9 @@ def build_catalog_inventory(
             {
                 "radar": radar,
                 "catalog_last_date": _day_stamp(last_source_date),
-                "cursor_source_date": _day_stamp(previous_source_date) if previous_source_date else None,
+                "cursor_source_date": _day_stamp(previous_source_date)
+                if previous_source_date
+                else None,
                 "proposed_source_date": target_stamp,
                 "changed": changed,
                 "selected_file_count": len(selected_records),
@@ -271,9 +271,7 @@ def build_catalog_inventory(
         )
 
     if missing_target_radars:
-        errors.append(
-            "missing_target_csv: " + ",".join(sorted(missing_target_radars))
-        )
+        errors.append("missing_target_csv: " + ",".join(sorted(missing_target_radars)))
     expected_radar_count = int(catalog.get("radar_count") or len(catalog_radars))
     if expected_radar_count != len(catalog_radars):
         errors.append(
@@ -367,15 +365,20 @@ def build_historical_inventory(
     if age_hours < -1.0:
         errors.append("catalog_generated_in_future")
     if age_hours > max_catalog_age_hours:
-        errors.append(f"stale_catalog: age_hours={age_hours:.2f} limit_hours={max_catalog_age_hours:.2f}")
+        errors.append(
+            f"stale_catalog: age_hours={age_hours:.2f} limit_hours={max_catalog_age_hours:.2f}"
+        )
 
     catalog_last_days = [_parse_day(str(row["last_date"])) for row in catalog_radars]
     latest_common_source_day = min(catalog_last_days)
-    selected_end = _parse_day(end_date) if end_date else latest_common_source_day - timedelta(days=1)
-    if selected_end > latest_common_source_day:
+    selected_end = (
+        _parse_day(end_date) if end_date else latest_common_source_day - timedelta(days=1)
+    )
+    if selected_end >= latest_common_source_day:
         errors.append(
-            f"requested_end_after_catalog: end={_day_stamp(selected_end)} "
-            f"latest_common={_day_stamp(latest_common_source_day)}"
+            f"requested_end_not_complete: end={_day_stamp(selected_end)} "
+            f"latest_common={_day_stamp(latest_common_source_day)}; "
+            "the end day must precede the latest common source day"
         )
     selected_start = selected_end - timedelta(days=days - 1)
     tasks = [
@@ -445,7 +448,9 @@ def build_historical_inventory(
         "catalog_radar_count": len(catalog_radars),
         "record_count": len(records),
         "record_day_count": len(record_days),
-        "records": sorted(records, key=lambda item: (str(item["radar"]), str(item["date"]), str(item["pulse"]))),
+        "records": sorted(
+            records, key=lambda item: (str(item["radar"]), str(item["date"]), str(item["pulse"]))
+        ),
         "radar_coverage": coverage,
         "errors": errors,
     }
@@ -474,9 +479,7 @@ def iter_vpts_record_batches_from_inventory(
 ) -> Iterator[list[dict[str, Any]]]:
     inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
     if inventory.get("ok") is not True:
-        raise ValueError(
-            "VPTS inventory is unhealthy: " + "; ".join(inventory.get("errors") or [])
-        )
+        raise ValueError("VPTS inventory is unhealthy: " + "; ".join(inventory.get("errors") or []))
     records = inventory.get("records", [])
     if not isinstance(records, list):
         raise ValueError("VPTS inventory must contain a records list")
@@ -495,7 +498,13 @@ def iter_vpts_record_batches_from_inventory(
                 / str(record.get("radar") or "unknown")
                 / Path(str(record.get("key") or f"vpts_{index}.csv")).name
             )
-            download_public_object(public_url, local)
+            download_public_object(
+                public_url,
+                local,
+                expected_size=int(record.get("size") or 0) or None,
+                expected_etag=str(record.get("etag") or "") or None,
+                expected_sha256=str(record.get("sha256") or "") or None,
+            )
             batch: list[dict[str, Any]] = []
             for row in load_records(local):
                 enriched = dict(row)
@@ -508,6 +517,8 @@ def iter_vpts_record_batches_from_inventory(
                 enriched["source_url"] = public_url
                 enriched["source_key"] = str(record.get("key") or "")
                 enriched["source_etag"] = str(record.get("etag") or "")
+                enriched["source_size"] = int(record.get("size") or local.stat().st_size)
+                enriched["source_sha256"] = str(record.get("sha256") or "")
                 batch.append(enriched)
             yield batch
 
@@ -518,22 +529,49 @@ def download_public_object(
     *,
     timeout_seconds: float = 120.0,
     retries: int = 3,
+    expected_size: int | None = None,
+    expected_etag: str | None = None,
+    expected_sha256: str | None = None,
 ) -> Path:
     output.parent.mkdir(parents=True, exist_ok=True)
     parsed = urlparse(url)
+    temporary = output.with_name(f".{output.name}.part")
     if parsed.scheme in {"", "file"}:
         source = Path(parsed.path if parsed.scheme == "file" else url)
-        shutil.copyfile(source, output)
+        temporary.unlink(missing_ok=True)
+        try:
+            shutil.copyfile(source, temporary)
+            _verify_download(
+                temporary,
+                expected_size=expected_size,
+                expected_sha256=expected_sha256,
+            )
+            os.replace(temporary, output)
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            raise
         return output
     if retries < 1:
         raise ValueError("retries must be at least one")
     request = Request(url, headers={"User-Agent": "birdcast-uk/0.4"})
-    temporary = output.with_name(f".{output.name}.part")
     last_error: OSError | None = None
     for attempt in range(retries):
         try:
-            with urlopen(request, timeout=timeout_seconds) as response, temporary.open("wb") as handle:
+            with (
+                urlopen(request, timeout=timeout_seconds) as response,
+                temporary.open("wb") as handle,
+            ):
+                response_etag = str(response.headers.get("ETag") or "").strip('"')
                 shutil.copyfileobj(response, handle)
+            _verify_download(
+                temporary,
+                expected_size=expected_size,
+                expected_sha256=expected_sha256,
+            )
+            if expected_etag and response_etag != expected_etag.strip('"'):
+                raise OSError(
+                    f"download ETag changed: expected {expected_etag!r}, got {response_etag!r}"
+                )
             os.replace(temporary, output)
             return output
         except (HTTPError, URLError, TimeoutError, OSError) as exc:
@@ -543,6 +581,24 @@ def download_public_object(
                 time.sleep(2**attempt)
     assert last_error is not None
     raise last_error
+
+
+def _verify_download(
+    path: Path,
+    *,
+    expected_size: int | None,
+    expected_sha256: str | None,
+) -> None:
+    if expected_size is not None and path.stat().st_size != expected_size:
+        raise OSError(f"download size changed: expected {expected_size}, got {path.stat().st_size}")
+    if expected_sha256:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for block in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(block)
+        actual = digest.hexdigest()
+        if actual.lower() != expected_sha256.lower():
+            raise OSError(f"download SHA-256 mismatch: expected {expected_sha256}, got {actual}")
 
 
 def commit_inventory_cursor(inventory_path: Path, cursor_path: Path) -> dict[str, Any]:

@@ -8,13 +8,18 @@ import pytest
 np = pytest.importorskip("numpy")
 pytest.importorskip("pyproj")
 
-from birdcast_uk.ecmwf import normalise_cycle, open_data_requests
-from birdcast_uk.forecast import _prefix_asset
-from birdcast_uk.grid import canonical_grid
-from birdcast_uk.state_space import (
+# Optional numerical dependencies must be checked before importing these modules.
+from birdcast_uk.ecmwf import normalise_cycle, open_data_requests  # noqa: E402
+from birdcast_uk.forecast import (  # noqa: E402
+    _prefix_asset,
+    _radar_observations,
+    _weather_winds,
+)
+from birdcast_uk.grid import canonical_grid  # noqa: E402
+from birdcast_uk.state_space import (  # noqa: E402
     RadarObservation,
-    assimilate_localised,
     advect_ensemble,
+    assimilate_localised,
     initialise_ensemble,
     operational_mode,
 )
@@ -86,3 +91,35 @@ def test_latest_manifest_prefixes_frame_assets() -> None:
     assert _prefix_asset(prefix, ["frames/a.json"]) == [
         "archive/forecast/20260718T0000Z/frames/a.json"
     ]
+
+
+def test_radar_observations_reject_stale_sites_individually() -> None:
+    grid = canonical_grid()
+    radar = type("Radar", (), {"longitude": -0.5303, "latitude": 51.6894})()
+    rows = [
+        {
+            "radar": "fresh",
+            "time_utc": "2026-07-18T00:00:00Z",
+            "mean_vid_birds_per_km2": 1.0,
+        },
+        {
+            "radar": "stale",
+            "time_utc": "2026-07-17T00:00:00Z",
+            "mean_vid_birds_per_km2": 2.0,
+        },
+    ]
+
+    observations = _radar_observations(
+        rows,
+        {"fresh": radar, "stale": radar},
+        grid,
+        analysis_time=datetime(2026, 7, 18, 6, tzinfo=timezone.utc),
+    )
+
+    assert len(observations) == 1
+    assert observations[0].age_hours == 6
+
+
+def test_weather_winds_fails_closed_without_ecmwf() -> None:
+    with pytest.raises(ValueError, match="complete ECMWF manifest"):
+        _weather_winds(None, canonical_grid())

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import math
 from typing import Iterable
 
 
@@ -16,6 +16,8 @@ class RadarObservation:
     observation_variance: float
     u_ms: float
     v_ms: float
+    observed_at: datetime | None = None
+    age_hours: float = math.inf
 
 
 def radar_age_hours(analysis_time: datetime, observation_time: datetime | None) -> float:
@@ -141,7 +143,9 @@ def process_step(
     return np.maximum(advected * np.exp(rate + process_noise), 0.0).astype("float32")
 
 
-def assimilate_localised(ensemble, observations: Iterable[RadarObservation], *, radius_cells: float = 18.0):
+def assimilate_localised(
+    ensemble, observations: Iterable[RadarObservation], *, radius_cells: float = 18.0
+):
     """Deterministic local ensemble Kalman update for point observations."""
 
     import numpy as np

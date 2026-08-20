@@ -61,7 +61,17 @@ if __name__ == "__main__":
     parser.add_argument("--era5-fidelity", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
-    print(json.dumps(prepare(
-        Path(args.model_spec), Path(args.training_csv), Path(args.validation_csv),
-        Path(args.training_fidelity), Path(args.source_fidelity), Path(args.era5_fidelity), Path(args.output),
-    ), indent=2))
+    print(
+        json.dumps(
+            prepare(
+                Path(args.model_spec),
+                Path(args.training_csv),
+                Path(args.validation_csv),
+                Path(args.training_fidelity),
+                Path(args.source_fidelity),
+                Path(args.era5_fidelity),
+                Path(args.output),
+            ),
+            indent=2,
+        )
+    )

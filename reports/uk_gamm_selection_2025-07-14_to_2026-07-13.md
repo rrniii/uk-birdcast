@@ -76,7 +76,7 @@ below the internal transfer threshold and should retain uncertainty labelling.
 ## Reproducibility
 
 - v1 control configuration: `configs/gamm_uk_holdout_selected.json`
-- v2 component selection contract: `configs/gamm_uk_holdout_component_selection.json`
+- v2 component publication contract: `configs/gamm_uk_holdout_component_publication.json`
 - v2 assembled manifest: `artifacts/gamm-experiments/selected_uk_holdout_v3/component-selection.json`
 - GAMM runner: `scripts/fit_gamm.R`
 - Component-selection assembler: `scripts/assemble_gamm_component_selection.py`

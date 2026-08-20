@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import csv
-from datetime import date
 import math
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 from .config import PROCESSING_VERSION
 from .static_artifacts import utc_now, write_json
-
 
 BTO_REQUEST_TEMPLATE = """# BTO Data Request for UK BirdCast Validation
 
@@ -53,7 +52,9 @@ def write_request_template(output: Path) -> None:
     output.write_text(BTO_REQUEST_TEMPLATE, encoding="utf-8")
 
 
-def write_validation_status(output: Path, *, data_available: bool = False, status: str = "request_pending") -> dict[str, object]:
+def write_validation_status(
+    output: Path, *, data_available: bool = False, status: str = "request_pending"
+) -> dict[str, object]:
     payload = {
         "bto_data_available": data_available,
         "generated_at_utc": utc_now(),
@@ -136,7 +137,11 @@ def _read_aggregate_csv(path: Path, value_field: str) -> list[dict[str, Any]]:
     rows = []
     with path.open("r", encoding="utf-8", newline="") as handle:
         for raw in csv.DictReader(handle):
-            if not raw.get("region") or not raw.get("week_start") or raw.get(value_field) in (None, ""):
+            if (
+                not raw.get("region")
+                or not raw.get("week_start")
+                or raw.get(value_field) in (None, "")
+            ):
                 continue
             date.fromisoformat(str(raw["week_start"]))
             rows.append(
@@ -155,8 +160,7 @@ def _pearson(left: list[float], right: list[float]) -> float:
     right_mean = sum(right) / len(right)
     numerator = sum((x - left_mean) * (y - right_mean) for x, y in zip(left, right))
     denominator = math.sqrt(
-        sum((x - left_mean) ** 2 for x in left)
-        * sum((y - right_mean) ** 2 for y in right)
+        sum((x - left_mean) ** 2 for x in left) * sum((y - right_mean) ** 2 for y in right)
     )
     return numerator / denominator if denominator else 0.0
 

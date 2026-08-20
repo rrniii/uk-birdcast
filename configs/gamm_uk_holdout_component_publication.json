@@ -3,6 +3,32 @@
   "selected_model_family": "gamm",
   "selection_id": "uk-gamm-heldout-v2-sp-vector-925",
   "selection_manifest": "artifacts/gamm-experiments/selected_uk_holdout_v3/component-selection.json",
+  "selection_manifest_sha256": "fabfeceba85ed637b8eddd7909199e22913b251a901f5f452c8011a35e9ac3ea",
+  "qualified_date_window": {
+    "first_day": "2025-07-14",
+    "last_day": "2026-07-13",
+    "day_count": 365
+  },
+  "component_sha256": {
+    "lp": {
+      "mtr_birds_km_h": "06146a147b75a45339bfb149a693320ded42a9a10be37d3b45ce05720026b17d",
+      "vid_birds_per_km2": "42ed30192cf018e48b707798c3068a7180982bef2c4518b599266e46f7cdfaeb",
+      "bird_u_ms": "975d060f8b44fd00de9c0a59206453cd5c8cf081f0b7aee6f16005d73b75ab06",
+      "bird_v_ms": "6ca5f4a3bb19542284731494028513686ac84657dfd34364d2e47b0ff137207d"
+    },
+    "sp": {
+      "mtr_birds_km_h": "89c321633dad6ce51fd8565e41ed55aeb1246a36edd2684afe226dc857906e88",
+      "vid_birds_per_km2": "37d8669dd09964953d5c3f1cc81305a557d171cb00454ec658f39f3bf4d738f3",
+      "bird_u_ms": "c1586bf15891dc2bf2c357e4acfc864705c2338096725c7c62a7210afd0a44cb",
+      "bird_v_ms": "6228cc628ff1904090ee392d02ebcf387ce9930e36a84898eabdbcabd23a3ab0"
+    }
+  },
+  "temporal_terms": [
+    "day_of_year",
+    "utc_hour",
+    "seasonal_diurnal"
+  ],
+  "temporal_policy": "Learned cyclic annual and UTC-hour smooths; no hard-coded season, solar-period, daylight, twilight, sunrise, or sunset filter.",
   "validation_scope": "Leave-one-UK-radar-out and blocked-time validation on the 14 July 2025 to 13 July 2026 UK VPTS archive.",
   "interpretation": "Historical UK radar reanalysis. It is not an externally absolute-density-calibrated product.",
   "limitations": [
