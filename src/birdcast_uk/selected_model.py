@@ -1,8 +1,9 @@
 """Immutable authority for the reviewed UK historical reanalysis model.
 
 The release is intentionally narrower than a generic model registry: production
-may publish only the eight components and 365-day evidence window reviewed on
-22 July 2026. Research candidates stay outside the public artifact contract.
+uses only the eight components reviewed on 22 July 2026. The original 365-day
+evidence window remains immutable; separately labelled daily retrospective
+applications may extend it without retraining. Research candidates stay private.
 """
 
 from __future__ import annotations
@@ -18,9 +19,13 @@ from typing import Any
 SELECTION_ID = "uk-gamm-heldout-v2-sp-vector-925"
 COMPONENT_MANIFEST_SCHEMA = "uk-gamm-component-selection-v1"
 COMPONENT_MANIFEST_SHA256 = "fabfeceba85ed637b8eddd7909199e22913b251a901f5f452c8011a35e9ac3ea"
+TRAINING_CONTRACT_SHA256 = "e7bdeeb0a96218a4bb3754e147c38b5ee9e6f118178ccf83cd78bc767f08d47f"
 QUALIFIED_FIRST_DAY = date(2025, 7, 14)
 QUALIFIED_LAST_DAY = date(2026, 7, 13)
 QUALIFIED_DAY_COUNT = 365
+# ERA5T normally trails real time by about five days with no fixed release hour.
+# One additional complete day avoids depending on a partially available UTC day.
+RETROSPECTIVE_LAG_DAYS = 6
 PULSES = ("lp", "sp")
 TARGETS = (
     "mtr_birds_km_h",

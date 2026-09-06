@@ -31,18 +31,30 @@ def products():
         {
             "data_available": True,
             "selection_id": SELECTION_ID,
-            "latest_time_utc": "2026-07-13T23:00:00Z",
+            "latest_time_utc": "2026-08-31T23:00:00Z",
         },
         {"data_available": False, "mode": "disabled", "valid_times_utc": []},
     )
 
 
-def test_freshness_uses_complete_local_day_not_shell_generation_or_model_age():
+def test_freshness_checks_observation_and_model_data_dates_not_shell_generation():
     report = evaluate_freshness(*products(), now=NOW, radars={"a", "b"})
     assert report["ok"]
     assert report["expected_observations_through"] == "2026-08-31"
     assert report["source_age_days"] == 5
     assert report["publication_lag_days"] == 0
+    assert report["expected_model_through"] == "2026-08-31"
+    assert report["model_publication_lag_days"] == 0
+
+
+def test_fixed_july_model_is_now_a_real_publication_backlog():
+    catalog, historical, model, forecast = products()
+    model["latest_time_utc"] = "2026-07-13T23:00:00Z"
+    model["generated_at_utc"] = NOW.isoformat()
+    report = evaluate_freshness(catalog, historical, model, forecast, now=NOW, radars={"a", "b"})
+    assert not report["ok"]
+    assert report["model_publication_lag_days"] == 49
+    assert not report["checks"]["model_publication_caught_up"]
 
 
 @pytest.mark.parametrize("failure", ["backlog", "source", "catalog", "radar", "forecast"])

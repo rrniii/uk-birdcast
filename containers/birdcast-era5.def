@@ -2,7 +2,7 @@ Bootstrap: docker
 From: python:3.11-slim
 
 %post
-    pip install --no-cache-dir earthkit-data h5netcdf netCDF4 numpy pandas pyarrow pyproj xarray zarr
+    pip install --no-cache-dir earthkit-data cdsapi h5netcdf netCDF4 numpy pandas pyarrow pyproj xarray zarr
 
 %environment
     export PYTHONPATH=/app/src:${PYTHONPATH}

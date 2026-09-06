@@ -8,7 +8,7 @@ import mimetypes
 import os
 import re
 from dataclasses import asdict, dataclass
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from tempfile import NamedTemporaryFile
 
@@ -174,6 +174,9 @@ def _manifest_asset_paths(manifest: dict[str, object]):
         value = manifest.get(key)
         if isinstance(value, str) and value:
             yield value
+    update = manifest.get("rolling_update")
+    if isinstance(update, dict) and isinstance(update.get("source"), str):
+        yield update["source"]
 
 
 def _product_paths(source_dir: Path, products: tuple[str, ...]) -> list[Path]:
@@ -321,6 +324,25 @@ def _validate_selected_model_manifest(manifest: dict[str, object]) -> None:
             if digest != COMPONENT_SHA256[pulse][target]:
                 raise ValueError(f"gam-era5 component hash is not reviewed for {pulse}/{target}")
     expected_dates = qualified_dates()
+    update = manifest.get("rolling_update")
+    last_day = QUALIFIED_LAST_DAY
+    if update is not None:
+        if (
+            not isinstance(update, dict)
+            or update.get("policy") != "daily_frozen_model_retrospective"
+            or update.get("evidence_window")
+            != [QUALIFIED_FIRST_DAY.isoformat(), QUALIFIED_LAST_DAY.isoformat()]
+            or update.get("weather_status") != "ERA5_or_preliminary_ERA5T_as_retrieved"
+            or not _is_update_asset(update.get("source"), "source.json")
+        ):
+            raise ValueError("gam-era5 rolling update contract is invalid")
+        last_day = date.fromisoformat(str(manifest.get("latest_time_utc", ""))[:10])
+        if not QUALIFIED_LAST_DAY < last_day < datetime.now(timezone.utc).date():
+            raise ValueError("gam-era5 rolling update must extend into completed past days")
+        expected_dates += [
+            (QUALIFIED_LAST_DAY + timedelta(days=offset)).isoformat()
+            for offset in range(1, (last_day - QUALIFIED_LAST_DAY).days + 1)
+        ]
     archive_prefix = manifest.get("archive_prefix")
     if not isinstance(archive_prefix, str):
         raise ValueError("gam-era5 manifest has no archive prefix")
@@ -349,7 +371,13 @@ def _validate_selected_model_manifest(manifest: dict[str, object]) -> None:
             )
         for day in expected_dates:
             expected_asset = f"{archive_prefix}/daily/{pulse}/{day.replace('-', '')}.json"
-            if daily[day] != expected_asset:
+            is_extension = date.fromisoformat(day) > QUALIFIED_LAST_DAY
+            if (
+                not is_extension
+                and daily[day] != expected_asset
+                or is_extension
+                and not _is_update_asset(daily[day], f"daily/{pulse}/{day.replace('-', '')}.json")
+            ):
                 raise ValueError(f"gam-era5 {pulse} asset path is invalid for {day}")
     if assets.get("boundary") != f"{archive_prefix}/uk-boundary.geojson":
         raise ValueError("gam-era5 boundary asset path is invalid")
@@ -358,11 +386,91 @@ def _validate_selected_model_manifest(manifest: dict[str, object]) -> None:
     if manifest.get("source") != f"{archive_prefix}/source.json":
         raise ValueError("gam-era5 source asset path is invalid")
     expected_first = f"{QUALIFIED_FIRST_DAY.isoformat()}T00:00:00Z"
-    expected_latest = f"{QUALIFIED_LAST_DAY.isoformat()}T23:00:00Z"
+    expected_latest = f"{last_day.isoformat()}T23:00:00Z"
     if manifest.get("first_time_utc") != expected_first:
         raise ValueError(f"gam-era5 first time must be {expected_first}")
     if manifest.get("latest_time_utc") != expected_latest:
         raise ValueError(f"gam-era5 latest time must be {expected_latest}")
+
+
+def _is_update_asset(value: object, suffix: str) -> bool:
+    """Only versioned model-extension assets may be added to the evidence archive."""
+
+    return (
+        isinstance(value, str)
+        and re.fullmatch(
+            rf"archive/reanalysis/gam-era5/updates/[A-Za-z0-9_-]+/{re.escape(suffix)}", value
+        )
+        is not None
+    )
+
+
+def _model_extension_paths(source_dir: Path) -> list[Path]:
+    """Validate one append-only day against a private snapshot of public latest.
+
+    Old assets are deliberately not re-uploaded. The caller must compare this
+    snapshot with public latest immediately before promotion (single writer).
+    Original evidence, colours, model hashes and all earlier asset references
+    remain byte-for-byte equivalent as JSON values.
+    """
+
+    previous = json.loads(_resolve_public_asset(source_dir, "previous-model.json").read_text())
+    current = json.loads(_resolve_public_asset(source_dir, "latest/gam-era5.json").read_text())
+    for manifest in (previous, current):
+        _validate_selected_model_manifest(manifest)
+        if manifest.get("data_available") is not True:
+            raise ValueError("model extension requires data-bearing manifests")
+    mutable = {"assets", "latest_time_utc", "generated_at_utc", "rolling_update"}
+    if {k: v for k, v in previous.items() if k not in mutable} != {
+        k: v for k, v in current.items() if k not in mutable
+    }:
+        raise ValueError("model extension changes the frozen model or evidence contract")
+    day = date.fromisoformat(previous["latest_time_utc"][:10]) + timedelta(days=1)
+    if current["latest_time_utc"] != f"{day.isoformat()}T23:00:00Z":
+        raise ValueError("model extension must append exactly the next complete day")
+    paths = ["latest/gam-era5.json", current["rolling_update"]["source"]]
+    for pulse in ("lp", "sp"):
+        daily = current["assets"][pulse]
+        if {k: v for k, v in daily.items() if k != day.isoformat()} != previous["assets"][pulse]:
+            raise ValueError("model extension changes an already published daily asset")
+        paths.append(daily[day.isoformat()])
+    if current["assets"]["boundary"] != previous["assets"]["boundary"]:
+        raise ValueError("model extension changes the published boundary")
+    update_root = current["rolling_update"]["source"].removesuffix("source.json")
+    if not all(path.startswith(update_root) for path in paths[1:]):
+        raise ValueError("model extension assets must share an immutable release")
+    return sorted(_resolve_public_asset(source_dir, path) for path in paths)
+
+
+def build_model_extension_plan(
+    source_dir: Path, output: Path, *, object_prefix: str = OBJECT_PREFIX
+) -> dict:
+    """Plan only the two new pulse assets, their provenance and the latest pointer."""
+
+    prefix = _normalise_object_prefix(object_prefix)
+    root = source_dir.resolve()
+    objects = [
+        PublicationObject(
+            source=str(path),
+            key=f"{prefix}/{path.relative_to(root).as_posix()}",
+            size=path.stat().st_size,
+            sha256=_sha256(path),
+            content_type=mimetypes.guess_type(path.name)[0] or "application/octet-stream",
+        ).to_dict()
+        for path in _model_extension_paths(root)
+    ]
+    payload = {
+        "generated_at_utc": utc_now(),
+        "products": ["gam-era5"],
+        "mode": "model_extension",
+        "object_prefix": prefix,
+        "source_dir": str(root),
+        "base_manifest_sha256": _sha256(root / "previous-model.json"),
+        "object_count": len(objects),
+        "objects": objects,
+    }
+    write_json(output, payload)
+    return payload
 
 
 def _resolve_public_asset(source_dir: Path, asset: str) -> Path:
@@ -573,10 +681,19 @@ def validate_publication_plan(plan_path: Path) -> dict[str, object]:
     if len(set(products)) != len(products):
         raise ValueError("publication plan products must be unique")
     prefix = _normalise_object_prefix(str(payload.get("object_prefix") or ""))
-    validate_release(source_dir, required_products=tuple(products))
+    if payload.get("mode") == "model_extension":
+        if products != ["gam-era5"]:
+            raise ValueError("model extension may publish only gam-era5")
+        if _sha256(source_dir / "previous-model.json") != payload.get("base_manifest_sha256"):
+            raise ValueError("model extension base snapshot changed")
+        paths = _model_extension_paths(source_dir)
+    else:
+        if payload.get("mode") is not None:
+            raise ValueError("unknown publication plan mode")
+        validate_release(source_dir, required_products=tuple(products))
+        paths = _product_paths(source_dir, tuple(products))
     expected = {
-        f"{prefix}/{path.relative_to(source_dir.resolve()).as_posix()}": path
-        for path in _product_paths(source_dir, tuple(products))
+        f"{prefix}/{path.relative_to(source_dir.resolve()).as_posix()}": path for path in paths
     }
     seen_keys: set[str] = set()
     for obj in objects:

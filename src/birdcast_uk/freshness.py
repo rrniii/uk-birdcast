@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .config import DEFAULT_PUBLIC_BASE_URL, OBJECT_PREFIX, UKMO_VPTS_CATALOG_URL
 from .radars import DEFAULT_RADARS, load_radars
-from .selected_model import SELECTION_ID
+from .selected_model import RETROSPECTIVE_LAG_DAYS, SELECTION_ID
 from .static_artifacts import write_json
 from .vpts import fetch_json
 
@@ -47,6 +47,7 @@ def evaluate_freshness(
     max_catalog_age_hours: float = 72,
     max_source_age_days: int = 7,
     max_publication_lag_days: int = 2,
+    model_weather_lag_days: int = RETROSPECTIVE_LAG_DAYS,
 ) -> dict:
     """Report source delay separately from an avoidable publication backlog."""
 
@@ -60,6 +61,9 @@ def evaluate_freshness(
     catalog_age = (now - generated).total_seconds() / 3600
     source_age = (now.date() - source_end).days
     lag = max(0, (expected_end - published_end).days)
+    model_end = date.fromisoformat(str(model.get("latest_time_utc") or "")[:10])
+    expected_model_end = now.date() - timedelta(days=model_weather_lag_days)
+    model_lag = max(0, (expected_model_end - model_end).days)
     checks = {
         "catalogue_recent": catalog_age <= max_catalog_age_hours,
         "source_recent": source_age <= max_source_age_days,
@@ -71,6 +75,8 @@ def evaluate_freshness(
         "publication_date_not_future": published_end < now.date(),
         "selected_model_available": model.get("data_available") is True
         and model.get("selection_id") == SELECTION_ID,
+        "model_publication_caught_up": model_lag <= max_publication_lag_days,
+        "model_date_not_future": model_end < now.date(),
         "forecast_disabled": forecast.get("data_available") is False
         and forecast.get("mode") == "disabled"
         and forecast.get("valid_times_utc") in (None, []),
@@ -83,6 +89,8 @@ def evaluate_freshness(
         "all_radars_reach_publication_date": "Some radars do not reach the published end date.",
         "publication_date_not_future": "Published observation date is unfinished or in the future.",
         "selected_model_available": "The qualified selected-model release is unavailable.",
+        "model_publication_caught_up": "Modelled migration lags the expected complete ERA5 window.",
+        "model_date_not_future": "Published model date is unfinished or in the future.",
         "forecast_disabled": "Forecast fail-closed policy is not satisfied.",
     }
     return {
@@ -97,11 +105,14 @@ def evaluate_freshness(
         "source_age_days": source_age,
         "catalog_age_hours": round(catalog_age, 2),
         "model_through": model.get("latest_time_utc"),
-        "model_policy": "fixed_validated_reanalysis_not_a_rolling_forecast",
+        "model_policy": "daily_frozen_model_retrospective_not_forecast",
+        "expected_model_through": expected_model_end.isoformat(),
+        "model_publication_lag_days": model_lag,
         "thresholds": {
             "max_catalog_age_hours": max_catalog_age_hours,
             "max_source_age_days": max_source_age_days,
             "max_publication_lag_days": max_publication_lag_days,
+            "model_weather_lag_days": model_weather_lag_days,
         },
         "checks": checks,
         "alerts": [messages[name] for name, passed in checks.items() if not passed],

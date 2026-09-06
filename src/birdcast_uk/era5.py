@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -214,6 +215,9 @@ def cds_readiness(credentials_path: Path | None = None) -> dict[str, object]:
         backend_version = None
         earthkit_ready = False
     notes = []
+    cdsapi_ready = importlib.util.find_spec("cdsapi") is not None
+    if not cdsapi_ready:
+        notes.append("cdsapi is not importable; Earthkit CDS retrieval requires it")
     if not configured.is_file():
         notes.append("CDS credential file is missing")
     elif url != CDS_API_URL:
@@ -226,12 +230,14 @@ def cds_readiness(credentials_path: Path | None = None) -> dict[str, object]:
         notes.append("earthkit-data is not importable")
     return {
         "ok": earthkit_ready
+        and cdsapi_ready
         and configured.is_file()
         and url == CDS_API_URL
         and key_present
         and not legacy_key,
         "backend": EARTHKIT_BACKEND,
         "backend_version": backend_version,
+        "cdsapi_available": cdsapi_ready,
         "credentials_path": str(configured),
         "credentials_present": configured.is_file(),
         "url": url or None,
@@ -386,6 +392,7 @@ def extract_grid_features(
     output: Path,
     training_table: Path | None = None,
     boundary_path: Path | None = None,
+    restrict_to_training_window: bool = True,
 ) -> dict[str, object]:
     """Extract native ERA5 grid features plus an explicit support score.
 
@@ -393,6 +400,8 @@ def extract_grid_features(
     ERA5's 0.25-degree resolution; visual smoothing happens only in the client.
     ``support`` combines proximity to a UK radar and whether meteorological
     values lie within the rolling model table's observed range.
+    Retrospective daily inference may explicitly extend beyond the training
+    dates, but still uses the original training ranges to calculate support.
     """
 
     datasets = _open_datasets(single_levels, pressure_levels)
@@ -431,7 +440,7 @@ def extract_grid_features(
         pressure_grid = _select_grid_points(pressure, latitude_name, longitude_name, grid_points)
         for time_value, point in _time_points(reference, time_name):
             timestamp = str(time_value) if time_value is not None else ""
-            if training_window is not None:
+            if restrict_to_training_window and training_window is not None:
                 try:
                     selected_day = date.fromisoformat(timestamp[:10])
                 except ValueError:
@@ -503,6 +512,7 @@ def extract_grid_features(
         "training_window": [value.isoformat() for value in training_window]
         if training_window
         else None,
+        "restricted_to_training_window": restrict_to_training_window,
     }
     write_json(output.with_suffix(output.suffix + ".status.json"), status)
     return status

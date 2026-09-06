@@ -96,10 +96,10 @@ export BIRDCAST_UK_EXPECTED_END_DAY=2026-07-13
 export BIRDCAST_UK_EXPECTED_DAYS=365
 ```
 
-The observation catch-up through 15 August 2026 is a separate historical
-publication milestone. Do not extend the modelled reanalysis to that date
-without first building the additional ERA5 grids and component predictions,
-repeating the scientific validation, and declaring a new release contract.
+The original evidence reproduction still requires this exact window. The
+separate [daily retrospective extension contract](docs/DAILY_PUBLICATION.md)
+adds newer dates using complete ERA5 grids and these same frozen components,
+without relabelling the selection evidence as validation of new dates.
 Never derive coverage from the files that happen to be present.
 
 Submit the production dependency chain:

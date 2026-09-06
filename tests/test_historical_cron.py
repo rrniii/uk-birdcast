@@ -45,3 +45,19 @@ def test_parallel_worker_uses_the_account_authorized_parallel_qos():
     assert "#SBATCH --cpus-per-task=8" in worker
     assert "#SBATCH --mem=24G" in worker
     assert "#SBATCH --time=12:00:00" in worker
+
+
+def test_model_cron_preserves_observation_and_unrelated_jobs():
+    module = installer()
+    observation = module.updated_table(
+        "0 20 * * * upstream-avocet\n",
+        Path("/release/submit-historical-cycle.sh"),
+        Path("/private/h.env"),
+    )
+    args = Path("/release/submit-model-cycle.sh"), Path("/private/m.env"), "model"
+    updated = module.updated_table(observation, *args)
+    assert observation in updated
+    assert updated.count("20 2 * * *") == 1
+    assert updated.count("35 */6 * * *") == 1
+    assert module.updated_table(updated, *args) == updated
+    assert "forecast" not in updated and "ecmwf" not in updated

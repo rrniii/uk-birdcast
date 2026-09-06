@@ -16,6 +16,7 @@ dependencies = []
 
 [project.optional-dependencies]
 birdcast = [
+  "cdsapi>=0.7,<1",
   "earthkit-data>=1.0.2,<2",
   "duckdb>=1.0,<2",
   "ecmwf-opendata>=0.3.20",

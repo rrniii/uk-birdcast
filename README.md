@@ -21,9 +21,11 @@ batch/GWS. The cloud host has no source-data or model-training role.
 Historical observations have an independent six-hourly JASMIN catch-up cycle.
 It caches unchanged source-file statistics, preserves radar outages as missing,
 and publishes only verified complete local-solar-day products. The website's
-hourly freshness check compares actual observation dates with source availability;
-a fresh website build is not evidence of fresh data. See the recurring operations
-and recovery contract in [DEPLOYMENT.md](DEPLOYMENT.md#recurring-historical-observations).
+hourly freshness check compares actual observation and model dates with source
+availability; a fresh website build is not evidence of fresh data. The selected
+model has a separate daily ERA5/ERA5T extension cycle, preserving the original
+evidence window and frozen model files. See [daily publication and recovery](docs/DAILY_PUBLICATION.md)
+and [observation operations](DEPLOYMENT.md#recurring-historical-observations).
 
 ## Scientific contract
 

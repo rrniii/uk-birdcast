@@ -127,10 +127,10 @@ async function refreshPublicationFreshness() {
   }
   node.dataset.state = report.ok ? "ok" : "warning";
   const dates = report.published_through
-    ? `Observations through ${report.published_through}; source UTC data through ${report.source_common_utc_through}. `
+    ? `Observations through ${report.published_through}; modelled migration through ${String(report.model_through || "unverified").slice(0, 10)}. `
     : "";
   node.textContent = dates + (report.ok
-    ? "Publication freshness checks passed. Historical data, not a live forecast."
+    ? "Daily retrospective updates checked; source data arrive several days later. Not a live forecast."
     : `Publication needs attention: ${(report.alerts || ["verification failed"]).join(" ")}`);
 }
 
@@ -461,7 +461,7 @@ function renderModelled() {
   const mean = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
   document.getElementById("mapTitle").textContent = "Modelled migration";
   document.getElementById("mapSubtitle").textContent = state.modelFrame
-    ? `Historical ERA5 reanalysis · ${state.pulse.toUpperCase()} · ${state.model.model_family.toUpperCase()}`
+    ? `Retrospective ERA5/ERA5T · ${state.pulse.toUpperCase()} · ${state.model.model_family.toUpperCase()}${state.model.rolling_update && state.date > state.model.rolling_update.evidence_window[1] ? " · frozen-model extension" : ""}`
     : `No historical frame published for ${String(state.hour).padStart(2, "0")}:00 UTC`;
   document.getElementById("mapTimestamp").textContent = `${formatDate(state.date)} · ${String(state.hour).padStart(2, "0")} UTC`;
   document.getElementById("networkValue").textContent = mean === null ? "No modelled frame" : metric.format(mean);
