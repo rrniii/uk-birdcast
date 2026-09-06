@@ -19,6 +19,7 @@ def test_cron_install_preserves_unrelated_jobs_and_is_idempotent():
     updated = module.updated_table(before, *args)
     assert before in updated
     assert updated.count("35 */6 * * *") == 1
+    assert "35 */6 * * * /usr/local/bin/crontamer" in updated
     assert module.updated_table(updated, *args) == updated
     switched = module.updated_table(updated, Path("/new/submit-historical-cycle.sh"), args[1])
     assert before in switched and "/release/" not in switched

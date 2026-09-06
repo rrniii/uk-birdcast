@@ -33,7 +33,8 @@ def updated_table(previous: str, submitter: Path, environment: Path) -> str:
             [
                 BEGIN,
                 "CRON_TZ=UTC",
-                f"35 */6 * * * crontamer -t 5m -l {shlex.quote(command)}",
+                # Cron has a smaller PATH than an interactive JASMIN shell.
+                f"35 */6 * * * /usr/local/bin/crontamer -t 5m -l {shlex.quote(command)}",
                 END,
                 "",
             ]

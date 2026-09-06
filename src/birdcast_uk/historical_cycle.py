@@ -363,7 +363,14 @@ def run_cycle(args: argparse.Namespace) -> dict:
         and checkpoint.get("release_id") == previous.get("release_id")
         and previous["latest_date"] == published_end.isoformat()
     ):
-        return {**checkpoint, "state": "no_change", "checked_at_utc": utc_now()}
+        result = {
+            **checkpoint,
+            "state": "no_change",
+            "run_dir": str(run_dir),
+            "checked_at_utc": utc_now(),
+        }
+        write_json(run_dir / "result.json", result)
+        return result
     public = run_dir / "public"
     build_static_artifacts(
         public,

@@ -265,7 +265,8 @@ release entrypoint and private environment paths:
 
 ```cron
 # BEGIN UK BIRD MAPS HISTORICAL PUBLICATION
-35 */6 * * * crontamer -t 5m -l '/bin/bash /path/to/release/deploy/scripts/submit-historical-cycle.sh /private/historical-cycle.env'
+CRON_TZ=UTC
+35 */6 * * * /usr/local/bin/crontamer -t 5m -l '/bin/bash /path/to/release/deploy/scripts/submit-historical-cycle.sh /private/historical-cycle.env'
 # END UK BIRD MAPS HISTORICAL PUBLICATION
 ```
 
@@ -300,9 +301,13 @@ analysis, public staging tree, hashed publication plan and result. Only approved
 historical assets and the disabled forecast tombstone are uploaded. Upload and
 independently GET/hash **all immutable assets before promoting latest manifests**;
 then GET/hash the complete plan again before advancing `published.json`.
-No-op cycles leave the published manifests untouched. A failed run retains the
-last publication/checkpoint and records `cycle-status.json`; inspect both that
-file and Slurm terminal status, not the submission acknowledgement.
+No-op cycles leave the published manifests and publication checkpoint untouched,
+but record a result in their own run directory. A failed run retains the last
+verified checkpoint and records `cycle-status.json`; inspect both that file and
+Slurm terminal status, not the submission acknowledgement. Failures before
+promotion leave the public manifests unchanged. If the final verification fails
+after promotion, the public manifests may already have advanced: inspect them
+against the retained plan before retrying or rolling back.
 
 The cloud `birdcast-uk-freshness.timer` independently checks the public catalogue,
 historical/model manifests and disabled forecast every hour. It writes

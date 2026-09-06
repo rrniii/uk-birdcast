@@ -6,6 +6,7 @@ import hashlib
 import json
 import subprocess
 from datetime import date, datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -127,7 +128,16 @@ def test_missing_pulse_is_explicit_not_replaced_by_other_pulse(tmp_path):
     assert all(row["pulse"] == "sp" for row in gaps)
 
 
-@pytest.mark.parametrize("outcome", ["prepare", "publish", "verification_failure"])
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        "prepare",
+        "publish",
+        "verification_failure",
+        "post_promotion_verification_failure",
+        "no_change",
+    ],
+)
 def test_only_verified_publication_advances_checkpoint(tmp_path, monkeypatch, outcome):
     now = datetime.now(timezone.utc)
     from datetime import timedelta
@@ -143,22 +153,29 @@ def test_only_verified_publication_advances_checkpoint(tmp_path, monkeypatch, ou
     radars.write_text(json.dumps([{"slug": "radar-a"}]))
     (tmp_path / "runs").mkdir()
     checkpoint = tmp_path / "published.json"
-    checkpoint.write_text('{"release_id":"old"}')
+    fingerprint = "same" if outcome == "no_change" else "new"
+    checkpoint.write_text('{"release_id":"old","input_snapshot_sha256":"same"}')
+    original_checkpoint = checkpoint.read_bytes()
     monkeypatch.setattr(cycle, "fetch_json", lambda url: catalog if url == "catalog" else previous)
-    monkeypatch.setattr(cycle, "build_analysis", lambda **kw: {"input_snapshot_sha256": "new"})
+    monkeypatch.setattr(
+        cycle, "build_analysis", lambda **kw: {"input_snapshot_sha256": fingerprint}
+    )
     monkeypatch.setattr(cycle, "build_static_artifacts", lambda *a, **kw: None)
     monkeypatch.setattr(cycle, "build_historical_products", lambda *a, **kw: {"release_id": "new"})
     monkeypatch.setattr(
         cycle, "build_publication_plan", lambda *a, **kw: {"object_count": 2, "objects": []}
     )
-    monkeypatch.setattr(cycle, "write_sync_commands", lambda *a, **kw: None)
+    phases = []
+    monkeypatch.setattr(cycle, "write_sync_commands", lambda *a, **kw: phases.append(kw["phase"]))
     monkeypatch.setattr(subprocess, "run", lambda *a, **kw: None)
     verified = []
 
     def verify(*args):
-        if outcome == "verification_failure":
-            raise ValueError("public checksum mismatch")
         verified.append(True)
+        if outcome == "verification_failure" or (
+            outcome == "post_promotion_verification_failure" and len(verified) == 2
+        ):
+            raise ValueError("public checksum mismatch")
 
     monkeypatch.setattr(cycle, "verify_public_plan", verify)
     args = argparse.Namespace(
@@ -174,12 +191,24 @@ def test_only_verified_publication_advances_checkpoint(tmp_path, monkeypatch, ou
         bucket="public",
         s3cmd_config=tmp_path / "private-config",
     )
-    if outcome == "verification_failure":
+    if outcome.endswith("verification_failure"):
         with pytest.raises(ValueError, match="checksum"):
             cycle.run_cycle(args)
     else:
-        cycle.run_cycle(args)
+        result = cycle.run_cycle(args)
+        if outcome == "no_change":
+            assert result["state"] == "no_change"
+            assert json.loads((Path(result["run_dir"]) / "result.json").read_text()) == result
+            assert checkpoint.read_bytes() == original_checkpoint
     assert json.loads(checkpoint.read_text())["release_id"] == (
         "new" if outcome == "publish" else "old"
     )
-    assert bool(verified) == (outcome == "publish")
+    expected_phases = {
+        "prepare": [],
+        "no_change": [],
+        "verification_failure": ["assets"],
+        "post_promotion_verification_failure": ["assets", "manifests"],
+        "publish": ["assets", "manifests"],
+    }
+    assert phases == expected_phases[outcome]
+    assert len(verified) == len(phases)
