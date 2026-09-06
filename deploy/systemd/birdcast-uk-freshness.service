@@ -1,0 +1,20 @@
+[Unit]
+Description=Check UK Bird Maps published-data freshness and forecast policy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=birdcast
+Group=birdcast
+EnvironmentFile=/etc/birdcast-uk/birdcast-uk.env
+Environment=PYTHONPATH=/opt/birdcast-uk/repo/src
+Environment=PYTHONDONTWRITEBYTECODE=1
+WorkingDirectory=/opt/birdcast-uk/repo
+ExecStart=/opt/birdcast-uk/venv/bin/python -m birdcast_uk.freshness --output /opt/birdcast-uk/site/freshness.json --catalog-url ${BIRDCAST_UK_VPTS_CATALOG_URL} --public-base-url ${BIRDCAST_UK_PUBLIC_BASE_URL} --object-prefix ${BIRDCAST_UK_OBJECT_PREFIX} --radars ${BIRDCAST_UK_RADARS_FILE}
+TimeoutStartSec=5min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/birdcast-uk/site

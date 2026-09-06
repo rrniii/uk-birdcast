@@ -198,12 +198,13 @@ accepted:
 
 Install the environment and Nginx files from the selected release. The static
 refresh service installs both the UK shell and the sole public Europe
-relative-flow shell; it does not publish absolute Europe model output. Enable
-only that web-shell refresh timer:
+relative-flow shell; it does not publish absolute Europe model output. Install
+the read-only freshness service/timer too. Enable only these two cloud timers:
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now birdcast-uk-static-site-refresh.timer
+sudo systemctl enable --now birdcast-uk-freshness.timer
 ```
 
 Disable all production timers on this host:
@@ -248,6 +249,74 @@ The canonical route is `/live-uk-bird-maps/`. The compatibility route
 After installing `deploy/nginx/birdcast-uk.conf`, run `nginx -t` before reload.
 
 ## Release verification
+
+### Recurring historical observations
+
+The production historical updater is independent of the fixed model release.
+Install `deploy/env/birdcast-uk.historical-cycle.env.example` as a private
+`historical-cycle.env`, with the reviewed immutable SHA and release-local Python.
+Do not modify the shared research environment or the radar source archive.
+
+Use **cron-01.jasmin.ac.uk**, not a science VM or the cloud host. JASMIN requires
+heavy work to run on LOTUS; the cron entry only submits a bounded batch job.
+See [JASMIN cron guidance](https://help.jasmin.ac.uk/docs/workflow-management/using-cron/).
+Preserve the existing crontab, and add this named block, substituting the actual
+release entrypoint and private environment paths:
+
+```cron
+# BEGIN UK BIRD MAPS HISTORICAL PUBLICATION
+35 */6 * * * crontamer -t 5m -l '/bin/bash /path/to/release/deploy/scripts/submit-historical-cycle.sh /private/historical-cycle.env'
+# END UK BIRD MAPS HISTORICAL PUBLICATION
+```
+
+The submitter uses a lock, an exact-name pending/running job check and Slurm
+`singleton`; the worker holds a separate filesystem lock throughout the cycle.
+The first run builds a full private per-file statistics cache. Later runs parse
+only new/changed CSVs, while reconciling the complete historical output. A size,
+mtime or calculation-code change invalidates the corresponding cache entry.
+Successful cache writes are restartable but **are not publication completion**.
+
+The retrospective completeness policy is:
+
+- Use all configured radars and both LP/SP products; never substitute one pulse
+  for another or sum them together.
+- Freeze the common catalogue UTC end and withhold the trailing incomplete
+  local-solar observation day. In particular, UTC inputs through 1 September
+  support complete local-solar days only through 31 August.
+- Require the boundary UTC files and usable non-gap observations for every
+  radar/pulse at the newest published day.
+- Preserve earlier radar outages as missing observations. Record missing
+  catch-up source days, and confirm HTTP 404 in the public archive; network
+  failures or a local/public mismatch block publication. No zero-fill is used.
+  Entirely missing/gap-only solar periods retain coverage counts but have null
+  passage metrics; genuine measured zero densities remain valid zeros.
+- Reject stale catalogues, changed-during-read files, source-count/start-date
+  regressions, and concurrent changes to the public historical manifest.
+
+Each run has a private directory with the catalogue snapshot, source inventory,
+analysis, public staging tree, hashed publication plan and result. Only approved
+historical assets and the disabled forecast tombstone are uploaded. Upload and
+independently GET/hash **all immutable assets before promoting latest manifests**;
+then GET/hash the complete plan again before advancing `published.json`.
+No-op cycles leave the published manifests untouched. A failed run retains the
+last publication/checkpoint and records `cycle-status.json`; inspect both that
+file and Slurm terminal status, not the submission acknowledgement.
+
+The cloud `birdcast-uk-freshness.timer` independently checks the public catalogue,
+historical/model manifests and disabled forecast every hour. It writes
+`/live-uk-bird-maps/freshness.json` and fails visibly in systemd on stale/unknown
+data. The website displays its result, and treats a report older than three hours
+as unverified. Operational thresholds are catalogue age <=72 hours, common radar
+source age <=7 days, and publication lag <=2 days behind the complete source
+window. These thresholds **do not accept or enable the forecast latency contract**.
+The pinned July model window is reported, not incorrectly treated as a live feed.
+
+After deployment, run the web refresh **twice** to test idempotence against
+read-only release files, run freshness explicitly, trigger the exact cron
+submitter, wait for the publication batch job to complete, and invoke it again to
+verify a no-change cycle. Confirm that all unrelated cron entries are unchanged.
+
+### Public release checks
 
 Verify the actual public source, not a cached dashboard card:
 

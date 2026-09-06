@@ -144,6 +144,23 @@ def test_release_validation_requires_data_and_assets(tmp_path: Path) -> None:
     assert result["checked_asset_count"] == 6
 
 
+def test_two_phase_publication_keeps_latest_out_of_asset_upload(tmp_path: Path) -> None:
+    source = _write_release(tmp_path / "artifacts")
+    plan = tmp_path / "plan.json"
+    build_publication_plan(source, plan, products=("historical",))
+    assets, manifests = tmp_path / "assets.sh", tmp_path / "manifests.sh"
+    for output, phase in ((assets, "assets"), (manifests, "manifests")):
+        write_sync_commands(
+            plan, output, bucket="public", endpoint_url="", client="s3cmd", phase=phase
+        )
+    # Hash checks mention all paths; inspect only commands performing uploads.
+    asset_uploads = [line for line in assets.read_text().splitlines() if " put " in line]
+    manifest_uploads = [line for line in manifests.read_text().splitlines() if " put " in line]
+    assert asset_uploads and manifest_uploads
+    assert all("/latest/" not in line for line in asset_uploads)
+    assert all("/latest/" in line for line in manifest_uploads)
+
+
 def test_release_validation_rejects_placeholder(tmp_path: Path) -> None:
     source = tmp_path / "artifacts"
     (source / "latest").mkdir(parents=True)

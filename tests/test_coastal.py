@@ -108,6 +108,23 @@ def test_coastal_static_page_is_independently_installable(tmp_path: Path) -> Non
     assert (tmp_path / "regional-boundaries.geojson").is_file()
 
 
+def test_coastal_refresh_replaces_read_only_files_and_preserves_unmanaged_files(
+    tmp_path: Path,
+) -> None:
+    """Exercise the second-run failure seen after an immutable deployment."""
+
+    site = tmp_path / "site"
+    install_coastal_static_site(site)
+    operator_file = site / "operator-note.txt"
+    operator_file.write_text("keep me", encoding="utf-8")
+    for path in site.iterdir():
+        path.chmod(0o444)
+    install_coastal_static_site(site)
+    install_coastal_static_site(site)
+    assert (site / "app.js").stat().st_mode & 0o777 == 0o644
+    assert operator_file.read_text(encoding="utf-8") == "keep me"
+
+
 def test_relative_release_activation_is_atomic_and_revalidates_reuse(tmp_path: Path) -> None:
     training = tmp_path / "training.csv"
     training.write_text(

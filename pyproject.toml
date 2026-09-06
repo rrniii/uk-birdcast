@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "birdcast-uk"
-version = "0.4.0"
+version = "0.4.1"
 description = "UK weather-radar bird migration historical reanalysis products."
 readme = "README.md"
 requires-python = ">=3.10"

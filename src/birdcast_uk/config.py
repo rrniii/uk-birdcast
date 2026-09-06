@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 OBJECT_PREFIX = "birdcast-uk"
-PROCESSING_VERSION = "birdcast-uk-historical-0.4.0"
+PROCESSING_VERSION = "birdcast-uk-historical-0.4.1"
 FORECAST_SCHEMA_VERSION = "birdcast-uk-forecast-1.0"
 FORECAST_MODEL_ID = "pgssm-baseline-0.1"
 

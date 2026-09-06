@@ -13,6 +13,7 @@ import csv
 import hashlib
 import json
 import math
+import os
 import re
 import shutil
 from collections import defaultdict
@@ -349,15 +350,17 @@ def _validate_relative_release(output_root: Path, manifest: dict[str, Any]) -> N
 
 
 def install_coastal_static_site(site_root: Path) -> dict[str, Any]:
-    """Install the independent European relative-product web shell."""
+    """Replace managed web files atomically, independent of release permissions.
+
+    Immutable code releases are read-only. Copying their modes to the live site
+    made the second scheduled refresh fail; staging fresh 0644 files and renaming
+    them also repairs existing read-only destinations without chmodding a release.
+    """
 
     source = Path(__file__).with_name("static_coastal")
     if not source.is_dir():
         raise FileNotFoundError(f"European relative static source is missing: {source}")
-    site_root.mkdir(parents=True, exist_ok=True)
-    for path in source.iterdir():
-        if path.is_file():
-            shutil.copy2(path, site_root / path.name)
+    sources = {path.name: path for path in source.iterdir() if path.is_file()}
     shared = Path(__file__).with_name("static")
     for name in (
         "regional-boundaries.geojson",
@@ -365,5 +368,15 @@ def install_coastal_static_site(site_root: Path) -> dict[str, Any]:
         "live-uk-bird-maps-favicon.png",
         "radar-marker.svg",
     ):
-        shutil.copy2(shared / name, site_root / name)
+        sources[name] = shared / name
+    site_root.parent.mkdir(parents=True, exist_ok=True)
+    site_root.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(prefix=".refresh-", dir=site_root) as temporary:
+        staging = Path(temporary)
+        for name, path in sources.items():
+            shutil.copyfile(path, staging / name)
+            (staging / name).chmod(0o644)
+        # Promote HTML last. Unknown operator files are deliberately preserved.
+        for name in sorted(sources, key=lambda name: name == "index.html"):
+            os.replace(staging / name, site_root / name)
     return {"ok": True, "site_root": str(site_root), "file_count": len(list(site_root.iterdir()))}

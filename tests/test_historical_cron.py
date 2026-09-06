@@ -1,0 +1,36 @@
+import importlib.util
+from pathlib import Path
+
+import pytest
+
+
+def installer():
+    path = Path(__file__).parents[1] / "deploy/scripts/install-historical-cron.py"
+    spec = importlib.util.spec_from_file_location("historical_cron", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_cron_install_preserves_unrelated_jobs_and_is_idempotent():
+    module = installer()
+    before = "# Existing AVOCET and ICECAPS work\n0 20 * * * unrelated-job\n"
+    args = Path("/release/submit-historical-cycle.sh"), Path("/private/cycle.env")
+    updated = module.updated_table(before, *args)
+    assert before in updated
+    assert updated.count("35 */6 * * *") == 1
+    assert module.updated_table(updated, *args) == updated
+    switched = module.updated_table(updated, Path("/new/submit-historical-cycle.sh"), args[1])
+    assert before in switched and "/release/" not in switched
+
+
+def test_cron_install_rejects_broken_or_unmanaged_entries():
+    module = installer()
+    for previous in (
+        module.BEGIN,
+        module.END,
+        module.END + "\n" + module.BEGIN,
+        "0 * * * * /unknown/submit-historical-cycle.sh",
+    ):
+        with pytest.raises(ValueError):
+            module.updated_table(previous, Path("/release/submit.sh"), Path("/private/cycle.env"))

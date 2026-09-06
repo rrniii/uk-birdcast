@@ -18,6 +18,13 @@ The browser is a consumer of immutable public objects. Heavy VPTS processing,
 ERA5 retrieval, model execution, validation, and publication run on JASMIN
 batch/GWS. The cloud host has no source-data or model-training role.
 
+Historical observations have an independent six-hourly JASMIN catch-up cycle.
+It caches unchanged source-file statistics, preserves radar outages as missing,
+and publishes only verified complete local-solar-day products. The website's
+hourly freshness check compares actual observation dates with source availability;
+a fresh website build is not evidence of fresh data. See the recurring operations
+and recovery contract in [DEPLOYMENT.md](DEPLOYMENT.md#recurring-historical-observations).
+
 ## Scientific contract
 
 For altitude-layer width `dh` in km and bird density `dens` in birds km-3:

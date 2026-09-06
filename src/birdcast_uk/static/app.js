@@ -47,6 +47,11 @@ const state = {
 const MTR_CUTOFF_BIRDS_KM_H = 10;
 
 (async function initialise() {
+  // This independent report measures data dates, not the hourly web build time.
+  (async function monitorPublicationFreshness() {
+    await refreshPublicationFreshness();
+    window.setTimeout(monitorPublicationFreshness, 5 * 60 * 1000);
+  })();
   const config = await fetchJson("config.json", {data_base_url: "../"});
   state.base = (config.data_base_url || "../").replace(/\/$/, "");
   state.vptsObjectUrlTemplate = config.vpts_object_url_template || "https://ncas-radar-o.s3-ext.jc.rl.ac.uk/uk-wsr-visualizer-public/ukmo-nimrod/vpts/current_ci_le4/{radar}/{yyyy}/{yyyymmdd}_{pulse}_vpts.csv";
@@ -107,6 +112,26 @@ async function fetchJson(url, fallback) {
   } catch (_) {
     return fallback;
   }
+}
+
+async function refreshPublicationFreshness() {
+  const node = document.getElementById("publicationFreshness");
+  if (!node) return;
+  const report = await fetchJson("freshness.json", null);
+  const checked = report && Date.parse(report.checked_at_utc);
+  const age = Date.now() - checked;
+  if (!report || !Number.isFinite(checked) || age > 3 * 60 * 60 * 1000 || age < -300000) {
+    node.dataset.state = "warning";
+    node.textContent = "Published-data freshness is unverified: the monitoring report is missing or overdue.";
+    return;
+  }
+  node.dataset.state = report.ok ? "ok" : "warning";
+  const dates = report.published_through
+    ? `Observations through ${report.published_through}; source UTC data through ${report.source_common_utc_through}. `
+    : "";
+  node.textContent = dates + (report.ok
+    ? "Publication freshness checks passed. Historical data, not a live forecast."
+    : `Publication needs attention: ${(report.alerts || ["verification failed"]).join(" ")}`);
 }
 
 function assetUrl(path) {

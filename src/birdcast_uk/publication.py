@@ -456,7 +456,10 @@ def write_sync_commands(
     profile: str | None = None,
     client: str = "aws",
     s3cmd_config: str | None = None,
+    phase: str = "all",
 ) -> None:
+    if phase not in {"all", "assets", "manifests"}:
+        raise ValueError("publication phase must be all, assets, or manifests")
     payload = validate_publication_plan(plan_path)
     commands = sync_command(
         plan_path,
@@ -469,6 +472,10 @@ def write_sync_commands(
     planned = list(zip(payload["objects"], commands, strict=True))
     latest = [item for item in planned if _is_latest_manifest(str(item[0]["key"]))]
     immutable = [item for item in planned if item not in latest]
+    if phase == "assets":
+        latest = []
+    elif phase == "manifests":
+        immutable = []
     output.parent.mkdir(parents=True, exist_ok=True)
     lines = [
         "#!/bin/sh",

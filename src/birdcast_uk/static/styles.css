@@ -253,3 +253,5 @@ footer { padding: 18px clamp(16px, 3vw, 42px); color: #77827c; background: #080b
   .section-heading { display: block; }
   .section-heading > p { margin-top: 8px; }
 }
+.publication-freshness{margin:0 0 12px;padding:10px 14px;border-left:3px solid #6caaa0;color:#bdd7d0;font-size:13px;line-height:1.5}
+.publication-freshness[data-state="warning"]{border-color:#e7ad61;color:#f2cf9b;background:#241c13}
