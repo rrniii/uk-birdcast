@@ -34,3 +34,13 @@ def test_cron_install_rejects_broken_or_unmanaged_entries():
     ):
         with pytest.raises(ValueError):
             module.updated_table(previous, Path("/release/submit.sh"), Path("/private/cycle.env"))
+
+
+def test_parallel_worker_uses_the_account_authorized_parallel_qos():
+    worker = (
+        Path(__file__).parents[1] / "deploy/slurm/birdcast-uk-historical-cycle.sbatch"
+    ).read_text()
+    assert "#SBATCH --qos=high" in worker
+    assert "#SBATCH --cpus-per-task=8" in worker
+    assert "#SBATCH --mem=24G" in worker
+    assert "#SBATCH --time=12:00:00" in worker

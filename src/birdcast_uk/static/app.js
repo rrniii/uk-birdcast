@@ -387,11 +387,11 @@ function renderObserved() {
   const mean = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
   document.getElementById("mapTitle").textContent = "Radar observations";
   document.getElementById("mapSubtitle").textContent = `${state.pulse.toUpperCase()} · all available hours · ${state.visibleRows.length} reporting radars`;
-  document.getElementById("mapTimestamp").textContent = `${formatDate(state.date)} · UTC`;
+  document.getElementById("mapTimestamp").textContent = `${formatDate(state.date)} · local solar day`;
   document.getElementById("networkValue").textContent = mean === null ? "No observations" : metric.format(mean);
   document.getElementById("networkUnit").textContent = mean === null ? "Choose another date or pulse" : `${metric.meanLabel} across ${values.length} radar${values.length === 1 ? "" : "s"} with data`;
   document.getElementById("radarHeading").textContent = "Reporting radars";
-  document.getElementById("mapResolution").textContent = "Radar-site daily aggregation · UTC";
+  document.getElementById("mapResolution").textContent = "Radar-site aggregation · local solar day";
   document.getElementById("mapSummary").textContent = mean === null
     ? `${state.pulse.toUpperCase()} radar observations for ${formatDate(state.date)} have no value for ${metric.label}.`
     : `${state.pulse.toUpperCase()} radar observations for ${formatDate(state.date)}: ${metric.meanLabel.toLowerCase()} ${metric.format(mean)} across ${values.length} radar${values.length === 1 ? "" : "s"} with data.`;

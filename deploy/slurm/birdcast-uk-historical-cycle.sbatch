@@ -2,10 +2,13 @@
 #SBATCH --job-name=birdcast-uk-historical-cycle
 #SBATCH --account=ncas_radar
 #SBATCH --partition=standard
-#SBATCH --qos=standard
+#SBATCH --qos=high
 #SBATCH --time=12:00:00
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=24G
+
+# JASMIN standard/short/long QoS permit only one CPU per node. This bounded
+# eight-process task uses the account's parallel (high) QoS on standard nodes.
 
 set -eo pipefail
 . /etc/profile.d/modules.sh

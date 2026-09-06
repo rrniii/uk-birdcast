@@ -275,6 +275,8 @@ The first run builds a full private per-file statistics cache. Later runs parse
 only new/changed CSVs, while reconciling the complete historical output. A size,
 mtime or calculation-code change invalidates the corresponding cache entry.
 Successful cache writes are restartable but **are not publication completion**.
+The eight-core, 24 GB batch job uses the account-authorized `high` QoS on the
+standard partition; standard/short/long QoS have a one-CPU-per-node restriction.
 
 The retrospective completeness policy is:
 
