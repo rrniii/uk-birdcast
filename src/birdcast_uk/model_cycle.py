@@ -44,6 +44,7 @@ from .selected_model import (
     validate_component_manifest,
 )
 from .static_artifacts import utc_now, write_json
+from .weather_availability import available_weather_through
 
 
 def fetch_public(url: str) -> dict:
@@ -247,24 +248,57 @@ def publish_extension(args: argparse.Namespace, root: Path, previous: dict) -> d
     return plan
 
 
+def prepare_weather_day(state_root: Path, radars: Path, day: date) -> tuple[Path, Path]:
+    """Reuse complete inputs; redownload invalid *unpublished* inputs on retry."""
+    stamp = day.strftime("%Y%m%d")
+    raw, features = state_root / "raw", state_root / "site-features"
+    feature = features / f"era5_site_features_{stamp}.json"
+    validation = era5.validate_day(
+        day=day.isoformat(), raw_dir=raw, feature_output=feature, radars_path=radars
+    )
+    if not validation["ok"]:
+        # A partial prior download must not poison every retry via the
+        # downloader's existing-file skip. Published days never reach this call.
+        era5.build_period(
+            start_day=day.isoformat(),
+            end_day=day.isoformat(),
+            raw_dir=raw,
+            feature_dir=features,
+            radars_path=radars,
+            download=True,
+            overwrite=True,
+        )
+        validation = era5.validate_day(
+            day=day.isoformat(), raw_dir=raw, feature_output=feature, radars_path=radars
+        )
+    if not validation["ok"]:
+        raise ValueError(f"ERA5 day validation failed: {validation['errors']}")
+    return (raw / f"era5_single_levels_{stamp}_uk.nc", raw / f"era5_pressure_levels_{stamp}_uk.nc")
+
+
 def run_cycle(args: argparse.Namespace) -> dict:
-    target = completed_target(datetime.now(timezone.utc), args.lag_days)
+    now = datetime.now(timezone.utc)
+    requested_target = completed_target(now, args.lag_days)
+    weather_end = available_weather_through(now=now)
+    target = min(requested_target, weather_end)
     base = f"{args.public_base_url.rstrip('/')}/{args.object_prefix.strip('/')}"
     previous = fetch_public(f"{base}/latest/gam-era5.json")
     _validate_selected_model_manifest(previous)
     assert_public_base(base, previous)
     last_day = date.fromisoformat(previous["latest_time_utc"][:10])
-    if last_day > target:
+    if last_day > requested_target:
         raise ValueError("published model is ahead of the configured completed ERA5 window")
     status = {
         "state": "no_change",
         "checked_at_utc": utc_now(),
-        "target_through": target.isoformat(),
+        "target_through": requested_target.isoformat(),
+        "available_weather_through": weather_end.isoformat(),
+        "processable_through": target.isoformat(),
         "published_through": last_day.isoformat(),
         "release_sha": args.release_sha,
         "published_days": 0,
     }
-    if last_day == target:
+    if last_day >= target:
         # Read and verify both public tail assets even on a no-change run.
         for pulse in ("lp", "sp"):
             frame_coordinates(
@@ -272,6 +306,10 @@ def run_cycle(args: argparse.Namespace) -> dict:
                 last_day,
                 pulse,
             )
+        status.update(
+            state="waiting_for_weather" if last_day < requested_target else "no_change",
+            caught_up=last_day >= target,
+        )
         return status
     validate_component_manifest(args.component_manifest, verify_model_files=True)
     if file_sha256(args.training_table) != TRAINING_CONTRACT_SHA256:
@@ -294,8 +332,6 @@ def run_cycle(args: argparse.Namespace) -> dict:
         "radars_sha256": file_sha256(args.radars),
         "release_sha": args.release_sha,
     }
-    raw = args.state_root / "raw"
-    features = args.state_root / "site-features"
     for offset in range(1, min(args.max_days, (target - last_day).days) + 1):
         day = last_day + timedelta(days=offset)
         stamp = day.strftime("%Y%m%d")
@@ -311,23 +347,7 @@ def run_cycle(args: argparse.Namespace) -> dict:
                 "checked_at_utc": utc_now(),
             },
         )
-        single = raw / f"era5_single_levels_{stamp}_uk.nc"
-        pressure = raw / f"era5_pressure_levels_{stamp}_uk.nc"
-        feature = features / f"era5_site_features_{stamp}.json"
-        if not all(path.is_file() for path in (single, pressure, feature)):
-            era5.build_period(
-                start_day=day.isoformat(),
-                end_day=day.isoformat(),
-                raw_dir=raw,
-                feature_dir=features,
-                radars_path=args.radars,
-                download=True,
-            )
-        validation = era5.validate_day(
-            day=day.isoformat(), raw_dir=raw, feature_output=feature, radars_path=args.radars
-        )
-        if not validation["ok"]:
-            raise ValueError(f"ERA5 day validation failed: {validation['errors']}")
+        single, pressure = prepare_weather_day(args.state_root, args.radars, day)
         run_dir = Path(mkdtemp(prefix=f"{stamp}-", dir=args.state_root / "runs"))
         grid = run_dir / "grid.csv"
         era5.extract_grid_features(
@@ -399,6 +419,7 @@ def run_cycle(args: argparse.Namespace) -> dict:
         write_json(args.state_root / "published.json", status)
         write_json(args.state_root / "cycle-status.json", status)
     status["caught_up"] = status["published_through"] == target.isoformat()
+    status["waiting_for_weather"] = target < requested_target
     return status
 
 

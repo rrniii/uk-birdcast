@@ -25,7 +25,7 @@ QUALIFIED_LAST_DAY = date(2026, 7, 13)
 QUALIFIED_DAY_COUNT = 365
 # ERA5T normally trails real time by about five days with no fixed release hour.
 # One additional complete day avoids depending on a partially available UTC day.
-RETROSPECTIVE_LAG_DAYS = 6
+RETROSPECTIVE_LAG_DAYS = 5
 PULSES = ("lp", "sp")
 TARGETS = (
     "mtr_birds_km_h",

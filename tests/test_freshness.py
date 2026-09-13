@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -43,8 +43,8 @@ def test_freshness_checks_observation_and_model_data_dates_not_shell_generation(
     assert report["expected_observations_through"] == "2026-08-31"
     assert report["source_age_days"] == 5
     assert report["publication_lag_days"] == 0
-    assert report["expected_model_through"] == "2026-08-31"
-    assert report["model_publication_lag_days"] == 0
+    assert report["expected_model_through"] == "2026-09-01"
+    assert report["model_publication_lag_days"] == 1
 
 
 def test_fixed_july_model_is_now_a_real_publication_backlog():
@@ -53,8 +53,39 @@ def test_fixed_july_model_is_now_a_real_publication_backlog():
     model["generated_at_utc"] = NOW.isoformat()
     report = evaluate_freshness(catalog, historical, model, forecast, now=NOW, radars={"a", "b"})
     assert not report["ok"]
-    assert report["model_publication_lag_days"] == 49
+    assert report["model_publication_lag_days"] == 50
     assert not report["checks"]["model_publication_caught_up"]
+
+
+def test_weather_delay_is_separate_from_model_backlog_and_outages_remain_visible():
+    catalog, historical, model, forecast = products()
+    historical["source"] = {
+        "catch_up_missing_source_days": [{"radar": "a", "date": "2026-08-20", "pulse": "lp"}]
+    }
+    report = evaluate_freshness(
+        catalog,
+        historical,
+        model,
+        forecast,
+        now=NOW,
+        radars={"a", "b"},
+        weather_available_through=date(2026, 8, 31),
+    )
+    assert report["ok"] and report["waiting_for_weather"]
+    assert report["model_calendar_target"] == "2026-09-01"
+    assert report["expected_model_through"] == "2026-08-31"
+    assert report["model_publication_lag_days"] == 0
+    assert len(report["observation_source_gaps"]) == 1
+    stale = evaluate_freshness(
+        catalog,
+        historical,
+        model,
+        forecast,
+        now=NOW,
+        radars={"a", "b"},
+        weather_available_through=date(2026, 8, 1),
+    )
+    assert not stale["checks"]["weather_source_recent"]
 
 
 @pytest.mark.parametrize("failure", ["backlog", "source", "catalog", "radar", "forecast"])

@@ -18,8 +18,8 @@ def test_cron_install_preserves_unrelated_jobs_and_is_idempotent():
     args = Path("/release/submit-historical-cycle.sh"), Path("/private/cycle.env")
     updated = module.updated_table(before, *args)
     assert before in updated
-    assert updated.count("35 */6 * * *") == 1
-    assert "35 */6 * * * /usr/local/bin/crontamer" in updated
+    assert updated.count("35 * * * *") == 1
+    assert "35 * * * * /usr/local/bin/crontamer" in updated
     assert module.updated_table(updated, *args) == updated
     switched = module.updated_table(updated, Path("/new/submit-historical-cycle.sh"), args[1])
     assert before in switched and "/release/" not in switched
@@ -57,7 +57,7 @@ def test_model_cron_preserves_observation_and_unrelated_jobs():
     args = Path("/release/submit-model-cycle.sh"), Path("/private/m.env"), "model"
     updated = module.updated_table(observation, *args)
     assert observation in updated
-    assert updated.count("20 2 * * *") == 1
-    assert updated.count("35 */6 * * *") == 1
+    assert updated.count("20 * * * *") == 1
+    assert updated.count("35 * * * *") == 1
     assert module.updated_table(updated, *args) == updated
     assert "forecast" not in updated and "ecmwf" not in updated

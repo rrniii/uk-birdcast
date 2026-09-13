@@ -132,8 +132,14 @@ def build_analysis(
 
     records = discover_sources(input_root, radars, source_end)
     previous_end = date.fromisoformat(previous["latest_date"])
-    # Recheck the transition day, plus both UTC boundaries of each new local day.
-    gaps = missing_source_days(records, radars, min(previous_end, published_end), source_end)
+    # Keep recent outages visible even after publication advances past them.
+    # A late source arrival changes the full-archive fingerprint and is rebuilt
+    # automatically; absent observations are never replaced by measured zeros.
+    gap_start = max(
+        date.fromisoformat(previous["first_date"]),
+        min(previous_end, published_end, source_end - timedelta(days=14)),
+    )
+    gaps = missing_source_days(records, radars, gap_start, source_end)
     boundary_gaps = [
         row for row in gaps if row["date"] >= (published_end - timedelta(days=1)).isoformat()
     ]

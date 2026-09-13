@@ -125,13 +125,17 @@ async function refreshPublicationFreshness() {
     node.textContent = "Published-data freshness is unverified: the monitoring report is missing or overdue.";
     return;
   }
-  node.dataset.state = report.ok ? "ok" : "warning";
+  const gaps = report.observation_source_gaps || [];
+  const missingRadarDays = new Set(gaps.map(row => `${row.radar}/${row.date}`)).size;
+  node.dataset.state = report.ok && !missingRadarDays ? "ok" : "warning";
   const dates = report.published_through
     ? `Observations through ${report.published_through}; modelled migration through ${String(report.model_through || "unverified").slice(0, 10)}. `
     : "";
   node.textContent = dates + (report.ok
-    ? "Daily retrospective updates checked; source data arrive several days later. Not a live forecast."
-    : `Publication needs attention: ${(report.alerts || ["verification failed"]).join(" ")}`);
+    ? "Hourly retrospective updates checked; source data arrive several days later. Not a live forecast."
+    : `Publication needs attention: ${(report.alerts || ["verification failed"]).join(" ")}`)
+    + (missingRadarDays ? ` Known source gaps: ${missingRadarDays} radar-days in the recent source window; missing measurements are not zeros.` : "")
+    + (report.waiting_for_weather ? " Waiting for the next complete weather day." : "");
 }
 
 function assetUrl(path) {

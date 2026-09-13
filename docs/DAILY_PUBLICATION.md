@@ -9,8 +9,8 @@ of this workflow; the separate forecast latency contract remains unresolved.
 
 | Product | Production schedule (UTC) | Complete-day target |
 | --- | --- | --- |
-| Observations | 00:35, 06:35, 12:35, 18:35 | Common latest UTC source date across all configured radars, minus one day for the local solar-day boundary |
-| Modelled migration | 02:20 daily | UTC today minus six days, with all 24 ERA5 hours and required pressure levels verified |
+| Observations | Hourly at :35 | Common latest UTC source date across all configured radars, minus one day for the local solar-day boundary |
+| Modelled migration | Hourly at :20 | Earlier of UTC today minus five days and the common CDS single-/pressure-level coverage date; all 24 hours and required predictors must validate |
 
 Cron on `cron-01.jasmin.ac.uk` submits bounded LOTUS jobs. It does not do the
 analysis itself. Submit and execution locks plus Slurm singleton prevent
@@ -20,10 +20,24 @@ the last good publication. The first model cycle catches up at most 60 days
 
 [ECMWF documents daily ERA5T updates about five days behind real time, with no
 fixed release hour](https://confluence.ecmwf.int/pages/viewpage.action?pageId=669811810).
-The six-day target provides one complete-day margin, not a promise that the
-source can never be delayed. Recent weather may be preliminary ERA5T and may
+The updater checks the public CDS collection metadata before requesting data.
+`waiting_for_weather` is distinct from a failed download or a publication backlog.
+The five-day target is not a promise that the source can never be delayed; the
+catalogue is only a hint, and incomplete or invalid inputs still block publication.
+Failed unpublished days are downloaded again so partial files cannot poison
+future retries. Recent weather may be preliminary ERA5T and may
 later be revised by ECMWF. We retain the retrieved inputs and immutable daily
 model snapshots; this cycle does not silently replace them with revised weather.
+
+The upstream Avocet pipeline polls CEDA hourly at :05 and processes new arrivals
+using the existing supervised LOTUS workflow. This removes the former wait for
+20:00 UTC after files arrive around 23:15 UTC the preceding evening. Archive,
+queue and processing delays remain. Daily raw reconciliation follows migrated
+CEDA symlinks and distinguishes absent source pulses from unprocessed raw files.
+Bird Maps retains a rolling 14-day source-gap list in the public observation
+manifest and freshness report; a late arrival triggers a cached historical rebuild.
+No missing measurement is filled with zero. If a current radar boundary is absent,
+the all-radar complete observation date waits; other upstream radars still process.
 
 ## Scientific contract
 
@@ -77,8 +91,8 @@ Do not delete them or change an existing public day to force a retry.
    Verify the job, public LP/SP tail and latest dates; submission alone is not success.
 5. Promote the same web code SHA and refresh the UK static site and freshness
    report. The hourly freshness check independently flags source delay,
-   observation backlog, model backlog (>2 days beyond the six-day weather
-   allowance), missing products and accidental forecast availability. The site
+   observation backlog, model backlog (>2 days beyond the available five-day-target
+   weather window), stale weather, missing products and accidental forecast availability. The site
    displays observation and model data dates separately.
 
 Rollback means selecting a previously verified manifest and code release with

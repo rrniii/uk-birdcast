@@ -22,7 +22,7 @@ def updated_table(
         raise ValueError("Unsupported publication cycle")
     begin = BEGIN if product == "historical" else "# BEGIN UK BIRD MAPS MODEL PUBLICATION"
     end_marker = END if product == "historical" else "# END UK BIRD MAPS MODEL PUBLICATION"
-    schedule = "35 */6 * * *" if product == "historical" else "20 2 * * *"
+    schedule = "35 * * * *" if product == "historical" else "20 * * * *"
     if previous.count(begin) != previous.count(end_marker) or previous.count(begin) > 1:
         raise ValueError("Existing Bird Maps cron markers are ambiguous")
     if begin in previous:
@@ -92,9 +92,9 @@ def main() -> None:
                 "installed": True,
                 "backup": str(backup),
                 "backup_sha256": digest,
-                "schedule": "00:35, 06:35, 12:35, 18:35 UTC daily"
+                "schedule": "hourly at :35 UTC"
                 if args.product == "historical"
-                else "02:20 UTC daily",
+                else "hourly at :20 UTC",
             }
         )
     )

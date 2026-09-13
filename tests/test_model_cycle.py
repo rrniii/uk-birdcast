@@ -232,12 +232,68 @@ def test_daily_outputs_reject_negative_uncertainty_and_shifted_grid(tmp_path):
 
 def test_target_allows_only_delayed_retrospective_days():
     now = datetime(2026, 9, 6, 12, tzinfo=timezone.utc)
-    assert cycle.completed_target(now) == date(2026, 8, 31)
+    assert cycle.completed_target(now) == date(2026, 9, 1)
     for lag in (-1, 0, 4):
         with pytest.raises(ValueError):
             cycle.completed_target(now, lag)
     with pytest.raises(ValueError):
         cycle.completed_target(now.replace(tzinfo=None))
+
+
+def test_unavailable_weather_waits_without_download_or_publication(tmp_path, monkeypatch):
+    baseline = _write_selected_model_release(tmp_path / "baseline")
+    previous = json.loads((baseline / "latest/gam-era5.json").read_text())
+    forecast = {"mode": "disabled", "data_available": False, "valid_times_utc": []}
+    monkeypatch.setattr(cycle, "completed_target", lambda *args: DAY)
+    monkeypatch.setattr(cycle, "available_weather_through", lambda **kwargs: date(2026, 7, 13))
+    monkeypatch.setattr(
+        cycle, "fetch_public", lambda url: forecast if "forecast.json" in url else previous
+    )
+    monkeypatch.setattr(cycle, "frame_coordinates", lambda *args: POINTS)
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("Unavailable weather must not trigger download, inference or publication")
+
+    monkeypatch.setattr(cycle.era5, "build_period", unexpected)
+    monkeypatch.setattr(cycle, "publish_extension", unexpected)
+    monkeypatch.setattr(cycle, "validate_component_manifest", unexpected)
+    args = argparse.Namespace(
+        lag_days=5,
+        public_base_url="https://example.com",
+        object_prefix="birdcast-uk",
+        release_sha="test",
+    )
+    result = cycle.run_cycle(args)
+    assert result["state"] == "waiting_for_weather"
+    assert result["published_through"] == "2026-07-13"
+    assert result["target_through"] == "2026-07-14"
+    assert result["processable_through"] == "2026-07-13"
+
+
+@pytest.mark.parametrize("valid_before,valid_after", [(True, True), (False, True), (False, False)])
+def test_unpublished_partial_weather_retries_and_validates(
+    tmp_path, monkeypatch, valid_before, valid_after
+):
+    results = iter(
+        [
+            {"ok": valid_before, "errors": ["missing hours"]},
+            {"ok": valid_after, "errors": ["missing hours"]},
+        ]
+    )
+    monkeypatch.setattr(cycle.era5, "validate_day", lambda **kwargs: next(results))
+    calls = []
+    monkeypatch.setattr(cycle.era5, "build_period", lambda **kwargs: calls.append(kwargs))
+    if valid_after:
+        single, pressure = cycle.prepare_weather_day(tmp_path, tmp_path / "radars", DAY)
+        assert single.name == "era5_single_levels_20260714_uk.nc"
+        assert pressure.name == "era5_pressure_levels_20260714_uk.nc"
+    else:
+        with pytest.raises(ValueError, match="validation failed"):
+            cycle.prepare_weather_day(tmp_path, tmp_path / "radars", DAY)
+    assert len(calls) == int(not valid_before)
+    if calls:
+        assert calls[0]["overwrite"] is True
+        assert calls[0]["start_day"] == calls[0]["end_day"] == DAY.isoformat()
 
 
 def test_era5_daily_extension_keeps_support_ranges_but_not_training_date_filter(

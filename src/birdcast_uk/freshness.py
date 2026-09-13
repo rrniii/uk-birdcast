@@ -16,6 +16,7 @@ from .radars import DEFAULT_RADARS, load_radars
 from .selected_model import RETROSPECTIVE_LAG_DAYS, SELECTION_ID
 from .static_artifacts import write_json
 from .vpts import fetch_json
+from .weather_availability import available_weather_through
 
 
 def catalog_window(catalog: dict, radars: set[str], now: datetime) -> tuple[datetime, date]:
@@ -48,6 +49,7 @@ def evaluate_freshness(
     max_source_age_days: int = 7,
     max_publication_lag_days: int = 2,
     model_weather_lag_days: int = RETROSPECTIVE_LAG_DAYS,
+    weather_available_through: date | None = None,
 ) -> dict:
     """Report source delay separately from an avoidable publication backlog."""
 
@@ -62,11 +64,13 @@ def evaluate_freshness(
     source_age = (now.date() - source_end).days
     lag = max(0, (expected_end - published_end).days)
     model_end = date.fromisoformat(str(model.get("latest_time_utc") or "")[:10])
-    expected_model_end = now.date() - timedelta(days=model_weather_lag_days)
+    requested_model_end = now.date() - timedelta(days=model_weather_lag_days)
+    expected_model_end = min(requested_model_end, weather_available_through or requested_model_end)
     model_lag = max(0, (expected_model_end - model_end).days)
     checks = {
         "catalogue_recent": catalog_age <= max_catalog_age_hours,
         "source_recent": source_age <= max_source_age_days,
+        "weather_source_recent": (now.date() - expected_model_end).days <= max_source_age_days,
         "publication_caught_up": lag <= max_publication_lag_days,
         "historical_available": historical.get("data_available") is True,
         "all_radars_reach_publication_date": all(
@@ -84,6 +88,7 @@ def evaluate_freshness(
     messages = {
         "catalogue_recent": "Source catalogue has not refreshed within 72 hours.",
         "source_recent": "Radar source data is more than 7 days behind UTC today.",
+        "weather_source_recent": "CDS weather coverage is more than 7 days behind UTC today.",
         "publication_caught_up": "Published observations lag the complete source window.",
         "historical_available": "Historical observations are unavailable.",
         "all_radars_reach_publication_date": "Some radars do not reach the published end date.",
@@ -107,7 +112,16 @@ def evaluate_freshness(
         "model_through": model.get("latest_time_utc"),
         "model_policy": "daily_frozen_model_retrospective_not_forecast",
         "expected_model_through": expected_model_end.isoformat(),
+        "model_calendar_target": requested_model_end.isoformat(),
+        "weather_available_through": weather_available_through.isoformat()
+        if weather_available_through
+        else None,
+        "waiting_for_weather": expected_model_end < requested_model_end,
         "model_publication_lag_days": model_lag,
+        "observation_source_gaps": historical.get("source", {}).get(
+            "catch_up_missing_source_days", []
+        ),
+        "source_gap_note": "Freshness is not continuous coverage; missing measurements are not zeros.",
         "thresholds": {
             "max_catalog_age_hours": max_catalog_age_hours,
             "max_source_age_days": max_source_age_days,
@@ -135,6 +149,7 @@ def main() -> int:
             fetch_json(f"{base}/latest/gam-era5.json"),
             fetch_json(f"{base}/latest/forecast.json"),
             radars={radar.slug for radar in load_radars(args.radars)},
+            weather_available_through=available_weather_through(),
         )
     except Exception as exc:
         # Replace a formerly green report on failure; never preserve false health.

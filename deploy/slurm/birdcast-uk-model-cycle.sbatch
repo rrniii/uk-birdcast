@@ -30,5 +30,5 @@ export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
   --object-prefix "${BIRDCAST_UK_OBJECT_PREFIX:?}" \
   --bucket "${BIRDCAST_UK_OBJECT_STORE_BUCKET:?}" \
   --s3cmd-config "${BIRDCAST_UK_S3CMD_CONFIG:?}" \
-  --lag-days "${BIRDCAST_UK_MODEL_LAG_DAYS:-6}" \
+  --lag-days "${BIRDCAST_UK_MODEL_LAG_DAYS:-5}" \
   --max-days "${BIRDCAST_UK_MODEL_MAX_DAYS:-60}" --publish
